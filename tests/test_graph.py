@@ -10,7 +10,7 @@ class Start(Node):
     query: str
     intent: str = ""
 
-    def __call__(self, prev: None) -> "Process | Clarify":
+    def __call__(self, prev: None) -> Process | Clarify:
         if self.intent == "unclear":
             return Clarify(question="What?")
         return Process(task=self.intent)
@@ -28,7 +28,7 @@ class Process(Node):
     task: str
     result: str = ""
 
-    def __call__(self, prev: Start) -> "Review | None":
+    def __call__(self, prev: Start) -> Review | None:
         if self.result:
             return Review(content=self.result)
         return None
@@ -44,11 +44,11 @@ class Review(Node):
         return Process(task="retry")
 
 
-# Nodes for infinite loop test (must be at module level for forward ref resolution)
+# Nodes for infinite loop test
 class LoopA(Node):
     x: str = ""
 
-    def __call__(self, prev: None) -> "LoopB":
+    def __call__(self, prev: None) -> LoopB:
         return LoopB()
 
 
@@ -63,7 +63,7 @@ class LoopB(Node):
 class Infinite(Node):
     x: int = 0
 
-    def __call__(self, prev: None) -> "Infinite":
+    def __call__(self, prev: None) -> Infinite:
         return Infinite(x=self.x + 1)
 
 

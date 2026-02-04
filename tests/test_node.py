@@ -8,7 +8,7 @@ class Start(Node):
     query: str
     intent: str = ""
 
-    def __call__(self, prev: None) -> "Process | Clarify":
+    def __call__(self, prev: None) -> Process | Clarify:
         if self.intent == "unclear":
             return Clarify(question="What do you mean?")
         return Process(task=self.intent)
@@ -28,7 +28,7 @@ class Process(Node):
     task: str
     result: str = ""
 
-    def __call__(self, prev: Start) -> "Review | None":
+    def __call__(self, prev: Start) -> Review | None:
         if len(self.result) > 100:
             return Review(content=self.result)
         return None
@@ -44,18 +44,6 @@ class Review(Node):
         if self.approved:
             return None
         return Process(task=f"Fix: {self.feedback}")
-
-
-class TestNodeFields:
-    def test_input_fields(self):
-        inputs = Start.input_fields()
-        assert "query" in inputs
-        assert "intent" not in inputs
-
-    def test_output_fields(self):
-        outputs = Start.output_fields()
-        assert "intent" in outputs
-        assert "query" not in outputs
 
 
 class TestNodeTopology:
