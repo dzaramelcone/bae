@@ -40,7 +40,7 @@ Plans:
 **Goal**: Dep-annotated `__call__` params become InputFields in Signatures
 **Depends on**: Phase 1
 **Requirements**: SIG-03, DEP-01
-**Plans:** TBD
+**Plans:** 1 plan
 
 **Success Criteria** (what must be TRUE):
   1. Dep marker exists in bae/markers.py (frozen dataclass like Context)
@@ -102,12 +102,12 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4
+Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Signature Generation | 1/1 | Complete ✓ | 2026-02-04 |
-| 1.1 Deps & Signature Extension | 0/1 | Not started | - |
+| 1.1 Deps & Signature Extension | 0/1 | Planned | - |
 | 2. DSPy Integration | 0/TBD | Not started | - |
 | 3. Optimization | 0/TBD | Not started | - |
 | 4. Production Runtime | 0/TBD | Not started | - |
@@ -115,4 +115,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 ---
 *Roadmap created: 2026-02-04*
 *Phase 1 planned: 2026-02-04*
+*Phase 1.1 planned: 2026-02-04*
 *Depth: comprehensive (but focused milestone = 4 phases)*
