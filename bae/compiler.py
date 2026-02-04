@@ -3,9 +3,12 @@
 Compiles a Graph into a DSPy program for prompt optimization.
 """
 
-from typing import Any, get_type_hints
+from typing import Annotated, Any, get_args, get_origin, get_type_hints
+
+import dspy
 
 from bae.graph import Graph
+from bae.markers import Context
 from bae.node import Node
 
 
@@ -34,39 +37,43 @@ class CompiledGraph:
         raise NotImplementedError("DSPy optimization not yet implemented")
 
 
-def node_to_signature(node_cls: type[Node]) -> dict[str, Any]:
-    """Convert a Node class to a DSPy-compatible signature definition.
+def node_to_signature(node_cls: type[Node]) -> type[dspy.Signature]:
+    """Convert a Node class to a DSPy Signature.
 
-    The signature represents:
-    - Input: the node's fields (current state)
-    - Output: the return type of __call__ (next node type(s))
+    - Class name becomes instruction text
+    - Annotated[type, Context(description="...")] fields become InputFields
+    - Unannotated fields are excluded (internal state)
+    - Return type becomes OutputField (str for Phase 1)
 
     Args:
         node_cls: The node class to convert.
 
     Returns:
-        Dict with node info and field definitions.
+        A dspy.Signature subclass with the appropriate fields.
     """
-    # Node's fields = context for LLM
-    fields = {}
-    for name, field in node_cls.model_fields.items():
-        fields[name] = {
-            "type": field.annotation,
-            "description": field.description or "",
-        }
+    fields: dict[str, tuple[type, dspy.InputField | dspy.OutputField]] = {}
 
-    # Output = return type hint (what node(s) __call__ can produce)
-    hints = get_type_hints(node_cls.__call__)
-    return_type = hints.get("return")
+    # Extract annotated fields using include_extras=True to preserve Annotated wrapper
+    hints = get_type_hints(node_cls, include_extras=True)
+    for name, hint in hints.items():
+        if get_origin(hint) is Annotated:
+            args = get_args(hint)
+            base_type = args[0]
+            metadata = args[1:]
 
-    return {
-        "name": node_cls.__name__,
-        "doc": node_cls.__doc__ or "",
-        "fields": fields,
-        "returns": return_type,
-        "successors": node_cls.successors(),
-        "is_terminal": node_cls.is_terminal(),
-    }
+            # Look for our Context marker in the metadata
+            for meta in metadata:
+                if isinstance(meta, Context):
+                    fields[name] = (base_type, dspy.InputField(desc=meta.description))
+                    break
+
+    # Output field (str for Phase 1 - union handling in Phase 2)
+    fields["output"] = (str, dspy.OutputField())
+
+    # Class name as instruction
+    instruction = node_cls.__name__
+
+    return dspy.make_signature(fields, instruction)
 
 
 def compile_graph(graph: Graph) -> CompiledGraph:
