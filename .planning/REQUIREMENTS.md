@@ -9,7 +9,7 @@
 
 - [x] **SIG-01**: Node class name becomes Signature instruction
 - [x] **SIG-02**: Context-annotated node fields become InputFields
-- [ ] **SIG-03**: Dep-annotated `__call__` params become InputFields
+- [x] **SIG-03**: Dep-annotated `__call__` params become InputFields
 - [x] **SIG-04**: Return type hint becomes OutputField (str for now; union in Phase 2)
 - [x] **SIG-05**: N/A — docstring support excluded per decision
 
@@ -21,7 +21,7 @@
 
 ### Dependency Injection
 
-- [ ] **DEP-01**: Dep marker for `__call__` params that need injection
+- [x] **DEP-01**: Dep marker for `__call__` params that need injection
 - [ ] **DEP-02**: Graph.run() injects Dep-annotated params via incant
 - [ ] **DEP-03**: Deps flow through graph without explicit field copying
 
@@ -74,8 +74,8 @@
 | SIG-02 | Phase 1 | Complete |
 | SIG-04 | Phase 1 | Complete |
 | SIG-05 | Phase 1 | N/A (excluded) |
-| SIG-03 | Phase 1.1 | Pending |
-| DEP-01 | Phase 1.1 | Pending |
+| SIG-03 | Phase 1.1 | Complete |
+| DEP-01 | Phase 1.1 | Complete |
 | ROUTE-01 | Phase 2 | Pending |
 | ROUTE-02 | Phase 2 | Pending |
 | ROUTE-03 | Phase 2 | Pending |
