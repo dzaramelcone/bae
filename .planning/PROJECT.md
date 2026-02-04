@@ -61,6 +61,7 @@ Current prompts are naive ("Produce a {ClassName}"). DSPy compilation will repla
 | Two-step decide (pick type, then fill) | Avoids slow oneOf schemas | ✓ Good |
 | No prev parameter | self has all needed state | ✓ Good |
 | LM as tool, not executor | User calls lm.make/decide from __call__ | ✓ Good |
+| make/decide abstraction | May be redundant - revisit after DSPy | ⚠️ Revisit |
 
 ---
 *Last updated: 2025-02-04 after initialization*
