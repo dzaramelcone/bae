@@ -65,6 +65,7 @@
 | SIG-03 | Phase 1 | Pending |
 | SIG-04 | Phase 1 | Pending |
 | SIG-05 | Phase 1 | Pending |
+| RUN-03 | Phase 1 | Pending |
 | DSP-01 | Phase 2 | Pending |
 | DSP-02 | Phase 2 | Pending |
 | DSP-03 | Phase 2 | Pending |
@@ -75,12 +76,12 @@
 | OPT-04 | Phase 3 | Pending |
 | RUN-01 | Phase 4 | Pending |
 | RUN-02 | Phase 4 | Pending |
-| RUN-03 | Phase 1 | Pending |
 
 **Coverage:**
 - v1 requirements: 16 total
 - Mapped to phases: 16
-- Unmapped: 0 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-04*
+*Traceability updated: 2026-02-04*
