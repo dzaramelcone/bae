@@ -7,11 +7,23 @@
 
 ### Signature Generation
 
-- [ ] **SIG-01**: Node class name becomes Signature instruction
-- [ ] **SIG-02**: Node fields become InputFields
-- [ ] **SIG-03**: Dep fields (typed deps like TodoList, Request) become InputFields
-- [ ] **SIG-04**: Return type hint becomes OutputField (single type or union)
-- [ ] **SIG-05**: Docstring used as additional instruction hint (optional)
+- [x] **SIG-01**: Node class name becomes Signature instruction
+- [x] **SIG-02**: Context-annotated node fields become InputFields
+- [ ] **SIG-03**: Dep-annotated `__call__` params become InputFields
+- [x] **SIG-04**: Return type hint becomes OutputField (str for now; union in Phase 2)
+- [x] **SIG-05**: N/A — docstring support excluded per decision
+
+### Graph Routing
+
+- [ ] **ROUTE-01**: Graph.run() auto-routes based on return type (union → decide, single → make)
+- [ ] **ROUTE-02**: `__call__` body `...` signals automatic routing
+- [ ] **ROUTE-03**: Custom `__call__` logic still works as escape hatch
+
+### Dependency Injection
+
+- [ ] **DEP-01**: Dep marker for `__call__` params that need injection
+- [ ] **DEP-02**: Graph.run() injects Dep-annotated params via incant
+- [ ] **DEP-03**: Deps flow through graph without explicit field copying
 
 ### DSPy Integration
 
@@ -31,7 +43,6 @@
 
 - [ ] **RUN-01**: OptimizedLM wrapper uses compiled prompts when available
 - [ ] **RUN-02**: Fallback to naive prompts if no compiled version exists
-- [ ] **RUN-03**: Typed deps injection into node __call__
 
 ## v2 Requirements
 
@@ -54,18 +65,22 @@
 | Async interface | DSPy recommends starting sync; revisit if needed |
 | Validation retry loops | DSPy optimization may solve validation issues |
 | Custom adapters | Use DSPy's ChatAdapter (default) for now |
-| make/decide abstraction | Revisit after DSPy integration - may be redundant |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SIG-01 | Phase 1 | Pending |
-| SIG-02 | Phase 1 | Pending |
-| SIG-03 | Phase 1 | Pending |
-| SIG-04 | Phase 1 | Pending |
-| SIG-05 | Phase 1 | Pending |
-| RUN-03 | Phase 1 | Pending |
+| SIG-01 | Phase 1 | Complete |
+| SIG-02 | Phase 1 | Complete |
+| SIG-04 | Phase 1 | Complete |
+| SIG-05 | Phase 1 | N/A (excluded) |
+| SIG-03 | Phase 1.1 | Pending |
+| DEP-01 | Phase 1.1 | Pending |
+| ROUTE-01 | Phase 2 | Pending |
+| ROUTE-02 | Phase 2 | Pending |
+| ROUTE-03 | Phase 2 | Pending |
+| DEP-02 | Phase 2 | Pending |
+| DEP-03 | Phase 2 | Pending |
 | DSP-01 | Phase 2 | Pending |
 | DSP-02 | Phase 2 | Pending |
 | DSP-03 | Phase 2 | Pending |
@@ -78,8 +93,8 @@
 | RUN-02 | Phase 4 | Pending |
 
 **Coverage:**
-- v1 requirements: 16 total
-- Mapped to phases: 16
+- v1 requirements: 19 total (3 new routing/dep reqs)
+- Mapped to phases: 19
 - Unmapped: 0
 
 ---

@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-04)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Phase 2 - DSPy Integration
+**Current focus:** Phase 1.1 - Deps & Signature Extension
 
 ## Current Position
 
-Phase: 2 of 4 (DSPy Integration)
-Plan: 0 of TBD in current phase
+Phase: 1.1 of 4 (Deps & Signature Extension)
+Plan: 0 of 1 in current phase
 Status: Ready to plan
-Last activity: 2026-02-04 — Phase 1 complete, verified
+Last activity: 2026-02-04 — Design decisions: auto-routing, Dep marker for __call__ params
 
-Progress: [██░░░░░░░░] 25%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
@@ -45,6 +45,9 @@ Recent decisions affecting current work:
 - Class name is Signature instruction (no parsing/transformation)
 - Output type is str for Phase 1 (union handling deferred to Phase 2)
 - Only Context-annotated fields become InputFields (unannotated = internal state)
+- **NEW**: Dep marker for `__call__` params — injected deps become InputFields
+- **NEW**: Auto-routing — Graph.run() handles decide/make based on return type
+- **NEW**: `__call__` body `...` signals automatic routing; custom logic still works
 
 ### Research Flags
 
@@ -63,5 +66,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-04
-Stopped at: Phase 1 complete, ready for Phase 2 planning
+Stopped at: Phase 1.1 design complete, ready for planning
 Resume file: None
