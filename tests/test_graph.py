@@ -122,8 +122,7 @@ class TestGraphMermaid:
 
 
 class TestGraphRun:
-    @pytest.mark.asyncio
-    async def test_run_simple_path(self):
+    def test_run_simple_path(self):
         graph = Graph(start=Start)
 
         # LM returns: Process -> None (terminal)
@@ -132,13 +131,12 @@ class TestGraphRun:
             None,
         ])
 
-        result = await graph.run(Start(query="hello"), lm=lm)
+        result = graph.run(Start(query="hello"), lm=lm)
 
-        # Ended with None, so result is None
+        # Ended with None
         assert result is None
 
-    @pytest.mark.asyncio
-    async def test_run_returns_last_node(self):
+    def test_run_multiple_steps(self):
         graph = Graph(start=Start)
 
         # LM returns: Process -> Review -> None
@@ -148,15 +146,14 @@ class TestGraphRun:
             None,
         ])
 
-        result = await graph.run(Start(query="hello"), lm=lm)
+        result = graph.run(Start(query="hello"), lm=lm)
         assert result is None
 
-    @pytest.mark.asyncio
-    async def test_run_max_steps(self):
+    def test_run_max_steps(self):
         graph = Graph(start=Infinite)
 
         # Infinite doesn't use LM, just returns new Infinite
         lm = MockLM(sequence=[])
 
         with pytest.raises(RuntimeError, match="exceeded"):
-            await graph.run(Infinite(), lm=lm, max_steps=10)
+            graph.run(Infinite(), lm=lm, max_steps=10)

@@ -4,16 +4,9 @@ The Graph class discovers topology from Node type hints and handles execution.
 """
 
 from collections import deque
-from typing import Annotated
 
 from bae.node import Node
 from bae.lm import LM
-
-
-# Marker for dependency injection
-class Inject:
-    """Marker for parameters that should be injected by the graph executor."""
-    pass
 
 
 class Graph:
@@ -104,7 +97,7 @@ class Graph:
 
         return issues
 
-    async def run(
+    def run(
         self,
         start_node: Node,
         lm: LM,
@@ -118,7 +111,7 @@ class Graph:
             max_steps: Maximum execution steps (prevents infinite loops).
 
         Returns:
-            The final node instance, or None if terminated with None.
+            None if terminated normally, or raises if max_steps exceeded.
         """
         current: Node | None = start_node
         steps = 0
