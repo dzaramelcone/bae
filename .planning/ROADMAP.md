@@ -22,18 +22,18 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 1: Signature Generation
 **Goal**: Node classes become DSPy Signatures through automatic conversion
 **Depends on**: Nothing (first phase)
-**Requirements**: SIG-01, SIG-02, SIG-03, SIG-04, SIG-05, RUN-03
+**Requirements**: SIG-01, SIG-02, SIG-03, SIG-04 (SIG-05 excluded per user decision)
+**Plans:** 1 plan
+
+Plans:
+- [ ] 01-01-PLAN.md — TDD: node_to_signature() with Context marker
+
 **Success Criteria** (what must be TRUE):
   1. Given a Node subclass, node_to_signature() returns a valid dspy.Signature class
   2. Signature instruction text contains the Node class name (descriptive names like "AnalyzeUserIntent" become task descriptions)
-  3. Node fields appear as InputFields in the Signature
-  4. Typed dep fields (e.g., `request: Request`) appear as InputFields in the Signature
-  5. Return type hint becomes OutputField (handles both single types and unions)
-**Plans**: TBD
-
-Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+  3. Annotated fields (using Context marker) appear as InputFields in the Signature
+  4. Unannotated fields are excluded (internal state)
+  5. Return type hint becomes OutputField (str for Phase 1; union handling in Phase 2)
 
 ### Phase 2: DSPy Integration
 **Goal**: LM calls use dspy.Predict with generated Signatures instead of naive prompts
@@ -88,11 +88,12 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Signature Generation | 0/TBD | Not started | - |
+| 1. Signature Generation | 0/1 | Planned | - |
 | 2. DSPy Integration | 0/TBD | Not started | - |
 | 3. Optimization | 0/TBD | Not started | - |
 | 4. Production Runtime | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-02-04*
+*Phase 1 planned: 2026-02-04*
 *Depth: comprehensive (but focused milestone = 4 phases)*
