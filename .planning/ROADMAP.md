@@ -12,7 +12,7 @@ This roadmap delivers DSPy prompt compilation for Bae's type-driven agent graphs
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Signature Generation** - Convert Node classes to DSPy Signatures
+- [x] **Phase 1: Signature Generation** - Convert Node classes to DSPy Signatures ✓
 - [ ] **Phase 2: DSPy Integration** - Wire LM backend to use dspy.Predict
 - [ ] **Phase 3: Optimization** - Trace collection and BootstrapFewShot compilation
 - [ ] **Phase 4: Production Runtime** - Load compiled prompts with fallbacks
@@ -26,7 +26,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 1 plan
 
 Plans:
-- [ ] 01-01-PLAN.md — TDD: node_to_signature() with Context marker
+- [x] 01-01-PLAN.md — TDD: node_to_signature() with Context marker ✓
 
 **Success Criteria** (what must be TRUE):
   1. Given a Node subclass, node_to_signature() returns a valid dspy.Signature class
@@ -88,7 +88,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Signature Generation | 0/1 | Planned | - |
+| 1. Signature Generation | 1/1 | Complete ✓ | 2026-02-04 |
 | 2. DSPy Integration | 0/TBD | Not started | - |
 | 3. Optimization | 0/TBD | Not started | - |
 | 4. Production Runtime | 0/TBD | Not started | - |
