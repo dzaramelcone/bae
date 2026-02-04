@@ -1,62 +1,58 @@
 """Tests for Node base class."""
 
 from bae.node import Node
+from bae.lm import LM
+
+
+# Mock LM for testing
+class MockLM:
+    """Mock LM that returns predefined nodes."""
+
+    def __init__(self, return_value: Node | None = None):
+        self.return_value = return_value
+        self.calls: list[Node] = []
+
+    def make(self, node: Node, target: type) -> Node:
+        self.calls.append(node)
+        return self.return_value
+
+    def decide(self, node: Node) -> Node | None:
+        self.calls.append(node)
+        return self.return_value
 
 
 class Start(Node):
-    """Starting node - no predecessor."""
+    """Starting node."""
     query: str
-    intent: str = ""
 
-    def __call__(self, prev: None) -> Process | Clarify:
-        if self.intent == "unclear":
-            return Clarify(question="What do you mean?")
-        return Process(task=self.intent)
+    def __call__(self, lm: LM) -> Process | Clarify:
+        if "unclear" in self.query:
+            return lm.make(self, Clarify)
+        return lm.make(self, Process)
 
 
 class Clarify(Node):
     """Ask for clarification."""
     question: str
-    answer: str = ""
-
-    def __call__(self, prev: Start) -> Start:
-        return Start(query=f"{prev.query} - {self.answer}")
 
 
 class Process(Node):
     """Process the task."""
     task: str
-    result: str = ""
 
-    def __call__(self, prev: Start) -> Review | None:
-        if len(self.result) > 100:
-            return Review(content=self.result)
-        return None
+    def __call__(self, lm: LM) -> Review | None:
+        return lm.decide(self)
 
 
 class Review(Node):
     """Review the result."""
     content: str
-    approved: bool = False
-    feedback: str = ""
 
-    def __call__(self, prev: Process) -> Process | None:
-        if self.approved:
-            return None
-        return Process(task=f"Fix: {self.feedback}")
+    def __call__(self, lm: LM) -> Process | None:
+        return lm.decide(self)
 
 
 class TestNodeTopology:
-    def test_predecessors_none(self):
-        """Start node has no predecessors (prev: None)."""
-        preds = Start.predecessors()
-        assert preds == set()
-
-    def test_predecessors_single(self):
-        """Clarify expects Start as predecessor."""
-        preds = Clarify.predecessors()
-        assert preds == {Start}
-
     def test_successors_union(self):
         """Start can go to Process or Clarify."""
         succs = Start.successors()
@@ -82,22 +78,34 @@ class TestNodeTopology:
 
 
 class TestNodeCall:
-    def test_call_returns_next_node(self):
-        start = Start(query="test", intent="do something")
-        next_node = start(prev=None)
+    def test_call_with_lm_make(self):
+        """Node can use lm.make to produce specific type."""
+        expected = Process(task="do it")
+        lm = MockLM(return_value=expected)
 
-        assert isinstance(next_node, Process)
-        assert next_node.task == "do something"
+        start = Start(query="test")
+        result = start(lm=lm)
 
-    def test_call_returns_different_branch(self):
-        start = Start(query="test", intent="unclear")
-        next_node = start(prev=None)
+        assert result is expected
+        assert lm.calls == [start]
 
-        assert isinstance(next_node, Clarify)
-        assert next_node.question == "What do you mean?"
+    def test_call_branches_on_condition(self):
+        """Node can branch based on its own state."""
+        clarify = Clarify(question="what?")
+        lm = MockLM(return_value=clarify)
 
-    def test_call_returns_none_terminal(self):
-        process = Process(task="test", result="short")
-        next_node = process(prev=Start(query="q", intent="i"))
+        start = Start(query="unclear request")
+        result = start(lm=lm)
 
-        assert next_node is None
+        assert result is clarify
+
+    def test_call_with_lm_decide(self):
+        """Node can use lm.decide to let LLM choose."""
+        review = Review(content="looks good")
+        lm = MockLM(return_value=review)
+
+        process = Process(task="test")
+        result = process(lm=lm)
+
+        assert result is review
+        assert lm.calls == [process]

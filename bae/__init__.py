@@ -2,5 +2,6 @@
 
 from bae.node import Node, NodeConfig
 from bae.graph import Graph
+from bae.lm import LM, PydanticAIBackend, ClaudeCLIBackend
 
-__all__ = ["Node", "NodeConfig", "Graph"]
+__all__ = ["Node", "NodeConfig", "Graph", "LM", "PydanticAIBackend", "ClaudeCLIBackend"]

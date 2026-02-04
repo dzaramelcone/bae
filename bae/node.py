@@ -1,16 +1,21 @@
 """Node base class for graph nodes.
 
 Nodes are Pydantic models that:
-- Define input/output fields (fields with defaults = outputs, without = inputs)
-- Implement __call__ to execute logic and return next node
-- Declare graph topology via type hints on __call__
+- Hold state as fields
+- Implement __call__ to decide routing and produce next node
+- Declare graph topology via return type hints on __call__
 
 Requires Python 3.14+ for PEP 649 (deferred annotation evaluation).
 """
 
+from __future__ import annotations
+
 import types
-from typing import ClassVar, get_type_hints, get_args
+from typing import TYPE_CHECKING, ClassVar, get_type_hints, get_args
 from pydantic import BaseModel, ConfigDict
+
+if TYPE_CHECKING:
+    from bae.lm import LM
 
 
 def _extract_types_from_hint(hint) -> set[type]:
@@ -60,44 +65,44 @@ class Node(BaseModel):
 
     ```python
     class AnalyzeRequest(Node):
-        # Inputs (no default = must be provided)
         request: str
 
-        # Outputs (default = LLM fills these)
-        intent: str = ""
-        entities: list[str] = []
+        def __call__(self, lm: LM) -> GenerateCode | Clarify:
+            # Let LLM decide which path and construct it
+            return lm.decide(GenerateCode | Clarify)
 
-        def __call__(self, prev: None) -> GenerateCode | Clarify:
-            if self.intent == "unclear":
-                return Clarify(question="What did you mean?")
-            return GenerateCode(task=self.intent)
+    class GenerateCode(Node):
+        task: str
+        code: str = ""
+
+        def __call__(self, lm: LM) -> Review | None:
+            # User logic picks the type, LLM constructs it
+            if self.needs_review():
+                return lm.make(Review)
+            return None
     ```
 
-    Graph topology is derived from type hints:
-    - `prev` parameter type = incoming edges (in-degree)
+    Graph topology is derived from return type hints:
     - Return type = outgoing edges (out-degree)
     - Return `None` = terminal node
     """
 
     model_config: ClassVar[NodeConfig] = NodeConfig()
 
-    def __call__(self, prev: Node | None) -> Node | None:
+    def __call__(self, lm: LM) -> Node | None:
         """Execute node logic and return next node.
 
+        Override this to implement custom routing logic.
+        Default behavior: let LLM decide based on return type hint.
+
         Args:
-            prev: The previous node instance (with its outputs populated),
-                  or None if this is the start node.
+            lm: Language model for producing next node.
 
         Returns:
-            The next node instance (with inputs set), or None if terminal.
+            The next node instance, or None if terminal.
         """
-        raise NotImplementedError(f"{self.__class__.__name__}.__call__ not implemented")
-
-    @classmethod
-    def predecessors(cls) -> set[type[Node]]:
-        """Get node types that can precede this node (from `prev` type hint)."""
-        hints = get_type_hints(cls.__call__)
-        return _extract_types_from_hint(hints.get("prev"))
+        # Default: LLM decides which successor to produce
+        return lm.decide(self)
 
     @classmethod
     def successors(cls) -> set[type[Node]]:

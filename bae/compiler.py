@@ -47,13 +47,12 @@ def node_to_signature(node_cls: type[Node]) -> dict[str, Any]:
     Returns:
         Dict with node info and field definitions.
     """
-    # Input = current node's fields
+    # Node's fields = context for LLM
     fields = {}
     for name, field in node_cls.model_fields.items():
         fields[name] = {
             "type": field.annotation,
             "description": field.description or "",
-            "required": field.is_required(),
         }
 
     # Output = return type hint (what node(s) __call__ can produce)

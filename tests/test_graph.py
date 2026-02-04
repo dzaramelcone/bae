@@ -3,67 +3,77 @@
 import pytest
 from bae.graph import Graph
 from bae.node import Node
+from bae.lm import LM
 
 
-# Test nodes for main graph tests
+# Mock LM for testing
+class MockLM:
+    """Mock LM that returns nodes from a sequence."""
+
+    def __init__(self, sequence: list[Node | None]):
+        self.sequence = sequence
+        self.index = 0
+
+    def make(self, node: Node, target: type) -> Node:
+        result = self.sequence[self.index]
+        self.index += 1
+        return result
+
+    def decide(self, node: Node) -> Node | None:
+        result = self.sequence[self.index]
+        self.index += 1
+        return result
+
+
+# Test nodes
 class Start(Node):
     query: str
-    intent: str = ""
 
-    def __call__(self, prev: None) -> Process | Clarify:
-        if self.intent == "unclear":
-            return Clarify(question="What?")
-        return Process(task=self.intent)
+    def __call__(self, lm: LM) -> Process | Clarify:
+        return lm.decide(self)
 
 
 class Clarify(Node):
     question: str
-    answer: str = ""
 
-    def __call__(self, prev: Start) -> Start:
-        return Start(query=f"{prev.query} - {self.answer}")
+    def __call__(self, lm: LM) -> Start:
+        return lm.make(self, Start)
 
 
 class Process(Node):
     task: str
-    result: str = ""
 
-    def __call__(self, prev: Start) -> Review | None:
-        if self.result:
-            return Review(content=self.result)
-        return None
+    def __call__(self, lm: LM) -> Review | None:
+        return lm.decide(self)
 
 
 class Review(Node):
     content: str
-    approved: bool = False
 
-    def __call__(self, prev: Process) -> Process | None:
-        if self.approved:
-            return None
-        return Process(task="retry")
+    def __call__(self, lm: LM) -> Process | None:
+        return lm.decide(self)
 
 
 # Nodes for infinite loop test
 class LoopA(Node):
     x: str = ""
 
-    def __call__(self, prev: None) -> LoopB:
-        return LoopB()
+    def __call__(self, lm: LM) -> LoopB:
+        return lm.make(self, LoopB)
 
 
 class LoopB(Node):
     x: str = ""
 
-    def __call__(self, prev: LoopA) -> LoopA:
-        return LoopA()
+    def __call__(self, lm: LM) -> LoopA:
+        return lm.make(self, LoopA)
 
 
 # Node for max steps test
 class Infinite(Node):
     x: int = 0
 
-    def __call__(self, prev: None) -> Infinite:
+    def __call__(self, lm: LM) -> Infinite:
         return Infinite(x=self.x + 1)
 
 
@@ -91,10 +101,6 @@ class TestGraphValidation:
     def test_valid_graph(self):
         graph = Graph(start=Start)
         issues = graph.validate()
-        # Clarify has no terminal path (loops forever via Start)
-        # but Start can reach Process which is terminal
-        # Actually: Start -> Clarify -> Start -> Process -> None (terminal)
-        # So all nodes have a terminal path
         assert issues == []
 
     def test_detects_infinite_loop(self):
@@ -120,20 +126,37 @@ class TestGraphRun:
     async def test_run_simple_path(self):
         graph = Graph(start=Start)
 
-        # Create start node with outputs pre-filled (simulating LLM)
-        start = Start(query="hello", intent="greet")
-        start_with_outputs = Start(query="hello", intent="greet")
+        # LM returns: Process -> None (terminal)
+        lm = MockLM(sequence=[
+            Process(task="do it"),
+            None,
+        ])
 
-        # Process needs result to terminate
-        # For now, manually testing the flow
-        result = await graph.run(start_with_outputs, max_steps=5)
+        result = await graph.run(Start(query="hello"), lm=lm)
 
-        # Should have gone Start -> Process (terminated because result empty)
-        assert isinstance(result, Process)
+        # Ended with None, so result is None
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_run_returns_last_node(self):
+        graph = Graph(start=Start)
+
+        # LM returns: Process -> Review -> None
+        lm = MockLM(sequence=[
+            Process(task="do it"),
+            Review(content="looks good"),
+            None,
+        ])
+
+        result = await graph.run(Start(query="hello"), lm=lm)
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_run_max_steps(self):
         graph = Graph(start=Infinite)
 
+        # Infinite doesn't use LM, just returns new Infinite
+        lm = MockLM(sequence=[])
+
         with pytest.raises(RuntimeError, match="exceeded"):
-            await graph.run(Infinite(), max_steps=10)
+            await graph.run(Infinite(), lm=lm, max_steps=10)

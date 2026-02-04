@@ -4,10 +4,16 @@ The Graph class discovers topology from Node type hints and handles execution.
 """
 
 from collections import deque
-from typing import Any
-from incant import Incanter
+from typing import Annotated
 
 from bae.node import Node
+from bae.lm import LM
+
+
+# Marker for dependency injection
+class Inject:
+    """Marker for parameters that should be injected by the graph executor."""
+    pass
 
 
 class Graph:
@@ -17,26 +23,21 @@ class Graph:
     ```python
     graph = Graph(start=AnalyzeRequest)
 
-    # Run the graph
-    result = await graph.run(AnalyzeRequest(request="Build a web scraper"))
+    # Run the graph with an LM backend
+    lm = PydanticAIBackend()
+    result = await graph.run(AnalyzeRequest(request="Build a web scraper"), lm=lm)
     ```
 
     The graph topology is discovered by walking return type hints from the start node.
     """
 
-    def __init__(
-        self,
-        start: type[Node],
-        incanter: Incanter | None = None,
-    ):
+    def __init__(self, start: type[Node]):
         """Initialize the graph.
 
         Args:
             start: The starting node type.
-            incanter: Optional Incanter for dependency injection.
         """
         self.start = start
-        self.incanter = incanter or Incanter()
         self._nodes: dict[type[Node], set[type[Node]]] = {}
         self._discover()
 
@@ -77,18 +78,7 @@ class Graph:
         """Validate graph structure. Returns list of warnings/errors."""
         issues = []
 
-        # Check for unreachable nodes (nodes that declare predecessors not in graph)
-        for node_cls in self._nodes:
-            preds = node_cls.predecessors()
-            for pred in preds:
-                if pred not in self._nodes and pred is not type(None):
-                    issues.append(
-                        f"{node_cls.__name__} expects predecessor {pred.__name__} "
-                        f"which is not in the graph"
-                    )
-
-        # Check for nodes with no terminal path
-        # (would cause infinite loops)
+        # Check for nodes with no terminal path (would cause infinite loops)
         nodes_with_terminal_path = set()
         for node_cls in self._nodes:
             if node_cls.is_terminal():
@@ -117,45 +107,32 @@ class Graph:
     async def run(
         self,
         start_node: Node,
+        lm: LM,
         max_steps: int = 100,
-        **deps: Any,
     ) -> Node | None:
         """Execute the graph starting from the given node.
 
         Args:
-            start_node: Initial node instance with inputs populated.
+            start_node: Initial node instance with fields populated.
+            lm: Language model backend for producing nodes.
             max_steps: Maximum execution steps (prevents infinite loops).
-            **deps: Dependencies to register with incanter.
 
         Returns:
-            The final node instance, or None if terminated.
+            The final node instance, or None if terminated with None.
         """
-        # Register dependencies
-        for name, value in deps.items():
-            self.incanter.register_by_name(lambda v=value: v, name=name)
-
         current: Node | None = start_node
-        prev: Node | None = None
         steps = 0
 
         while current is not None and steps < max_steps:
-            # TODO: Here's where we'd invoke the LLM to fill output fields
-            # For now, assume outputs are already filled (manual testing)
-
-            # Execute node logic via incanter (injects deps into __call__)
-            next_node = self.incanter.compose_and_call(
-                current.__call__,
-                prev=prev,
-            )
-
-            prev = current
+            # Call node's __call__ with injected LM
+            next_node = current(lm=lm)
             current = next_node
             steps += 1
 
         if steps >= max_steps:
             raise RuntimeError(f"Graph execution exceeded {max_steps} steps")
 
-        return prev  # Return last executed node
+        return current
 
     def to_mermaid(self) -> str:
         """Generate Mermaid diagram of the graph."""
@@ -164,14 +141,14 @@ class Graph:
         for node_cls, successors in self._nodes.items():
             node_name = node_cls.__name__
 
-            if not successors or node_cls.is_terminal():
-                # Terminal node styling
-                if node_cls.is_terminal() and successors:
+            # Style terminal nodes differently
+            if node_cls.is_terminal():
+                if successors:
                     # Can be terminal but also has successors
-                    lines.append(f"    {node_name}[/{node_name}/]")
-                elif not successors:
-                    # Pure terminal
-                    lines.append(f"    {node_name}[({node_name})]")
+                    lines.append(f"    {node_name}{{{{`{node_name}`}}}}")
+                else:
+                    # Pure terminal (no successors)
+                    lines.append(f"    {node_name}(({node_name}))")
 
             for succ in successors:
                 succ_name = succ.__name__
