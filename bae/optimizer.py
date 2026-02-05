@@ -1,16 +1,19 @@
 """Optimization utilities for bae graphs.
 
 Provides functions for converting execution traces to DSPy training format,
-metrics for evaluating node transition predictions, and save/load for
-optimized predictors.
+metrics for evaluating node transition predictions, save/load for
+optimized predictors, and BootstrapFewShot optimization.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import dspy
+from dspy.teleprompt import BootstrapFewShot
 
+from bae.compiler import node_to_signature
 from bae.node import Node
 
 
@@ -167,8 +170,6 @@ def load_optimized(
         >>> loaded = load_optimized([MyNode], "/tmp/compiled")
         >>> predictor = loaded[MyNode]
     """
-    from bae.compiler import node_to_signature
-
     path = Path(path)
     loaded: dict[type[Node], dspy.Predict] = {}
 
@@ -182,3 +183,53 @@ def load_optimized(
         loaded[node_cls] = predictor
 
     return loaded
+
+
+def optimize_node(
+    node_cls: type[Node],
+    trainset: list[dspy.Example],
+    metric: Callable | None = None,
+) -> dspy.Predict:
+    """Optimize a node predictor using BootstrapFewShot.
+
+    Filters trainset to examples matching this node type, then runs
+    BootstrapFewShot to select high-quality demonstrations for the predictor.
+    Returns unoptimized predictor if trainset has fewer than 10 examples.
+
+    Args:
+        node_cls: The node class to optimize.
+        trainset: Training examples (from trace_to_examples).
+        metric: Optional metric function for optimization.
+                Defaults to node_transition_metric.
+
+    Returns:
+        Optimized dspy.Predict if sufficient examples,
+        otherwise unoptimized dspy.Predict.
+
+    Example:
+        >>> examples = trace_to_examples(trace)
+        >>> optimized = optimize_node(MyNode, examples)
+    """
+    # Filter trainset to examples for this node type
+    node_examples = [ex for ex in trainset if ex.node_type == node_cls.__name__]
+
+    # Create signature for this node
+    signature = node_to_signature(node_cls)
+
+    # Early return if not enough examples
+    if len(node_examples) < 10:
+        return dspy.Predict(signature)
+
+    # Create student predictor
+    student = dspy.Predict(signature)
+
+    # Create optimizer with BootstrapFewShot
+    optimizer = BootstrapFewShot(
+        metric=metric or node_transition_metric,
+        max_bootstrapped_demos=4,  # Generated from teacher
+        max_labeled_demos=8,  # From trainset directly
+        max_rounds=1,  # Single bootstrap iteration
+    )
+
+    # Compile and return optimized predictor
+    return optimizer.compile(student, trainset=node_examples)
