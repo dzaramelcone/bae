@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import base64
 import webbrowser
+from pathlib import Path
 from typing import Annotated
 
 from bae import (
@@ -39,6 +40,17 @@ from bae import (
     trace_to_examples,
 )
 
+# =============================================================================
+# Fixture Loading
+# =============================================================================
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def _load_fixture(name: str) -> str:
+    """Load a fixture file by name."""
+    return (FIXTURES_DIR / name).read_text()
+
 
 # =============================================================================
 # External Services (injected as deps)
@@ -50,35 +62,12 @@ class LocationService:
 
     def geocode(self, query: str) -> str:
         """Geocode a location name. Returns raw JSON string."""
-        # Mock responses - real API returns array of matches
         if "seattle" in query.lower():
-            return '''[{
-  "name": "Seattle",
-  "local_names": {"en": "Seattle"},
-  "lat": 47.6062,
-  "lon": -122.3321,
-  "country": "US",
-  "state": "Washington"
-}]'''
+            return _load_fixture("geo_seattle.json")
         elif "phoenix" in query.lower():
-            return '''[{
-  "name": "Phoenix",
-  "local_names": {"en": "Phoenix"},
-  "lat": 33.4484,
-  "lon": -112.0740,
-  "country": "US",
-  "state": "Arizona"
-}]'''
+            return _load_fixture("geo_phoenix.json")
         else:
-            # Default to Portland
-            return '''[{
-  "name": "Portland",
-  "local_names": {"en": "Portland"},
-  "lat": 45.5152,
-  "lon": -122.6784,
-  "country": "US",
-  "state": "Oregon"
-}]'''
+            return _load_fixture("geo_portland.json")
 
 
 class WeatherService:
@@ -89,49 +78,12 @@ class WeatherService:
 
     def get_current(self, location: str) -> str:
         """Get current weather. Returns raw JSON string (OpenWeatherMap format)."""
-        # Mock responses based on location name
-        # Seattle
         if "seattle" in location.lower():
-            return '''{
-  "coord": {"lon": -122.33, "lat": 47.61},
-  "weather": [{"id": 501, "main": "Rain", "description": "moderate rain", "icon": "10d"}],
-  "main": {"temp": 284.26, "feels_like": 283.74, "temp_min": 283.15, "temp_max": 285.37, "pressure": 1012, "humidity": 85},
-  "visibility": 8000,
-  "wind": {"speed": 5.36, "deg": 200},
-  "clouds": {"all": 90},
-  "dt": 1738800000,
-  "sys": {"country": "US", "sunrise": 1738765200, "sunset": 1738800000},
-  "timezone": -28800,
-  "name": "Seattle"
-}'''
-        # Phoenix
+            return _load_fixture("weather_seattle.json")
         elif "phoenix" in location.lower():
-            return '''{
-  "coord": {"lon": -112.07, "lat": 33.45},
-  "weather": [{"id": 800, "main": "Clear", "description": "clear sky", "icon": "01d"}],
-  "main": {"temp": 308.15, "feels_like": 307.5, "temp_min": 306.15, "temp_max": 310.15, "pressure": 1010, "humidity": 15},
-  "visibility": 10000,
-  "wind": {"speed": 2.24, "deg": 180},
-  "clouds": {"all": 0},
-  "dt": 1738800000,
-  "sys": {"country": "US", "sunrise": 1738765200, "sunset": 1738803600},
-  "timezone": -25200,
-  "name": "Phoenix"
-}'''
-        # Default: mild weather
+            return _load_fixture("weather_phoenix.json")
         else:
-            return '''{
-  "coord": {"lon": -122.68, "lat": 45.52},
-  "weather": [{"id": 803, "main": "Clouds", "description": "broken clouds", "icon": "04d"}],
-  "main": {"temp": 293.15, "feels_like": 292.5, "temp_min": 291.15, "temp_max": 295.15, "pressure": 1015, "humidity": 50},
-  "visibility": 10000,
-  "wind": {"speed": 3.58, "deg": 270},
-  "clouds": {"all": 75},
-  "dt": 1738800000,
-  "sys": {"country": "US", "sunrise": 1738765200, "sunset": 1738801800},
-  "timezone": -28800,
-  "name": "Portland"
-}'''
+            return _load_fixture("weather_portland.json")
 
 
 class CalendarService:
@@ -142,41 +94,7 @@ class CalendarService:
 
     def get_todays_events(self) -> str:
         """Get today's calendar events. Returns raw ICS string."""
-        # In production: call Apple Calendar API, Google Calendar, etc.
-        return '''BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//Bae Example//EN
-BEGIN:VEVENT
-UID:standup-001@example.com
-DTSTAMP:20260205T080000Z
-DTSTART:20260205T090000
-DTEND:20260205T091500
-SUMMARY:Team standup
-LOCATION:Conference Room A (Indoor)
-DESCRIPTION:Daily sync with engineering team
-CATEGORIES:MEETING,WORK
-END:VEVENT
-BEGIN:VEVENT
-UID:lunch-002@example.com
-DTSTAMP:20260205T080000Z
-DTSTART:20260205T120000
-DTEND:20260205T133000
-SUMMARY:Client lunch - Acme Corp
-LOCATION:Riverside Patio Restaurant (Outdoor)
-DESCRIPTION:Q1 planning discussion with Acme team. Business casual attire.
-CATEGORIES:MEETING,CLIENT,BUSINESS
-END:VEVENT
-BEGIN:VEVENT
-UID:gym-003@example.com
-DTSTAMP:20260205T080000Z
-DTSTART:20260205T173000
-DTEND:20260205T183000
-SUMMARY:Gym session
-LOCATION:Downtown Fitness (Indoor)
-DESCRIPTION:Leg day
-CATEGORIES:PERSONAL,FITNESS
-END:VEVENT
-END:VCALENDAR'''
+        return _load_fixture("calendar_events.ics")
 
 
 # =============================================================================

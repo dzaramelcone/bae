@@ -1,0 +1,12 @@
+{
+  "coord": {"lon": -122.33, "lat": 47.61},
+  "weather": [{"id": 501, "main": "Rain", "description": "moderate rain", "icon": "10d"}],
+  "main": {"temp": 284.26, "feels_like": 283.74, "temp_min": 283.15, "temp_max": 285.37, "pressure": 1012, "humidity": 85},
+  "visibility": 8000,
+  "wind": {"speed": 5.36, "deg": 200},
+  "clouds": {"all": 90},
+  "dt": 1738800000,
+  "sys": {"country": "US", "sunrise": 1738765200, "sunset": 1738800000},
+  "timezone": -28800,
+  "name": "Seattle"
+}
