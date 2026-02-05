@@ -105,7 +105,7 @@ class NodeConfig(ConfigDict, total=False):
     """Temperature for LLM generation."""
 
 
-class Node(BaseModel):
+class Node(BaseModel, arbitrary_types_allowed=True):
     """Base class for graph nodes.
 
     Subclass this to define nodes in your agent graph:
