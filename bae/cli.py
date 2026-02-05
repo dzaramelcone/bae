@@ -9,15 +9,35 @@ from __future__ import annotations
 
 import base64
 import importlib
+import json
 import subprocess
-import sys
 import webbrowser
+import zlib
 from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
 
 from bae import Graph
+
+
+def _encode_mermaid_for_live(code: str) -> str:
+    """Encode mermaid diagram for mermaid.live URL.
+
+    Uses pako compression format that mermaid.live expects.
+    """
+    state = {"code": code, "mermaid": {"theme": "default"}}
+    json_str = json.dumps(state)
+
+    # Compress with zlib (pako-compatible settings)
+    compress = zlib.compressobj(9, zlib.DEFLATED, 15, 8, zlib.Z_DEFAULT_STRATEGY)
+    compressed = compress.compress(json_str.encode("utf-8")) + compress.flush()
+
+    # Base64 encode with URL-safe substitutions
+    encoded = base64.b64encode(compressed).decode("ascii")
+    encoded = encoded.replace("+", "-").replace("/", "_")
+
+    return f"pako:{encoded}"
 
 app = typer.Typer(
     name="bae",
@@ -104,14 +124,14 @@ def graph_show(
     typer.echo(mermaid)
     typer.echo()
 
-    # Encode for mermaid.live
-    encoded = base64.urlsafe_b64encode(mermaid.encode()).decode()
-    url = f"https://mermaid.live/view#base64:{encoded}"
+    # Encode for mermaid.live (pako compression)
+    encoded = _encode_mermaid_for_live(mermaid)
+    url = f"https://mermaid.live/edit#{encoded}"
 
     if no_browser:
         typer.echo(f"URL: {url}")
     else:
-        typer.echo(f"Opening: {url[:80]}...")
+        typer.echo(f"Opening: {url[:60]}...")
         webbrowser.open(url)
 
 
