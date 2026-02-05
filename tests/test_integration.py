@@ -170,6 +170,26 @@ class TestClaudeCLIBackend:
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminated successfully
 
+    def test_decide_can_return_none_for_terminal(self, lm):
+        """lm.decide should be able to return None for terminal nodes."""
+        result = Result(summary="Done", steps_taken=["step 1"])
+        next_node = lm.decide(result)
+
+        # Result's only option is None (terminal)
+        assert next_node is None
+
+    def test_graph_run_task_decomposition(self):
+        """Run task decomposition graph."""
+        # Use longer timeout for multi-step graph
+        lm = ClaudeCLIBackend(model="claude-sonnet-4-20250514", timeout=60)
+        graph = Graph(start=Task)
+
+        task = Task(description="Make a peanut butter sandwich")
+        result = graph.run(task, lm=lm, max_steps=10)
+
+        assert isinstance(result, GraphResult)
+        assert result.node is None  # Terminated successfully
+
 
 class TestGraphTopology:
     """Test that graph topology is correctly discovered."""
