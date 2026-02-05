@@ -15,22 +15,22 @@
 
 ### Graph Routing
 
-- [ ] **ROUTE-01**: Graph.run() auto-routes based on return type (union → decide, single → make)
-- [ ] **ROUTE-02**: `__call__` body `...` signals automatic routing
-- [ ] **ROUTE-03**: Custom `__call__` logic still works as escape hatch
+- [x] **ROUTE-01**: Graph.run() auto-routes based on return type (union → decide, single → make)
+- [x] **ROUTE-02**: `__call__` body `...` signals automatic routing
+- [x] **ROUTE-03**: Custom `__call__` logic still works as escape hatch
 
 ### Dependency Injection
 
 - [x] **DEP-01**: Dep marker for `__call__` params that need injection
-- [ ] **DEP-02**: Graph.run() injects Dep-annotated params via incant
-- [ ] **DEP-03**: Deps flow through graph without explicit field copying
+- [x] **DEP-02**: Graph.run() injects Dep-annotated params via incant
+- [x] **DEP-03**: Deps flow through graph without explicit field copying
 
 ### DSPy Integration
 
-- [ ] **DSP-01**: LM backend uses dspy.Predict with generated Signatures
-- [ ] **DSP-02**: Replace naive prompts with Signature-based prompts
-- [ ] **DSP-03**: Support Pydantic models as output types (Node subclasses)
-- [ ] **DSP-04**: Handle union return types (Node | OtherNode | None)
+- [x] **DSP-01**: LM backend uses dspy.Predict with generated Signatures
+- [x] **DSP-02**: Replace naive prompts with Signature-based prompts
+- [x] **DSP-03**: Support Pydantic models as output types (Node subclasses)
+- [x] **DSP-04**: Handle union return types (Node | OtherNode | None)
 
 ### Optimization
 
@@ -76,15 +76,15 @@
 | SIG-05 | Phase 1 | N/A (excluded) |
 | SIG-03 | Phase 1.1 | Complete |
 | DEP-01 | Phase 1.1 | Complete |
-| ROUTE-01 | Phase 2 | Pending |
-| ROUTE-02 | Phase 2 | Pending |
-| ROUTE-03 | Phase 2 | Pending |
-| DEP-02 | Phase 2 | Pending |
-| DEP-03 | Phase 2 | Pending |
-| DSP-01 | Phase 2 | Pending |
-| DSP-02 | Phase 2 | Pending |
-| DSP-03 | Phase 2 | Pending |
-| DSP-04 | Phase 2 | Pending |
+| ROUTE-01 | Phase 2 | Complete |
+| ROUTE-02 | Phase 2 | Complete |
+| ROUTE-03 | Phase 2 | Complete |
+| DEP-02 | Phase 2 | Complete |
+| DEP-03 | Phase 2 | Complete |
+| DSP-01 | Phase 2 | Complete |
+| DSP-02 | Phase 2 | Complete |
+| DSP-03 | Phase 2 | Complete |
+| DSP-04 | Phase 2 | Complete |
 | OPT-01 | Phase 3 | Pending |
 | OPT-02 | Phase 3 | Pending |
 | OPT-03 | Phase 3 | Pending |

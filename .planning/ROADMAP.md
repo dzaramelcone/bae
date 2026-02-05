@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Signature Generation** - Convert Node classes to DSPy Signatures ✓
 - [x] **Phase 1.1: Deps & Signature Extension** - Dep marker, __call__ params become InputFields (INSERTED) ✓
-- [ ] **Phase 2: DSPy Integration** - Auto-routing, dep injection, dspy.Predict
+- [x] **Phase 2: DSPy Integration** - Auto-routing, dep injection, dspy.Predict ✓
 - [ ] **Phase 3: Optimization** - Trace collection and BootstrapFewShot compilation
 - [ ] **Phase 4: Production Runtime** - Load compiled prompts with fallbacks
 
@@ -58,11 +58,11 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — TDD: Foundation types (GraphResult, Bind, exceptions) + validation
-- [ ] 02-02-PLAN.md — TDD: Auto-routing (return type introspection, ellipsis body)
-- [ ] 02-03-PLAN.md — TDD: DSPy Predict backend with self-correction
-- [ ] 02-04-PLAN.md — TDD: Dep injection via incant
-- [ ] 02-05-PLAN.md — Integration wiring and verification
+- [x] 02-01-PLAN.md — TDD: Foundation types (GraphResult, Bind, exceptions) + validation ✓
+- [x] 02-02-PLAN.md — TDD: Auto-routing (return type introspection, ellipsis body) ✓
+- [x] 02-03-PLAN.md — TDD: DSPy Predict backend with self-correction ✓
+- [x] 02-04-PLAN.md — TDD: Dep injection via incant ✓
+- [x] 02-05-PLAN.md — Integration wiring and verification ✓
 
 **Success Criteria** (what must be TRUE):
   1. Graph.run() introspects return type: union -> decide, single type -> make
@@ -112,7 +112,7 @@ Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4
 |-------|----------------|--------|-----------|
 | 1. Signature Generation | 1/1 | Complete ✓ | 2026-02-04 |
 | 1.1 Deps & Signature Extension | 1/1 | Complete ✓ | 2026-02-04 |
-| 2. DSPy Integration | 0/5 | Planned | - |
+| 2. DSPy Integration | 5/5 | Complete ✓ | 2026-02-05 |
 | 3. Optimization | 0/TBD | Not started | - |
 | 4. Production Runtime | 0/TBD | Not started | - |
 
