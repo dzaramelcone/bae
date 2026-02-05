@@ -258,7 +258,7 @@ class Graph:
     def run(
         self,
         start_node: Node,
-        lm: LM,
+        lm: LM | None = None,
         max_steps: int = 100,
         **kwargs: Any,
     ) -> GraphResult:
@@ -286,6 +286,12 @@ class Graph:
             RuntimeError: If max_steps exceeded.
             BaeError: If a required dependency is missing.
         """
+        # Default to DSPyBackend if no LM provided
+        if lm is None:
+            from bae.dspy_backend import DSPyBackend
+
+            lm = DSPyBackend()
+
         trace: list[Node] = []
         current: Node | None = start_node
         steps = 0
