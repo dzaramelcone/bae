@@ -5,25 +5,25 @@
 See: .planning/PROJECT.md (updated 2026-02-04)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Phase 3 Complete - Ready for Phase 4 (Production Runtime)
+**Current focus:** Phase 4 - Production Runtime (Plan 1 of 2 complete)
 
 ## Current Position
 
-Phase: 3 of 4 (Optimization) - COMPLETE ✓
-Plan: 4 of 4 in current phase (all complete)
-Status: Phase complete, verified
-Last activity: 2026-02-05 - Phase 3 verified (5/5 must-haves passed)
+Phase: 4 of 4 (Production Runtime)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-05 - Completed 04-01-PLAN.md (OptimizedLM)
 
-Progress: [█████████░] 90%
+Progress: [█████████▒] 92%
 
-Note: Phase 3 (Optimization) complete. Ready for Phase 4 (Production Runtime).
+Note: Phase 4 started. OptimizedLM complete, CompiledGraph.run() next.
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
-- Average duration: 6.7 min
-- Total execution time: 1.23 hours
+- Total plans completed: 12
+- Average duration: 6.5 min
+- Total execution time: 1.31 hours
 
 **By Phase:**
 
@@ -33,10 +33,11 @@ Note: Phase 3 (Optimization) complete. Ready for Phase 4 (Production Runtime).
 | 01.1-deps-signature-extension | 1 | 3 min | 3 min |
 | 02-dspy-integration | 5 | 34 min | 6.8 min |
 | 03-optimization | 4 | 29 min | 7.25 min |
+| 04-production-runtime | 1 | 5 min | 5 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-01 (7 min), 03-03 (8 min), 03-02 (10 min), 03-04 (6 min)
-- Trend: Consistent (plans ~6-10 min average)
+- Last 5 plans: 03-02 (10 min), 03-03 (8 min), 03-04 (6 min), 04-01 (5 min)
+- Trend: Consistent (plans ~5-10 min average)
 
 *Updated after each plan completion*
 
@@ -74,6 +75,10 @@ Recent decisions affecting current work:
 - **IMPLEMENTED (03-04)**: Lazy imports in CompiledGraph methods to avoid circular import
 - **IMPLEMENTED (03-04)**: optimize() returns self for method chaining
 - **IMPLEMENTED (03-04)**: All optimizer functions exported from bae package root
+- **IMPLEMENTED (04-01)**: OptimizedLM extends DSPyBackend for predictor registry
+- **IMPLEMENTED (04-01)**: Dict-based predictor lookup with type[Node] keys
+- **IMPLEMENTED (04-01)**: Stats tracking for optimized vs naive usage
+- **IMPLEMENTED (04-01)**: decide() inherited unchanged - uses overridden make()
 
 ### Research Flags
 
@@ -83,7 +88,7 @@ From research/SUMMARY.md:
 
 ### Pending Todos
 
-None - Phase 3 complete.
+- 04-02: CompiledGraph.run() integration with OptimizedLM
 
 ### Blockers/Concerns
 
@@ -92,5 +97,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-05
-Stopped at: Completed 03-04-PLAN.md (CompiledGraph Optimization Wiring)
+Stopped at: Completed 04-01-PLAN.md (OptimizedLM with Predictor Registry)
 Resume file: None
