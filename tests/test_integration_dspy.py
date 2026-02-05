@@ -11,6 +11,8 @@ Tests Phase 2 capabilities:
 Uses mocks for dspy.Predict to avoid real LLM calls.
 """
 
+from __future__ import annotations
+
 import json
 from typing import Annotated
 from unittest.mock import MagicMock, patch

@@ -7,6 +7,8 @@ For pydantic-ai tests, set ANTHROPIC_API_KEY.
 For Claude CLI tests, just have claude CLI available.
 """
 
+from __future__ import annotations
+
 import os
 import pytest
 from bae.node import Node

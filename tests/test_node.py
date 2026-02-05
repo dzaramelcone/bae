@@ -1,5 +1,7 @@
 """Tests for Node base class."""
 
+from __future__ import annotations
+
 from bae.node import Node
 from bae.lm import LM
 

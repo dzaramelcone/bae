@@ -8,6 +8,8 @@ Tests:
 5. Missing deps raise appropriate error
 """
 
+from __future__ import annotations
+
 from typing import Annotated
 
 import pytest
@@ -199,47 +201,17 @@ class TestBindFieldCapture:
 
     def test_bind_value_passed_to_downstream_dep(self):
         """Downstream node receives the bound value via Dep injection."""
+        # Use module-level nodes: NodeThatBinds -> NodeThatConsumes -> TerminalNode
         graph = Graph(start=NodeThatBinds)
+        lm = MockLM(sequence=[TerminalNode(), None])
 
-        # NodeThatBinds returns NodeThatConsumes directly (custom logic)
-        # NodeThatConsumes needs ConnectionInfo injected from bind
-        # We need to verify the injection happened
-
-        # Use a capturing terminal node
-        class CapturingTerminal(Node):
-            captured_url: str = ""
-
-            def __call__(self, lm: LM) -> None:
-                ...
-
-        class BindingNode(Node):
-            conn: Annotated[ConnectionInfo | None, Bind()] = None
-
-            def __call__(self, lm: LM) -> ConsumingNode:
-                self.conn = ConnectionInfo(url="bound-value")
-                return ConsumingNode()
-
-        class ConsumingNode(Node):
-            received: str = ""
-
-            def __call__(
-                self,
-                lm: LM,
-                conn: Annotated[ConnectionInfo, Dep(description="Connection")],
-            ) -> CapturingTerminal:
-                self.received = conn.url
-                return CapturingTerminal(captured_url=conn.url)
-
-        graph = Graph(start=BindingNode)
-        lm = MockLM(sequence=[CapturingTerminal(), None])
-
-        result = graph.run(BindingNode(), lm=lm)
+        result = graph.run(NodeThatBinds(input_data="test"), lm=lm)
 
         # The ConsumingNode should have received the bound value
         assert len(result.trace) >= 2
         consuming_node = result.trace[1]
-        assert isinstance(consuming_node, ConsumingNode)
-        assert consuming_node.received == "bound-value"
+        assert isinstance(consuming_node, NodeThatConsumes)
+        assert consuming_node.consumed == "conn-from-test"
 
 
 # =============================================================================
@@ -337,6 +309,68 @@ class NodeC(Node):
         return TerminalNode(result=self.final_result)
 
 
+# Module-level types for test_external_and_bound_deps_coexist
+class ExternalConfig:
+    def __init__(self, env: str):
+        self.env = env
+
+
+class BoundToken:
+    def __init__(self, value: str):
+        self.value = value
+
+
+class ConfigStartNode(Node):
+    """Start node that binds a token based on config."""
+
+    token: Annotated[BoundToken | None, Bind()] = None
+
+    def __call__(
+        self,
+        lm: LM,
+        config: Annotated[ExternalConfig, Dep(description="Config")],
+    ) -> ConfigEndNode:
+        self.token = BoundToken(value=f"token-{config.env}")
+        return ConfigEndNode()
+
+
+class ConfigEndNode(Node):
+    """End node that consumes config and token."""
+
+    result: str = ""
+
+    def __call__(
+        self,
+        lm: LM,
+        config: Annotated[ExternalConfig, Dep(description="Config")],
+        token: Annotated[BoundToken, Dep(description="Token")],
+    ) -> TerminalNode:
+        self.result = f"env={config.env}, token={token.value}"
+        return TerminalNode()
+
+
+# Module-level types for test_missing_bound_dep_raises_bae_error
+class NodeThatForgotsToBind(Node):
+    """Node that should bind but forgets to."""
+
+    conn: Annotated[ConnectionInfo | None, Bind()] = None
+
+    def __call__(self, lm: LM) -> NodeThatNeedsConn:
+        # Oops, forgot to set self.conn!
+        return NodeThatNeedsConn()
+
+
+class NodeThatNeedsConn(Node):
+    """Node that needs a connection dep."""
+
+    def __call__(
+        self,
+        lm: LM,
+        conn: Annotated[ConnectionInfo, Dep(description="Connection")],
+    ) -> TerminalNode:
+        return TerminalNode()
+
+
 class TestDepsAccumulateThroughRun:
     """Feature 4: Deps accumulate through the run."""
 
@@ -364,47 +398,15 @@ class TestDepsAccumulateThroughRun:
 
     def test_external_and_bound_deps_coexist(self):
         """External deps from run() kwargs and bound deps both available."""
-
-        class ExternalConfig:
-            def __init__(self, env: str):
-                self.env = env
-
-        class BoundToken:
-            def __init__(self, value: str):
-                self.value = value
-
-        class StartNode(Node):
-            token: Annotated[BoundToken | None, Bind()] = None
-
-            def __call__(
-                self,
-                lm: LM,
-                config: Annotated[ExternalConfig, Dep(description="Config")],
-            ) -> EndNode:
-                self.token = BoundToken(value=f"token-{config.env}")
-                return EndNode()
-
-        class EndNode(Node):
-            result: str = ""
-
-            def __call__(
-                self,
-                lm: LM,
-                config: Annotated[ExternalConfig, Dep(description="Config")],
-                token: Annotated[BoundToken, Dep(description="Token")],
-            ) -> TerminalNode:
-                self.result = f"env={config.env}, token={token.value}"
-                return TerminalNode()
-
-        graph = Graph(start=StartNode)
+        graph = Graph(start=ConfigStartNode)
         lm = MockLM(sequence=[TerminalNode(), None])
 
         config = ExternalConfig(env="production")
-        result = graph.run(StartNode(), lm=lm, config=config)
+        result = graph.run(ConfigStartNode(), lm=lm, config=config)
 
         assert isinstance(result, GraphResult)
         end_node = result.trace[1]
-        assert isinstance(end_node, EndNode)
+        assert isinstance(end_node, ConfigEndNode)
         assert "env=production" in end_node.result
         assert "token=token-production" in end_node.result
 
@@ -430,22 +432,6 @@ class TestMissingDepsRaiseError:
 
     def test_missing_bound_dep_raises_bae_error(self):
         """Missing bound dep (node didn't set Bind field) raises BaeError."""
-
-        class NodeThatForgotsToBind(Node):
-            conn: Annotated[ConnectionInfo | None, Bind()] = None
-
-            def __call__(self, lm: LM) -> NodeThatNeedsConn:
-                # Oops, forgot to set self.conn!
-                return NodeThatNeedsConn()
-
-        class NodeThatNeedsConn(Node):
-            def __call__(
-                self,
-                lm: LM,
-                conn: Annotated[ConnectionInfo, Dep(description="Connection")],
-            ) -> TerminalNode:
-                return TerminalNode()
-
         graph = Graph(start=NodeThatForgotsToBind)
         lm = MockLM(sequence=[TerminalNode(), None])
 

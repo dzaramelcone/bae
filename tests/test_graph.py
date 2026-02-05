@@ -1,5 +1,7 @@
 """Tests for Graph class."""
 
+from __future__ import annotations
+
 import pytest
 from bae.graph import Graph
 from bae.node import Node

@@ -1,5 +1,7 @@
 """Tests for Bind marker and type-unique validation."""
 
+from __future__ import annotations
+
 from typing import Annotated
 
 import pytest
