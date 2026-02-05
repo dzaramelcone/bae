@@ -77,17 +77,20 @@ Plans:
 **Goal**: Collect execution traces and compile optimized prompts with BootstrapFewShot
 **Depends on**: Phase 2
 **Requirements**: OPT-01, OPT-02, OPT-03, OPT-04
+**Plans:** 4 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — TDD: Trace-to-Example conversion and metric function
+- [ ] 03-02-PLAN.md — TDD: BootstrapFewShot optimization
+- [ ] 03-03-PLAN.md — TDD: Save/Load compiled prompts
+- [ ] 03-04-PLAN.md — Wire optimizer into CompiledGraph + exports
+
 **Success Criteria** (what must be TRUE):
   1. Graph.run() captures (input_node, output_node) pairs as execution traces
   2. Traces convert to dspy.Example format for optimizer consumption
   3. BootstrapFewShot optimizer runs on collected traces and produces optimized modules
   4. Compiled prompts serialize to JSON and load back correctly
   5. Optimized modules produce better outputs than naive prompts (measured by metric function)
-**Plans**: TBD
-
-Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
 
 ### Phase 4: Production Runtime
 **Goal**: Production graphs load compiled prompts at startup with graceful fallbacks
@@ -113,7 +116,7 @@ Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4
 | 1. Signature Generation | 1/1 | Complete ✓ | 2026-02-04 |
 | 1.1 Deps & Signature Extension | 1/1 | Complete ✓ | 2026-02-04 |
 | 2. DSPy Integration | 5/5 | Complete ✓ | 2026-02-05 |
-| 3. Optimization | 0/TBD | Not started | - |
+| 3. Optimization | 0/4 | Planned | - |
 | 4. Production Runtime | 0/TBD | Not started | - |
 
 ---
@@ -121,4 +124,5 @@ Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4
 *Phase 1 planned: 2026-02-04*
 *Phase 1.1 planned: 2026-02-04*
 *Phase 2 planned: 2026-02-04*
+*Phase 3 planned: 2026-02-05*
 *Depth: comprehensive (but focused milestone = 4 phases)*
