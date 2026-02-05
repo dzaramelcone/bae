@@ -1,10 +1,13 @@
 """Optimization utilities for bae graphs.
 
-Provides functions for converting execution traces to DSPy training format
-and metrics for evaluating node transition predictions.
+Provides functions for converting execution traces to DSPy training format,
+metrics for evaluating node transition predictions, and save/load for
+optimized predictors.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import dspy
 
@@ -114,3 +117,68 @@ def node_transition_metric(
     else:
         # Bootstrap mode: return bool
         return match
+
+
+def save_optimized(
+    optimized: dict[type[Node], dspy.Predict],
+    path: str | Path,
+) -> None:
+    """Save optimized predictors to a directory.
+
+    Creates one JSON file per node class, named {NodeClassName}.json.
+    Uses DSPy's native save with save_program=False for JSON format.
+
+    Args:
+        optimized: Dict mapping node classes to their optimized predictors.
+        path: Directory to save the predictor files.
+
+    Example:
+        >>> save_optimized({MyNode: predictor}, "/tmp/compiled")
+        # Creates /tmp/compiled/MyNode.json
+    """
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+    for node_cls, predictor in optimized.items():
+        predictor.save(
+            str(path / f"{node_cls.__name__}.json"),
+            save_program=False,
+        )
+
+
+def load_optimized(
+    node_classes: list[type[Node]],
+    path: str | Path,
+) -> dict[type[Node], dspy.Predict]:
+    """Load optimized predictors from a directory.
+
+    For each node class, creates a predictor with the correct signature
+    and loads state from the corresponding JSON file if it exists.
+    Missing files result in fresh (unoptimized) predictors.
+
+    Args:
+        node_classes: List of node classes to load predictors for.
+        path: Directory containing the predictor JSON files.
+
+    Returns:
+        Dict mapping node classes to their predictors.
+
+    Example:
+        >>> loaded = load_optimized([MyNode], "/tmp/compiled")
+        >>> predictor = loaded[MyNode]
+    """
+    from bae.compiler import node_to_signature
+
+    path = Path(path)
+    loaded: dict[type[Node], dspy.Predict] = {}
+
+    for node_cls in node_classes:
+        sig_path = path / f"{node_cls.__name__}.json"
+        predictor = dspy.Predict(node_to_signature(node_cls))
+
+        if sig_path.exists():
+            predictor.load(str(sig_path))
+
+        loaded[node_cls] = predictor
+
+    return loaded

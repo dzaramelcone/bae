@@ -397,8 +397,12 @@ class TestLoadOptimizedBasic:
 
     def test_returns_dict_of_predictors(self, tmp_path: Path):
         """Returns a dict mapping node classes to predictors."""
-        # Create an empty file to load
-        (tmp_path / "StartNode.json").write_text("{}")
+        # Use round-trip to create valid file
+        sig = dspy.make_signature(
+            {"input": (str, dspy.InputField()), "output": (str, dspy.OutputField())},
+            "Test",
+        )
+        save_optimized({StartNode: dspy.Predict(sig)}, tmp_path)
 
         result = load_optimized([StartNode], tmp_path)
 
@@ -431,21 +435,31 @@ class TestLoadOptimizedMultipleNodes:
 
     def test_loads_all_requested_node_types(self, tmp_path: Path):
         """Loads predictors for all node classes in the list."""
-        # Create files for some nodes
-        (tmp_path / "StartNode.json").write_text("{}")
-        (tmp_path / "EndNode.json").write_text("{}")
+        # Create valid files via round-trip for some nodes
+        sig = dspy.make_signature(
+            {"input": (str, dspy.InputField()), "output": (str, dspy.OutputField())},
+            "Test",
+        )
+        save_optimized(
+            {StartNode: dspy.Predict(sig), EndNode: dspy.Predict(sig)},
+            tmp_path,
+        )
 
         result = load_optimized([StartNode, MiddleNode, EndNode], tmp_path)
 
         assert len(result) == 3
         assert StartNode in result
-        assert MiddleNode in result
+        assert MiddleNode in result  # Fresh predictor (no file)
         assert EndNode in result
 
     def test_mixed_existing_and_missing_files(self, tmp_path: Path):
         """Handles mix of existing and missing files gracefully."""
-        # Only create file for one node
-        (tmp_path / "StartNode.json").write_text("{}")
+        # Only create file for one node via round-trip
+        sig = dspy.make_signature(
+            {"input": (str, dspy.InputField()), "output": (str, dspy.OutputField())},
+            "Test",
+        )
+        save_optimized({StartNode: dspy.Predict(sig)}, tmp_path)
 
         result = load_optimized([StartNode, MiddleNode], tmp_path)
 
@@ -459,7 +473,12 @@ class TestLoadOptimizedAcceptsStringPath:
 
     def test_accepts_string_path(self, tmp_path: Path):
         """Accepts string path in addition to Path object."""
-        (tmp_path / "StartNode.json").write_text("{}")
+        # Create valid file via round-trip
+        sig = dspy.make_signature(
+            {"input": (str, dspy.InputField()), "output": (str, dspy.OutputField())},
+            "Test",
+        )
+        save_optimized({StartNode: dspy.Predict(sig)}, tmp_path)
 
         result = load_optimized([StartNode], str(tmp_path))
 
