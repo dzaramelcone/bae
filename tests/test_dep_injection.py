@@ -161,8 +161,8 @@ class NodeThatBinds(Node):
     """Node that binds a value for downstream nodes."""
 
     input_data: Annotated[str, Context(description="Input")]
-    # This field will be captured after execution
-    conn: Annotated[ConnectionInfo, Bind()]
+    # This field will be captured after execution (default None, set during __call__)
+    conn: Annotated[ConnectionInfo | None, Bind()] = None
 
     def __call__(self, lm: LM) -> NodeThatConsumes:
         # Set the Bind field during execution
@@ -213,7 +213,7 @@ class TestBindFieldCapture:
                 ...
 
         class BindingNode(Node):
-            conn: Annotated[ConnectionInfo, Bind()]
+            conn: Annotated[ConnectionInfo | None, Bind()] = None
 
             def __call__(self, lm: LM) -> ConsumingNode:
                 self.conn = ConnectionInfo(url="bound-value")
@@ -301,7 +301,7 @@ class RequestData:
 class NodeA(Node):
     """First node that binds SessionId."""
 
-    session: Annotated[SessionId, Bind()]
+    session: Annotated[SessionId | None, Bind()] = None
 
     def __call__(self, lm: LM) -> NodeB:
         self.session = SessionId(value="sess-123")
@@ -311,7 +311,7 @@ class NodeA(Node):
 class NodeB(Node):
     """Second node that binds RequestData and consumes SessionId."""
 
-    request: Annotated[RequestData, Bind()]
+    request: Annotated[RequestData | None, Bind()] = None
     received_session: str = ""
 
     def __call__(
@@ -374,7 +374,7 @@ class TestDepsAccumulateThroughRun:
                 self.value = value
 
         class StartNode(Node):
-            token: Annotated[BoundToken, Bind()]
+            token: Annotated[BoundToken | None, Bind()] = None
 
             def __call__(
                 self,
@@ -432,7 +432,7 @@ class TestMissingDepsRaiseError:
         """Missing bound dep (node didn't set Bind field) raises BaeError."""
 
         class NodeThatForgotsToBind(Node):
-            conn: Annotated[ConnectionInfo, Bind()]
+            conn: Annotated[ConnectionInfo | None, Bind()] = None
 
             def __call__(self, lm: LM) -> NodeThatNeedsConn:
                 # Oops, forgot to set self.conn!

@@ -3,14 +3,85 @@
 The Graph class discovers topology from Node type hints and handles execution.
 """
 
+import inspect
 import types
 from collections import deque
-from typing import Annotated, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
+from incant import Incanter
+
+from bae.exceptions import BaeError
 from bae.lm import LM
-from bae.markers import Bind
+from bae.markers import Bind, Dep
 from bae.node import Node, _has_ellipsis_body
 from bae.result import GraphResult
+
+
+def _is_dep_annotated(param: inspect.Parameter) -> bool:
+    """Check if a parameter has a Dep annotation."""
+    hint = param.annotation
+    if get_origin(hint) is Annotated:
+        args = get_args(hint)
+        for arg in args[1:]:
+            if isinstance(arg, Dep):
+                return True
+    return False
+
+
+def _get_base_type(hint: Any) -> type:
+    """Extract base type from Annotated or return hint as-is.
+
+    For union types like `X | None`, returns the non-None type.
+    """
+    if get_origin(hint) is Annotated:
+        hint = get_args(hint)[0]
+
+    # Handle union types (X | None) - extract the non-None type
+    if isinstance(hint, types.UnionType):
+        args = get_args(hint)
+        non_none_types = [arg for arg in args if arg is not type(None)]
+        if len(non_none_types) == 1:
+            return non_none_types[0]
+        # Multiple non-None types - return first one (edge case)
+        if non_none_types:
+            return non_none_types[0]
+
+    return hint
+
+
+def _create_dep_hook_factory(dep_registry: dict[type, Any]):
+    """Create a hook factory that looks up deps by base type."""
+
+    def dep_hook_factory(param: inspect.Parameter):
+        base_type = _get_base_type(param.annotation)
+        if base_type not in dep_registry:
+            raise TypeError(f"Missing dependency: {base_type.__name__}")
+
+        def factory():
+            return dep_registry[base_type]
+
+        return factory
+
+    return dep_hook_factory
+
+
+def _capture_bind_fields(node: Node, dep_registry: dict[type, Any]) -> None:
+    """Capture Bind-annotated fields from a node into the dep registry."""
+    hints = get_type_hints(node.__class__, include_extras=True)
+    for field_name, hint in hints.items():
+        if get_origin(hint) is Annotated:
+            args = get_args(hint)
+            metadata = args[1:]
+
+            for meta in metadata:
+                if isinstance(meta, Bind):
+                    # Get the field value from the node
+                    value = getattr(node, field_name, None)
+                    if value is not None:
+                        # Extract the non-None base type for registration
+                        base_type = _get_base_type(hint)
+                        dep_registry[base_type] = value
+                    break
 
 
 def _get_routing_strategy(
@@ -189,6 +260,7 @@ class Graph:
         start_node: Node,
         lm: LM,
         max_steps: int = 100,
+        **kwargs: Any,
     ) -> GraphResult:
         """Execute the graph starting from the given node.
 
@@ -198,20 +270,34 @@ class Graph:
         - Pure None return -> return None immediately
         - Custom __call__ logic -> call directly (escape hatch)
 
+        External dependencies can be passed as kwargs and will be injected
+        into node __call__ methods via Dep-annotated parameters.
+
         Args:
             start_node: Initial node instance with fields populated.
             lm: Language model backend for producing nodes.
             max_steps: Maximum execution steps (prevents infinite loops).
+            **kwargs: External dependencies to inject (matched by type).
 
         Returns:
             GraphResult with final node and trace of visited nodes.
 
         Raises:
             RuntimeError: If max_steps exceeded.
+            BaeError: If a required dependency is missing.
         """
         trace: list[Node] = []
         current: Node | None = start_node
         steps = 0
+
+        # Initialize dependency registry with external deps
+        dep_registry: dict[type, Any] = {}
+        for value in kwargs.values():
+            dep_registry[type(value)] = value
+
+        # Create incanter for this run with dep injection hook
+        incanter = Incanter()
+        incanter.register_hook_factory(_is_dep_annotated, _create_dep_hook_factory(dep_registry))
 
         while current is not None and steps < max_steps:
             trace.append(current)
@@ -219,20 +305,31 @@ class Graph:
             # Determine routing strategy
             strategy = _get_routing_strategy(current.__class__)
 
-            if strategy[0] == "terminal":
-                # Ellipsis body with pure None return
-                current = None
-            elif strategy[0] == "make":
-                # Ellipsis body with single return type
-                target_type = strategy[1]
-                current = lm.make(current, target_type)
-            elif strategy[0] == "decide":
-                # Ellipsis body with union/optional return type
-                current = lm.decide(current)
-            else:
-                # Custom logic - call directly
-                current = current(lm=lm)
+            try:
+                if strategy[0] == "terminal":
+                    # Ellipsis body with pure None return
+                    next_node = None
+                elif strategy[0] == "make":
+                    # Ellipsis body with single return type
+                    target_type = strategy[1]
+                    next_node = lm.make(current, target_type)
+                elif strategy[0] == "decide":
+                    # Ellipsis body with union/optional return type
+                    next_node = lm.decide(current)
+                else:
+                    # Custom logic - call with incant injection
+                    next_node = incanter.compose_and_call(
+                        current.__call__, lm=lm
+                    )
+            except TypeError as e:
+                if "Missing dependency" in str(e):
+                    raise BaeError(str(e), cause=e) from e
+                raise
 
+            # Capture Bind fields after node execution
+            _capture_bind_fields(current, dep_registry)
+
+            current = next_node
             steps += 1
 
         if steps >= max_steps:
