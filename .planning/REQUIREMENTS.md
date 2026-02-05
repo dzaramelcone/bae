@@ -41,8 +41,8 @@
 
 ### Runtime
 
-- [ ] **RUN-01**: OptimizedLM wrapper uses compiled prompts when available
-- [ ] **RUN-02**: Fallback to naive prompts if no compiled version exists
+- [x] **RUN-01**: OptimizedLM wrapper uses compiled prompts when available
+- [x] **RUN-02**: Fallback to naive prompts if no compiled version exists
 
 ## v2 Requirements
 
@@ -89,8 +89,8 @@
 | OPT-02 | Phase 3 | Complete |
 | OPT-03 | Phase 3 | Complete |
 | OPT-04 | Phase 3 | Complete |
-| RUN-01 | Phase 4 | Pending |
-| RUN-02 | Phase 4 | Pending |
+| RUN-01 | Phase 4 | Complete |
+| RUN-02 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 19 total (3 new routing/dep reqs)

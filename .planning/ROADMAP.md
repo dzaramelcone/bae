@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1.1: Deps & Signature Extension** - Dep marker, __call__ params become InputFields (INSERTED) ✓
 - [x] **Phase 2: DSPy Integration** - Auto-routing, dep injection, dspy.Predict ✓
 - [x] **Phase 3: Optimization** - Trace collection and BootstrapFewShot compilation ✓
-- [ ] **Phase 4: Production Runtime** - Load compiled prompts with fallbacks
+- [x] **Phase 4: Production Runtime** - Load compiled prompts with fallbacks ✓
 
 ## Phase Details
 
@@ -99,8 +99,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — TDD: OptimizedLM with predictor registry and fallback
-- [ ] 04-02-PLAN.md — CompiledGraph integration and package exports
+- [x] 04-01-PLAN.md — TDD: OptimizedLM with predictor registry and fallback ✓
+- [x] 04-02-PLAN.md — CompiledGraph integration and package exports ✓
 
 **Success Criteria** (what must be TRUE):
   1. OptimizedLM wrapper loads compiled prompts at graph startup
@@ -119,7 +119,7 @@ Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4
 | 1.1 Deps & Signature Extension | 1/1 | Complete ✓ | 2026-02-04 |
 | 2. DSPy Integration | 5/5 | Complete ✓ | 2026-02-05 |
 | 3. Optimization | 4/4 | Complete ✓ | 2026-02-05 |
-| 4. Production Runtime | 0/2 | Planned | - |
+| 4. Production Runtime | 2/2 | Complete ✓ | 2026-02-05 |
 
 ---
 *Roadmap created: 2026-02-04*
