@@ -3,6 +3,8 @@
 Compiles a Graph into a DSPy program for prompt optimization.
 """
 
+from __future__ import annotations
+
 from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
 import dspy
