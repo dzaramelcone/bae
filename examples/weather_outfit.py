@@ -183,6 +183,11 @@ END:VCALENDAR'''
 # Graph Nodes
 # =============================================================================
 
+# TODO: Context should support automatic markdown wrapping for raw data:
+#   weather_json: Annotated[str, Context(markup="json")]  # wraps in ```json\n...\n```
+#   events_ics: Annotated[str, Context(markup="ics")]     # wraps in ```ics\n...\n```
+# This makes LLM context cleaner and signals the format explicitly.
+
 
 class CheckWeather(Node):
     """Check the weather for the user's location."""
