@@ -30,10 +30,25 @@ class CompiledGraph:
         self.signatures = signatures
         self.optimized: dict[type[Node], dspy.Predict] = {}
 
-    async def run(self, start_node: Node, **deps) -> Node | None:
-        """Run the compiled graph."""
-        # TODO: Use DSPy modules to produce next nodes
-        raise NotImplementedError("DSPy compilation not yet implemented")
+    def run(self, start_node: Node, **deps) -> "GraphResult":
+        """Run the compiled graph using optimized predictors.
+
+        Creates an OptimizedLM from loaded predictors and delegates
+        to Graph.run(). Nodes with optimized predictors use them;
+        others fall back to naive prompts.
+
+        Args:
+            start_node: The initial node to start execution.
+            **deps: External dependencies to inject.
+
+        Returns:
+            GraphResult with final node and execution trace.
+        """
+        from bae.optimized_lm import OptimizedLM
+        from bae.result import GraphResult
+
+        lm = OptimizedLM(optimized=self.optimized)
+        return self.graph.run(start_node, lm=lm, **deps)
 
     def optimize(
         self,
@@ -183,3 +198,26 @@ def compile_graph(graph: Graph) -> CompiledGraph:
         signatures[node_cls] = node_to_signature(node_cls)
 
     return CompiledGraph(graph, signatures)
+
+
+def create_optimized_lm(
+    graph: Graph,
+    compiled_path: str | Path,
+) -> "OptimizedLM":
+    """Create an OptimizedLM with loaded predictors for a graph.
+
+    Convenience factory that loads optimized predictors from disk
+    and creates an OptimizedLM ready for production use.
+
+    Args:
+        graph: The graph whose nodes need predictors.
+        compiled_path: Directory containing compiled predictor JSON files.
+
+    Returns:
+        OptimizedLM with loaded predictors for available nodes.
+    """
+    from bae.optimized_lm import OptimizedLM
+    from bae.optimizer import load_optimized
+
+    optimized = load_optimized(list(graph.nodes), Path(compiled_path))
+    return OptimizedLM(optimized=optimized)
