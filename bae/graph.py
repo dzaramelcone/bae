@@ -3,12 +3,61 @@
 The Graph class discovers topology from Node type hints and handles execution.
 """
 
+import types
 from collections import deque
 from typing import Annotated, get_args, get_origin, get_type_hints
 
-from bae.node import Node
 from bae.lm import LM
 from bae.markers import Bind
+from bae.node import Node, _has_ellipsis_body
+from bae.result import GraphResult
+
+
+def _get_routing_strategy(
+    node_cls: type[Node],
+) -> tuple[str, ...] | tuple[str, type] | tuple[str, list[type]]:
+    """Determine the routing strategy for a node class.
+
+    Returns:
+        - ("custom",) - node has custom __call__ logic
+        - ("terminal",) - node has ellipsis body with pure None return
+        - ("make", target_type) - node has ellipsis body with single return type
+        - ("decide", types_list) - node has ellipsis body with union or optional return
+    """
+    # Check if node has custom logic (non-ellipsis body)
+    if not _has_ellipsis_body(node_cls.__call__):
+        return ("custom",)
+
+    # Get return type hints
+    hints = get_type_hints(node_cls.__call__)
+    return_hint = hints.get("return")
+
+    # Pure None return
+    if return_hint is None or return_hint is type(None):
+        return ("terminal",)
+
+    # Handle union types (X | Y | None)
+    if isinstance(return_hint, types.UnionType):
+        args = get_args(return_hint)
+        concrete_types = [arg for arg in args if arg is not type(None) and isinstance(arg, type)]
+        is_optional = type(None) in args
+
+        # No concrete types -> terminal
+        if not concrete_types:
+            return ("terminal",)
+
+        # Single type, not optional -> make
+        if len(concrete_types) == 1 and not is_optional:
+            return ("make", concrete_types[0])
+
+        # Multiple types or optional -> decide
+        return ("decide", concrete_types)
+
+    # Single type (not union)
+    if isinstance(return_hint, type):
+        return ("make", return_hint)
+
+    return ("terminal",)
 
 
 class Graph:
@@ -140,8 +189,14 @@ class Graph:
         start_node: Node,
         lm: LM,
         max_steps: int = 100,
-    ) -> Node | None:
+    ) -> GraphResult:
         """Execute the graph starting from the given node.
+
+        Uses auto-routing for nodes with ellipsis body:
+        - Union return type -> lm.decide()
+        - Single return type -> lm.make()
+        - Pure None return -> return None immediately
+        - Custom __call__ logic -> call directly (escape hatch)
 
         Args:
             start_node: Initial node instance with fields populated.
@@ -149,21 +204,41 @@ class Graph:
             max_steps: Maximum execution steps (prevents infinite loops).
 
         Returns:
-            None if terminated normally, or raises if max_steps exceeded.
+            GraphResult with final node and trace of visited nodes.
+
+        Raises:
+            RuntimeError: If max_steps exceeded.
         """
+        trace: list[Node] = []
         current: Node | None = start_node
         steps = 0
 
         while current is not None and steps < max_steps:
-            # Call node's __call__ with injected LM
-            next_node = current(lm=lm)
-            current = next_node
+            trace.append(current)
+
+            # Determine routing strategy
+            strategy = _get_routing_strategy(current.__class__)
+
+            if strategy[0] == "terminal":
+                # Ellipsis body with pure None return
+                current = None
+            elif strategy[0] == "make":
+                # Ellipsis body with single return type
+                target_type = strategy[1]
+                current = lm.make(current, target_type)
+            elif strategy[0] == "decide":
+                # Ellipsis body with union/optional return type
+                current = lm.decide(current)
+            else:
+                # Custom logic - call directly
+                current = current(lm=lm)
+
             steps += 1
 
         if steps >= max_steps:
             raise RuntimeError(f"Graph execution exceeded {max_steps} steps")
 
-        return current
+        return GraphResult(node=current, trace=trace)
 
     def to_mermaid(self) -> str:
         """Generate Mermaid diagram of the graph."""
