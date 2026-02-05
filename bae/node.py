@@ -10,12 +10,59 @@ Requires Python 3.14+ for PEP 649 (deferred annotation evaluation).
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
 import types
 from typing import TYPE_CHECKING, ClassVar, get_type_hints, get_args
 from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
     from bae.lm import LM
+
+
+def _has_ellipsis_body(method) -> bool:
+    """Check if a method body consists only of `...` (Ellipsis).
+
+    This signals "use automatic routing" vs custom logic.
+
+    Args:
+        method: A method (function) to inspect.
+
+    Returns:
+        True if body is just `...`, False otherwise.
+    """
+    try:
+        source = inspect.getsource(method)
+        source = textwrap.dedent(source)
+        tree = ast.parse(source)
+    except (OSError, TypeError, SyntaxError, IndentationError):
+        return False
+
+    # Find the function definition
+    func_def = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            func_def = node
+            break
+
+    if func_def is None:
+        return False
+
+    # Check if body is single Expr with Ellipsis constant
+    body = func_def.body
+    if len(body) != 1:
+        return False
+
+    stmt = body[0]
+    if not isinstance(stmt, ast.Expr):
+        return False
+
+    # Check for Ellipsis constant
+    if isinstance(stmt.value, ast.Constant) and stmt.value.value is ...:
+        return True
+
+    return False
 
 
 def _extract_types_from_hint(hint) -> set[type]:
