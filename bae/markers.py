@@ -37,3 +37,28 @@ class Dep:
     """
 
     description: str
+
+
+@dataclass(frozen=True)
+class Bind:
+    """Marker for Node fields that should be available to downstream nodes.
+
+    Bind-annotated fields expose their values for downstream type-based
+    dependency injection. Only one Bind per type is allowed across the
+    entire graph (enforced by Graph.validate()).
+
+    Usage:
+        class MyNode(Node):
+            conn: Annotated[DatabaseConn, Bind()]
+
+        class DownstreamNode(Node):
+            def __call__(
+                self,
+                lm,
+                conn: Annotated[DatabaseConn, Dep(description="DB connection")],
+            ) -> None:
+                # conn will be injected from MyNode's Bind field
+                ...
+    """
+
+    pass

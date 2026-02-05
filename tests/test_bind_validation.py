@@ -3,6 +3,7 @@
 from typing import Annotated
 
 import pytest
+from pydantic import BaseModel
 
 from bae.graph import Graph
 from bae.markers import Bind
@@ -10,23 +11,23 @@ from bae.node import Node
 from bae.lm import LM
 
 
-# Mock types for Bind
-class DatabaseConn:
+# Mock types for Bind (must be Pydantic-compatible)
+class DatabaseConn(BaseModel):
     """Mock database connection type."""
 
-    pass
+    host: str = "localhost"
 
 
-class CacheClient:
+class CacheClient(BaseModel):
     """Mock cache client type."""
 
-    pass
+    host: str = "localhost"
 
 
-class Config:
+class Config(BaseModel):
     """Mock config type."""
 
-    pass
+    name: str = "default"
 
 
 # Test nodes for Bind marker
@@ -110,7 +111,7 @@ class ProcessSingleBind(Node):
 # Graph with duplicate Bind type (invalid)
 class StartDuplicateBind(Node):
     query: str
-    first_conn: Annotated[DatabaseConn, Bind()]
+    first_conn: Annotated[DatabaseConn, Bind()] = DatabaseConn()
 
     def __call__(self, lm: LM) -> ProcessDuplicateBind:
         return ProcessDuplicateBind(task=self.query)
@@ -118,7 +119,7 @@ class StartDuplicateBind(Node):
 
 class ProcessDuplicateBind(Node):
     task: str
-    second_conn: Annotated[DatabaseConn, Bind()]  # Duplicate type!
+    second_conn: Annotated[DatabaseConn, Bind()] = DatabaseConn()  # Duplicate type!
 
     def __call__(self, lm: LM) -> None:
         return None
@@ -127,7 +128,7 @@ class ProcessDuplicateBind(Node):
 # Graph with different Bind types (valid)
 class StartMultipleBindTypes(Node):
     query: str
-    conn: Annotated[DatabaseConn, Bind()]
+    conn: Annotated[DatabaseConn, Bind()] = DatabaseConn()
 
     def __call__(self, lm: LM) -> ProcessMultipleBindTypes:
         return ProcessMultipleBindTypes(task=self.query)
@@ -135,7 +136,7 @@ class StartMultipleBindTypes(Node):
 
 class ProcessMultipleBindTypes(Node):
     task: str
-    cache: Annotated[CacheClient, Bind()]  # Different type, valid
+    cache: Annotated[CacheClient, Bind()] = CacheClient()  # Different type, valid
 
     def __call__(self, lm: LM) -> None:
         return None
