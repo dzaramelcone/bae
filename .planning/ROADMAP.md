@@ -55,19 +55,23 @@ Plans:
 **Goal**: Graph.run() auto-routes and injects deps; LM uses dspy.Predict
 **Depends on**: Phase 1.1
 **Requirements**: ROUTE-01, ROUTE-02, ROUTE-03, DEP-02, DEP-03, DSP-01, DSP-02, DSP-03, DSP-04
+**Plans:** 5 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — TDD: Foundation types (GraphResult, Bind, exceptions) + validation
+- [ ] 02-02-PLAN.md — TDD: Auto-routing (return type introspection, ellipsis body)
+- [ ] 02-03-PLAN.md — TDD: DSPy Predict backend with self-correction
+- [ ] 02-04-PLAN.md — TDD: Dep injection via incant
+- [ ] 02-05-PLAN.md — Integration wiring and verification
+
 **Success Criteria** (what must be TRUE):
-  1. Graph.run() introspects return type: union → decide, single type → make
+  1. Graph.run() introspects return type: union -> decide, single type -> make
   2. `__call__` with `...` body uses automatic routing (no explicit lm.decide/make)
   3. Custom `__call__` logic still works as escape hatch
   4. Dep-annotated `__call__` params are injected by Graph.run() via incant
   5. dspy.Predict replaces naive prompts for LM calls
   6. Pydantic models (Node subclasses) parse correctly from dspy.Predict output
   7. Union return types work with two-step pattern (pick type, then fill)
-**Plans**: TBD
-
-Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
 
 ### Phase 3: Optimization
 **Goal**: Collect execution traces and compile optimized prompts with BootstrapFewShot
@@ -108,7 +112,7 @@ Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4
 |-------|----------------|--------|-----------|
 | 1. Signature Generation | 1/1 | Complete ✓ | 2026-02-04 |
 | 1.1 Deps & Signature Extension | 1/1 | Complete ✓ | 2026-02-04 |
-| 2. DSPy Integration | 0/TBD | Not started | - |
+| 2. DSPy Integration | 0/5 | Planned | - |
 | 3. Optimization | 0/TBD | Not started | - |
 | 4. Production Runtime | 0/TBD | Not started | - |
 
@@ -116,4 +120,5 @@ Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4
 *Roadmap created: 2026-02-04*
 *Phase 1 planned: 2026-02-04*
 *Phase 1.1 planned: 2026-02-04*
+*Phase 2 planned: 2026-02-04*
 *Depth: comprehensive (but focused milestone = 4 phases)*
