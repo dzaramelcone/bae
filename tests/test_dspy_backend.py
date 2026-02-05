@@ -303,7 +303,7 @@ class TestDSPyBackendAPIFailures:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                raise Timeout("API timeout")
+                raise Timeout(message="API timeout", model="test", llm_provider="test")
             return dspy.Prediction(output='{"result": "ok", "score": 1}')
 
         with patch("bae.dspy_backend.node_to_signature") as mock_sig:
@@ -388,7 +388,7 @@ class TestDSPyBackendAPIFailures:
         def mock_call(**kwargs):
             call_times.append(time.time())
             if len(call_times) == 1:
-                raise Timeout("API timeout")
+                raise Timeout(message="API timeout", model="test", llm_provider="test")
             return dspy.Prediction(output='{"result": "ok", "score": 1}')
 
         with patch("bae.dspy_backend.node_to_signature") as mock_sig:
