@@ -96,15 +96,17 @@ Plans:
 **Goal**: Production graphs load compiled prompts at startup with graceful fallbacks
 **Depends on**: Phase 3
 **Requirements**: RUN-01, RUN-02
+**Plans:** 2 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — TDD: OptimizedLM with predictor registry and fallback
+- [ ] 04-02-PLAN.md — CompiledGraph integration and package exports
+
 **Success Criteria** (what must be TRUE):
   1. OptimizedLM wrapper loads compiled prompts at graph startup
   2. OptimizedLM uses compiled prompts when available for a node type
   3. OptimizedLM falls back to naive prompts for nodes without compiled versions
   4. Observability shows which nodes are using optimized vs naive prompts
-**Plans**: TBD
-
-Plans:
-- [ ] 04-01: TBD
 
 ## Progress
 
@@ -117,7 +119,7 @@ Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4
 | 1.1 Deps & Signature Extension | 1/1 | Complete ✓ | 2026-02-04 |
 | 2. DSPy Integration | 5/5 | Complete ✓ | 2026-02-05 |
 | 3. Optimization | 4/4 | Complete ✓ | 2026-02-05 |
-| 4. Production Runtime | 0/TBD | Not started | - |
+| 4. Production Runtime | 0/2 | Planned | - |
 
 ---
 *Roadmap created: 2026-02-04*
@@ -125,4 +127,5 @@ Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4
 *Phase 1.1 planned: 2026-02-04*
 *Phase 2 planned: 2026-02-04*
 *Phase 3 planned: 2026-02-05*
+*Phase 4 planned: 2026-02-05*
 *Depth: comprehensive (but focused milestone = 4 phases)*
