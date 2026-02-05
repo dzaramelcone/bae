@@ -1,18 +1,19 @@
-"""Tests for trace-to-example conversion, node transition metric, and save/load."""
+"""Tests for optimization: trace conversion, metric, save/load, and optimize_node."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import dspy
 
 from bae.node import Node
 from bae.optimizer import (
-    trace_to_examples,
+    load_optimized,
     node_transition_metric,
     save_optimized,
-    load_optimized,
+    trace_to_examples,
 )
 
 
@@ -528,3 +529,365 @@ class TestSaveLoadRoundTrip:
 
         # Both should have the same instruction (class name)
         assert expected_sig.__doc__ == "StartNode"
+
+
+# --- optimize_node Tests ---
+
+
+def _import_optimize_node():
+    """Helper to import optimize_node - deferred to allow RED phase to fail on import."""
+    from bae.optimizer import optimize_node
+
+    return optimize_node
+
+
+class TestOptimizeNodeFiltering:
+    """Tests for trainset filtering by node type."""
+
+    def test_filters_trainset_to_matching_node_type(self):
+        """Only examples with matching node_type are used."""
+        optimize_node = _import_optimize_node()
+
+        # Create mixed trainset
+        trainset = []
+        for i in range(15):  # 15 StartNode examples
+            ex = dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            trainset.append(ex)
+        for i in range(5):  # 5 MiddleNode examples
+            ex = dspy.Example(
+                node_type="MiddleNode",
+                data=f"data_{i}",
+                count=i,
+                next_node_type="EndNode",
+            ).with_inputs("node_type", "data", "count")
+            trainset.append(ex)
+
+        # Mock BootstrapFewShot to capture what it receives
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            mock_optimizer = MagicMock()
+            mock_bfs.return_value = mock_optimizer
+            mock_optimizer.compile.return_value = MagicMock()
+
+            optimize_node(StartNode, trainset)
+
+            # Should call compile with only StartNode examples (15)
+            call_args = mock_optimizer.compile.call_args
+            compiled_trainset = call_args.kwargs.get(
+                "trainset"
+            ) or call_args[1]["trainset"]
+            assert len(compiled_trainset) == 15
+            for ex in compiled_trainset:
+                assert ex.node_type == "StartNode"
+
+
+class TestOptimizeNodeSmallTrainset:
+    """Tests for small trainset handling (early return)."""
+
+    def test_returns_unoptimized_predictor_for_empty_trainset(self):
+        """Empty trainset returns unoptimized predictor."""
+        optimize_node = _import_optimize_node()
+
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            result = optimize_node(StartNode, [])
+
+            # Should NOT call BootstrapFewShot
+            mock_bfs.assert_not_called()
+            # Should return a dspy.Predict
+            assert isinstance(result, dspy.Predict)
+
+    def test_returns_unoptimized_predictor_for_5_examples(self):
+        """Fewer than 10 examples returns unoptimized predictor."""
+        optimize_node = _import_optimize_node()
+
+        trainset = [
+            dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            for i in range(5)
+        ]
+
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            result = optimize_node(StartNode, trainset)
+
+            mock_bfs.assert_not_called()
+            assert isinstance(result, dspy.Predict)
+
+    def test_returns_unoptimized_predictor_for_9_examples(self):
+        """Exactly 9 examples (boundary) returns unoptimized predictor."""
+        optimize_node = _import_optimize_node()
+
+        trainset = [
+            dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            for i in range(9)
+        ]
+
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            result = optimize_node(StartNode, trainset)
+
+            mock_bfs.assert_not_called()
+            assert isinstance(result, dspy.Predict)
+
+    def test_runs_optimization_for_10_examples(self):
+        """Exactly 10 examples (boundary) triggers optimization."""
+        optimize_node = _import_optimize_node()
+
+        trainset = [
+            dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            for i in range(10)
+        ]
+
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            mock_optimizer = MagicMock()
+            mock_bfs.return_value = mock_optimizer
+            mock_optimizer.compile.return_value = MagicMock(spec=dspy.Predict)
+
+            optimize_node(StartNode, trainset)
+
+            # Should call BootstrapFewShot
+            mock_bfs.assert_called_once()
+
+    def test_filters_before_checking_threshold(self):
+        """20 total examples but only 5 for target node returns unoptimized."""
+        optimize_node = _import_optimize_node()
+
+        trainset = []
+        # 5 StartNode examples
+        for i in range(5):
+            ex = dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            trainset.append(ex)
+        # 15 MiddleNode examples
+        for i in range(15):
+            ex = dspy.Example(
+                node_type="MiddleNode",
+                data=f"data_{i}",
+                count=i,
+                next_node_type="EndNode",
+            ).with_inputs("node_type", "data", "count")
+            trainset.append(ex)
+
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            result = optimize_node(StartNode, trainset)
+
+            # Should NOT call BootstrapFewShot (only 5 StartNode examples)
+            mock_bfs.assert_not_called()
+            assert isinstance(result, dspy.Predict)
+
+
+class TestOptimizeNodeBootstrapConfig:
+    """Tests for BootstrapFewShot configuration."""
+
+    def test_uses_default_metric_when_none_provided(self):
+        """Uses node_transition_metric when no metric is provided."""
+        optimize_node = _import_optimize_node()
+
+        trainset = [
+            dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            for i in range(15)
+        ]
+
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            mock_optimizer = MagicMock()
+            mock_bfs.return_value = mock_optimizer
+            mock_optimizer.compile.return_value = MagicMock(spec=dspy.Predict)
+
+            optimize_node(StartNode, trainset)
+
+            # Check metric kwarg
+            call_kwargs = mock_bfs.call_args.kwargs
+            assert call_kwargs["metric"] is node_transition_metric
+
+    def test_uses_custom_metric_when_provided(self):
+        """Uses provided metric function."""
+        optimize_node = _import_optimize_node()
+
+        trainset = [
+            dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            for i in range(15)
+        ]
+
+        def custom_metric(example, pred, trace=None):
+            return 1.0 if trace is None else True
+
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            mock_optimizer = MagicMock()
+            mock_bfs.return_value = mock_optimizer
+            mock_optimizer.compile.return_value = MagicMock(spec=dspy.Predict)
+
+            optimize_node(StartNode, trainset, metric=custom_metric)
+
+            call_kwargs = mock_bfs.call_args.kwargs
+            assert call_kwargs["metric"] is custom_metric
+
+    def test_bootstrap_config_max_bootstrapped_demos(self):
+        """BootstrapFewShot uses max_bootstrapped_demos=4."""
+        optimize_node = _import_optimize_node()
+
+        trainset = [
+            dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            for i in range(15)
+        ]
+
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            mock_optimizer = MagicMock()
+            mock_bfs.return_value = mock_optimizer
+            mock_optimizer.compile.return_value = MagicMock(spec=dspy.Predict)
+
+            optimize_node(StartNode, trainset)
+
+            call_kwargs = mock_bfs.call_args.kwargs
+            assert call_kwargs["max_bootstrapped_demos"] == 4
+
+    def test_bootstrap_config_max_labeled_demos(self):
+        """BootstrapFewShot uses max_labeled_demos=8."""
+        optimize_node = _import_optimize_node()
+
+        trainset = [
+            dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            for i in range(15)
+        ]
+
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            mock_optimizer = MagicMock()
+            mock_bfs.return_value = mock_optimizer
+            mock_optimizer.compile.return_value = MagicMock(spec=dspy.Predict)
+
+            optimize_node(StartNode, trainset)
+
+            call_kwargs = mock_bfs.call_args.kwargs
+            assert call_kwargs["max_labeled_demos"] == 8
+
+    def test_bootstrap_config_max_rounds(self):
+        """BootstrapFewShot uses max_rounds=1."""
+        optimize_node = _import_optimize_node()
+
+        trainset = [
+            dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            for i in range(15)
+        ]
+
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            mock_optimizer = MagicMock()
+            mock_bfs.return_value = mock_optimizer
+            mock_optimizer.compile.return_value = MagicMock(spec=dspy.Predict)
+
+            optimize_node(StartNode, trainset)
+
+            call_kwargs = mock_bfs.call_args.kwargs
+            assert call_kwargs["max_rounds"] == 1
+
+
+class TestOptimizeNodeSignature:
+    """Tests for signature generation from node class."""
+
+    def test_uses_node_to_signature_for_predictor(self):
+        """optimize_node uses node_to_signature to create the student."""
+        optimize_node = _import_optimize_node()
+
+        trainset = [
+            dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            for i in range(5)  # Small trainset - returns unoptimized
+        ]
+
+        with patch("bae.optimizer.node_to_signature") as mock_sig:
+            mock_signature = MagicMock()
+            mock_sig.return_value = mock_signature
+
+            optimize_node(StartNode, trainset)
+
+            mock_sig.assert_called_once_with(StartNode)
+
+    def test_unoptimized_predictor_uses_generated_signature(self):
+        """Unoptimized predictor is created with node_to_signature result."""
+        optimize_node = _import_optimize_node()
+
+        trainset = [
+            dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            for i in range(5)  # Small trainset
+        ]
+
+        with (
+            patch("bae.optimizer.node_to_signature") as mock_sig,
+            patch("bae.optimizer.dspy.Predict") as mock_predict,
+        ):
+            mock_signature = MagicMock()
+            mock_sig.return_value = mock_signature
+            mock_predictor = MagicMock()
+            mock_predict.return_value = mock_predictor
+
+            result = optimize_node(StartNode, trainset)
+
+            mock_predict.assert_called_once_with(mock_signature)
+            assert result is mock_predictor
+
+
+class TestOptimizeNodeReturnsOptimizedPredictor:
+    """Tests that optimize_node returns the compiled result."""
+
+    def test_returns_result_from_optimizer_compile(self):
+        """Returns the result of optimizer.compile()."""
+        optimize_node = _import_optimize_node()
+
+        trainset = [
+            dspy.Example(
+                node_type="StartNode",
+                request=f"request_{i}",
+                next_node_type="MiddleNode",
+            ).with_inputs("node_type", "request")
+            for i in range(15)
+        ]
+
+        with patch("bae.optimizer.BootstrapFewShot") as mock_bfs:
+            mock_optimizer = MagicMock()
+            mock_bfs.return_value = mock_optimizer
+            optimized_predictor = MagicMock(spec=dspy.Predict)
+            mock_optimizer.compile.return_value = optimized_predictor
+
+            result = optimize_node(StartNode, trainset)
+
+            assert result is optimized_predictor
