@@ -5,25 +5,25 @@
 See: .planning/PROJECT.md (updated 2026-02-04)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Phase 4 - Production Runtime (Plan 1 of 2 complete)
+**Current focus:** Phase 4 - Production Runtime COMPLETE
 
 ## Current Position
 
 Phase: 4 of 4 (Production Runtime)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-05 - Completed 04-01-PLAN.md (OptimizedLM)
+Plan: 2 of 2 in current phase - COMPLETE
+Status: Phase complete
+Last activity: 2026-02-05 - Completed 04-02-PLAN.md (CompiledGraph.run() Integration)
 
-Progress: [█████████▒] 92%
+Progress: [██████████] 100%
 
-Note: Phase 4 started. OptimizedLM complete, CompiledGraph.run() next.
+Note: All 4 phases complete. Full production runtime integration achieved.
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
-- Average duration: 6.5 min
-- Total execution time: 1.31 hours
+- Total plans completed: 13
+- Average duration: 6.2 min
+- Total execution time: 1.38 hours
 
 **By Phase:**
 
@@ -33,11 +33,11 @@ Note: Phase 4 started. OptimizedLM complete, CompiledGraph.run() next.
 | 01.1-deps-signature-extension | 1 | 3 min | 3 min |
 | 02-dspy-integration | 5 | 34 min | 6.8 min |
 | 03-optimization | 4 | 29 min | 7.25 min |
-| 04-production-runtime | 1 | 5 min | 5 min |
+| 04-production-runtime | 2 | 9 min | 4.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-02 (10 min), 03-03 (8 min), 03-04 (6 min), 04-01 (5 min)
-- Trend: Consistent (plans ~5-10 min average)
+- Last 5 plans: 03-03 (8 min), 03-04 (6 min), 04-01 (5 min), 04-02 (4 min)
+- Trend: Consistent and efficient (plans ~4-8 min average)
 
 *Updated after each plan completion*
 
@@ -79,6 +79,9 @@ Recent decisions affecting current work:
 - **IMPLEMENTED (04-01)**: Dict-based predictor lookup with type[Node] keys
 - **IMPLEMENTED (04-01)**: Stats tracking for optimized vs naive usage
 - **IMPLEMENTED (04-01)**: decide() inherited unchanged - uses overridden make()
+- **IMPLEMENTED (04-02)**: CompiledGraph.run() delegates to Graph.run() with OptimizedLM
+- **IMPLEMENTED (04-02)**: Sync-only run() method (bae is sync-only)
+- **IMPLEMENTED (04-02)**: create_optimized_lm() factory for convenience
 
 ### Research Flags
 
@@ -88,7 +91,7 @@ From research/SUMMARY.md:
 
 ### Pending Todos
 
-- 04-02: CompiledGraph.run() integration with OptimizedLM
+None - all phases complete.
 
 ### Blockers/Concerns
 
@@ -97,5 +100,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-05
-Stopped at: Completed 04-01-PLAN.md (OptimizedLM with Predictor Registry)
+Stopped at: Completed 04-02-PLAN.md (CompiledGraph.run() Integration)
 Resume file: None
