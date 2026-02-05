@@ -10,20 +10,20 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 ## Current Position
 
 Phase: 2 of 4 (DSPy Integration)
-Plan: 3 of 5 in current phase (02-01, 02-02, 02-03 complete)
+Plan: 4 of 5 in current phase (02-01, 02-02, 02-03, 02-04 complete)
 Status: In progress
-Last activity: 2026-02-05 - Completed 02-02-PLAN.md (Auto-Routing)
+Last activity: 2026-02-05 - Completed 02-04-PLAN.md (Dep Injection)
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 60%
 
-Note: Plans 02-01, 02-02, and 02-03 completed. Plans 02-04, 02-05 remaining.
+Note: Plans 02-01, 02-02, 02-03, 02-04 completed. Plan 02-05 remaining.
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 5.8 min
-- Total execution time: 0.48 hours
+- Total plans completed: 6
+- Average duration: 6.2 min
+- Total execution time: 0.62 hours
 
 **By Phase:**
 
@@ -31,10 +31,10 @@ Note: Plans 02-01, 02-02, and 02-03 completed. Plans 02-04, 02-05 remaining.
 |-------|-------|-------|----------|
 | 01-signature-generation | 1 | 8 min | 8 min |
 | 01.1-deps-signature-extension | 1 | 3 min | 3 min |
-| 02-dspy-integration | 3 | 18 min | 6 min |
+| 02-dspy-integration | 4 | 26 min | 6.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 01.1-01 (3 min), 02-03 (4 min), 02-01 (6 min), 02-02 (8 min)
+- Last 5 plans: 01.1-01 (3 min), 02-03 (4 min), 02-01 (6 min), 02-02 (8 min), 02-04 (8 min)
 - Trend: Consistent (TDD plans ~6 min average)
 
 *Updated after each plan completion*
@@ -56,8 +56,9 @@ Recent decisions affecting current work:
 - **IMPLEMENTED (02-03)**: Two-step decide - separate choice prediction from instance creation
 - **IMPLEMENTED (02-01)**: Bind marker - empty marker for type-unique field binding
 - **IMPLEMENTED (02-01)**: Exception hierarchy - BaeError/BaeParseError/BaeLMError with cause chaining
-- **NEW (02-02)**: A | None triggers decide, not make (LLM chooses whether to produce A or terminate)
-- **NEW (02-02)**: GraphResult always returned from Graph.run() (consistent API, trace for debugging)
+- **IMPLEMENTED (02-02)**: A | None triggers decide, not make (LLM chooses whether to produce A or terminate)
+- **IMPLEMENTED (02-02)**: GraphResult always returned from Graph.run() (consistent API, trace for debugging)
+- **IMPLEMENTED (02-04)**: Dep injection via incant - external deps from run() kwargs, Bind capture
 
 ### Research Flags
 
@@ -76,5 +77,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-05
-Stopped at: Completed 02-02-PLAN.md (Auto-Routing)
+Stopped at: Completed 02-04-PLAN.md (Dep Injection)
 Resume file: None
