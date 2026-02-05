@@ -8,7 +8,7 @@ from __future__ import annotations
 import types
 from typing import TYPE_CHECKING, Protocol, TypeVar, get_args
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, format_as_xml
 
 if TYPE_CHECKING:
     from bae.node import Node
@@ -56,16 +56,14 @@ class PydanticAIBackend:
         return self._agents[cache_key]
 
     def _node_to_prompt(self, node: Node) -> str:
-        """Convert node state to a prompt string."""
-        lines = [f"Current state ({node.__class__.__name__}):"]
-        for name, value in node.model_dump().items():
-            lines.append(f"  {name}: {value!r}")
+        """Convert node state to XML prompt string."""
+        xml = format_as_xml(node.model_dump(), root_tag=node.__class__.__name__)
 
         # Add docstring as context
         if node.__class__.__doc__:
-            lines.append(f"\nContext: {node.__class__.__doc__}")
+            return f"{xml}\n\nContext: {node.__class__.__doc__}"
 
-        return "\n".join(lines)
+        return xml
 
     def make(self, node: Node, target: type[T]) -> T:
         """Produce an instance of target type using pydantic-ai."""
@@ -118,13 +116,13 @@ class ClaudeCLIBackend:
         self.timeout = timeout
 
     def _node_to_prompt(self, node: Node) -> str:
-        """Convert node state to a prompt string."""
-        lines = [f"Current state ({node.__class__.__name__}):"]
-        for name, value in node.model_dump().items():
-            lines.append(f"  {name}: {value!r}")
+        """Convert node state to XML prompt string."""
+        xml = format_as_xml(node.model_dump(), root_tag=node.__class__.__name__)
+
         if node.__class__.__doc__:
-            lines.append(f"\nContext: {node.__class__.__doc__}")
-        return "\n".join(lines)
+            return f"{xml}\n\nContext: {node.__class__.__doc__}"
+
+        return xml
 
     def _build_schema(self, types: tuple[type, ...], allow_none: bool) -> dict:
         """Build JSON schema for union of types."""

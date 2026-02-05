@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Annotated, Any, TypeVar, get_args, get_origin,
 
 import dspy
 from pydantic import ValidationError
+from pydantic_ai import format_as_xml
 
 from bae.compiler import node_to_signature
 from bae.exceptions import BaeLMError, BaeParseError
@@ -236,10 +237,8 @@ class DSPyBackend:
         choice_signature = dspy.make_signature(fields, "DecideNextStep")
         predictor = dspy.Predict(choice_signature)
 
-        # Build context from node
-        context = f"Node: {node.__class__.__name__}\n"
-        for name, value in node.model_dump().items():
-            context += f"  {name}: {value!r}\n"
+        # Build context from node as XML
+        context = format_as_xml(node.model_dump(), root_tag=node.__class__.__name__)
 
         result = predictor(context=context)
         chosen = result.choice.strip()
