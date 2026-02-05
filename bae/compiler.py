@@ -5,6 +5,8 @@ Compiles a Graph into a DSPy program for prompt optimization.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
 import dspy
@@ -26,17 +28,50 @@ class CompiledGraph:
     def __init__(self, graph: Graph, signatures: dict[type[Node], Any]):
         self.graph = graph
         self.signatures = signatures
-        # TODO: DSPy modules for each node
+        self.optimized: dict[type[Node], dspy.Predict] = {}
 
     async def run(self, start_node: Node, **deps) -> Node | None:
         """Run the compiled graph."""
         # TODO: Use DSPy modules to produce next nodes
         raise NotImplementedError("DSPy compilation not yet implemented")
 
-    def optimize(self, examples: list[tuple[Node, Node]], metric: Any) -> CompiledGraph:
-        """Optimize the graph using DSPy."""
-        # TODO: DSPy optimization
-        raise NotImplementedError("DSPy optimization not yet implemented")
+    def optimize(
+        self,
+        trainset: list[dspy.Example],
+        metric: Callable | None = None,
+    ) -> "CompiledGraph":
+        """Optimize all node predictors with collected traces.
+
+        Args:
+            trainset: Training examples (from trace_to_examples).
+            metric: Scoring function (defaults to node_transition_metric).
+
+        Returns:
+            Self for chaining.
+        """
+        # Lazy import to avoid circular import
+        from bae.optimizer import optimize_node
+
+        for node_cls in self.graph.nodes:
+            self.optimized[node_cls] = optimize_node(node_cls, trainset, metric)
+        return self
+
+    def save(self, path: str | Path) -> None:
+        """Save optimized predictors to directory."""
+        # Lazy import to avoid circular import
+        from bae.optimizer import save_optimized
+
+        save_optimized(self.optimized, Path(path))
+
+    @classmethod
+    def load(cls, graph: "Graph", path: str | Path) -> "CompiledGraph":
+        """Load optimized predictors from directory."""
+        # Lazy import to avoid circular import
+        from bae.optimizer import load_optimized
+
+        compiled = compile_graph(graph)
+        compiled.optimized = load_optimized(list(graph.nodes), Path(path))
+        return compiled
 
 
 def _extract_context_fields(
