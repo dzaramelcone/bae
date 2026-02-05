@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Signature Generation** - Convert Node classes to DSPy Signatures ✓
 - [x] **Phase 1.1: Deps & Signature Extension** - Dep marker, __call__ params become InputFields (INSERTED) ✓
 - [x] **Phase 2: DSPy Integration** - Auto-routing, dep injection, dspy.Predict ✓
-- [ ] **Phase 3: Optimization** - Trace collection and BootstrapFewShot compilation
+- [x] **Phase 3: Optimization** - Trace collection and BootstrapFewShot compilation ✓
 - [ ] **Phase 4: Production Runtime** - Load compiled prompts with fallbacks
 
 ## Phase Details
@@ -80,10 +80,10 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — TDD: Trace-to-Example conversion and metric function
-- [ ] 03-02-PLAN.md — TDD: BootstrapFewShot optimization
-- [ ] 03-03-PLAN.md — TDD: Save/Load compiled prompts
-- [ ] 03-04-PLAN.md — Wire optimizer into CompiledGraph + exports
+- [x] 03-01-PLAN.md — TDD: Trace-to-Example conversion and metric function ✓
+- [x] 03-02-PLAN.md — TDD: BootstrapFewShot optimization ✓
+- [x] 03-03-PLAN.md — TDD: Save/Load compiled prompts ✓
+- [x] 03-04-PLAN.md — Wire optimizer into CompiledGraph + exports ✓
 
 **Success Criteria** (what must be TRUE):
   1. Graph.run() captures (input_node, output_node) pairs as execution traces
@@ -116,7 +116,7 @@ Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4
 | 1. Signature Generation | 1/1 | Complete ✓ | 2026-02-04 |
 | 1.1 Deps & Signature Extension | 1/1 | Complete ✓ | 2026-02-04 |
 | 2. DSPy Integration | 5/5 | Complete ✓ | 2026-02-05 |
-| 3. Optimization | 0/4 | Planned | - |
+| 3. Optimization | 4/4 | Complete ✓ | 2026-02-05 |
 | 4. Production Runtime | 0/TBD | Not started | - |
 
 ---

@@ -34,10 +34,10 @@
 
 ### Optimization
 
-- [ ] **OPT-01**: Trace collection during graph execution
-- [ ] **OPT-02**: BootstrapFewShot optimization with collected traces
-- [ ] **OPT-03**: Save compiled prompts (JSON)
-- [ ] **OPT-04**: Load compiled prompts at runtime
+- [x] **OPT-01**: Trace collection during graph execution
+- [x] **OPT-02**: BootstrapFewShot optimization with collected traces
+- [x] **OPT-03**: Save compiled prompts (JSON)
+- [x] **OPT-04**: Load compiled prompts at runtime
 
 ### Runtime
 
@@ -85,10 +85,10 @@
 | DSP-02 | Phase 2 | Complete |
 | DSP-03 | Phase 2 | Complete |
 | DSP-04 | Phase 2 | Complete |
-| OPT-01 | Phase 3 | Pending |
-| OPT-02 | Phase 3 | Pending |
-| OPT-03 | Phase 3 | Pending |
-| OPT-04 | Phase 3 | Pending |
+| OPT-01 | Phase 3 | Complete |
+| OPT-02 | Phase 3 | Complete |
+| OPT-03 | Phase 3 | Complete |
+| OPT-04 | Phase 3 | Complete |
 | RUN-01 | Phase 4 | Pending |
 | RUN-02 | Phase 4 | Pending |
 
