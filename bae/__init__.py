@@ -7,6 +7,13 @@ from bae.graph import Graph
 from bae.lm import LM, ClaudeCLIBackend, PydanticAIBackend
 from bae.markers import Bind, Context, Dep
 from bae.node import Node, NodeConfig
+from bae.optimizer import (
+    load_optimized,
+    node_transition_metric,
+    optimize_node,
+    save_optimized,
+    trace_to_examples,
+)
 from bae.result import GraphResult
 
 __all__ = [
@@ -27,6 +34,12 @@ __all__ = [
     # Compiler
     "node_to_signature",
     "compile_graph",
+    # Optimizer
+    "trace_to_examples",
+    "node_transition_metric",
+    "optimize_node",
+    "save_optimized",
+    "load_optimized",
     # Exceptions
     "BaeError",
     "BaeParseError",
