@@ -1,7 +1,8 @@
 """Bae: Type-driven agent graphs with DSPy optimization."""
 
-from bae.compiler import compile_graph, node_to_signature
+from bae.compiler import compile_graph, create_optimized_lm, node_to_signature
 from bae.dspy_backend import DSPyBackend
+from bae.optimized_lm import OptimizedLM
 from bae.exceptions import BaeError, BaeLMError, BaeParseError
 from bae.graph import Graph
 from bae.lm import LM, ClaudeCLIBackend, PydanticAIBackend
@@ -29,11 +30,13 @@ __all__ = [
     # LM backends
     "LM",
     "DSPyBackend",
+    "OptimizedLM",
     "PydanticAIBackend",
     "ClaudeCLIBackend",
     # Compiler
     "node_to_signature",
     "compile_graph",
+    "create_optimized_lm",
     # Optimizer
     "trace_to_examples",
     "node_transition_metric",
