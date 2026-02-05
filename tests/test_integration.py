@@ -12,6 +12,7 @@ import pytest
 from bae.node import Node
 from bae.graph import Graph
 from bae.lm import LM, PydanticAIBackend, ClaudeCLIBackend
+from bae.result import GraphResult
 
 
 # Simple task decomposition graph
@@ -120,18 +121,20 @@ class TestPydanticAIBackend:
         graph = Graph(start=Question)
 
         question = Question(text="What is 2 + 2?")
-        final = graph.run(question, lm=lm, max_steps=5)
+        result = graph.run(question, lm=lm, max_steps=5)
 
-        assert final is None
+        assert isinstance(result, GraphResult)
+        assert result.node is None  # Terminated successfully
 
     def test_graph_run_task_decomposition(self, lm):
         """Run task decomposition graph."""
         graph = Graph(start=Task)
 
         task = Task(description="Make a peanut butter sandwich")
-        final = graph.run(task, lm=lm, max_steps=10)
+        result = graph.run(task, lm=lm, max_steps=10)
 
-        assert final is None
+        assert isinstance(result, GraphResult)
+        assert result.node is None  # Terminated successfully
 
 
 class TestClaudeCLIBackend:
@@ -162,9 +165,10 @@ class TestClaudeCLIBackend:
         graph = Graph(start=Question)
 
         question = Question(text="What is the capital of France?")
-        final = graph.run(question, lm=lm, max_steps=5)
+        result = graph.run(question, lm=lm, max_steps=5)
 
-        assert final is None
+        assert isinstance(result, GraphResult)
+        assert result.node is None  # Terminated successfully
 
 
 class TestGraphTopology:

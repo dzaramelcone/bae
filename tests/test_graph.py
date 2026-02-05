@@ -4,6 +4,7 @@ import pytest
 from bae.graph import Graph
 from bae.node import Node
 from bae.lm import LM
+from bae.result import GraphResult
 
 
 # Mock LM for testing
@@ -133,8 +134,10 @@ class TestGraphRun:
 
         result = graph.run(Start(query="hello"), lm=lm)
 
-        # Ended with None
-        assert result is None
+        # Returns GraphResult with node=None (terminated)
+        assert isinstance(result, GraphResult)
+        assert result.node is None
+        assert len(result.trace) == 2  # Start, Process
 
     def test_run_multiple_steps(self):
         graph = Graph(start=Start)
@@ -147,7 +150,9 @@ class TestGraphRun:
         ])
 
         result = graph.run(Start(query="hello"), lm=lm)
-        assert result is None
+        assert isinstance(result, GraphResult)
+        assert result.node is None
+        assert len(result.trace) == 3  # Start, Process, Review
 
     def test_run_max_steps(self):
         graph = Graph(start=Infinite)
