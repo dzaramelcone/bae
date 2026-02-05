@@ -49,12 +49,26 @@ def _has_ellipsis_body(method) -> bool:
     if func_def is None:
         return False
 
-    # Check if body is single Expr with Ellipsis constant
+    # Check if body is just `...` (with optional docstring)
+    # Body can be: [Ellipsis] or [docstring, Ellipsis]
     body = func_def.body
-    if len(body) != 1:
+
+    # Skip leading docstring if present
+    start_idx = 0
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        start_idx = 1
+
+    # After docstring, should be exactly one statement: Ellipsis
+    remaining = body[start_idx:]
+    if len(remaining) != 1:
         return False
 
-    stmt = body[0]
+    stmt = remaining[0]
     if not isinstance(stmt, ast.Expr):
         return False
 
