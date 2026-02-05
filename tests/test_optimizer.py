@@ -891,3 +891,103 @@ class TestOptimizeNodeReturnsOptimizedPredictor:
             result = optimize_node(StartNode, trainset)
 
             assert result is optimized_predictor
+
+
+# ============================================================
+# Fixtures for CompiledGraph Integration Tests
+# ============================================================
+
+
+import pytest
+from typing import Annotated
+
+from bae import Graph, compile_graph, LM
+from bae.compiler import CompiledGraph
+from bae.markers import Context
+
+
+# Test nodes for CompiledGraph tests - need __call__ with proper type hints
+class CompiledEndNode(Node):
+    """Terminal node for compiled graph tests."""
+
+    result: str
+
+    def __call__(self, lm: LM) -> None:
+        ...
+
+
+class CompiledStartNode(Node):
+    """Starting node for compiled graph tests."""
+
+    text: Annotated[str, Context(description="The text")]
+
+    def __call__(self, lm: LM) -> CompiledEndNode:
+        ...
+
+
+@pytest.fixture
+def sample_trainset():
+    """Create sample training set for optimizer tests.
+
+    Intentionally small - not enough for real optimization,
+    but sufficient for testing the plumbing.
+    """
+    examples = []
+    for i in range(5):
+        ex = dspy.Example(
+            node_type="TestNode",
+            text=f"sample {i}",
+            next_node_type="NextNode",
+        ).with_inputs("node_type", "text")
+        examples.append(ex)
+    return examples
+
+
+# ============================================================
+# CompiledGraph Integration Tests
+# ============================================================
+
+
+class TestCompiledGraphOptimize:
+    """Tests for CompiledGraph.optimize()."""
+
+    def test_optimize_creates_predictors_for_all_nodes(self, sample_trainset):
+        """optimize() creates optimized predictor for each node in graph."""
+        graph = Graph(start=CompiledStartNode)
+        compiled = compile_graph(graph)
+
+        # Optimize with trainset (may be small, that's ok)
+        compiled.optimize(sample_trainset)
+
+        # Should have predictors for both nodes
+        assert CompiledStartNode in compiled.optimized
+        assert CompiledEndNode in compiled.optimized
+
+    def test_optimize_returns_self_for_chaining(self, sample_trainset):
+        """optimize() returns self for method chaining."""
+        graph = Graph(start=CompiledEndNode)
+        compiled = compile_graph(graph)
+
+        result = compiled.optimize(sample_trainset)
+        assert result is compiled
+
+
+class TestCompiledGraphSaveLoad:
+    """Tests for CompiledGraph save/load."""
+
+    def test_save_load_roundtrip(self, tmp_path, sample_trainset):
+        """save() then load() produces working CompiledGraph."""
+        graph = Graph(start=CompiledStartNode)
+        compiled = compile_graph(graph)
+        compiled.optimize(sample_trainset)
+
+        # Save
+        save_path = tmp_path / "compiled"
+        compiled.save(save_path)
+
+        # Load into new CompiledGraph
+        loaded = CompiledGraph.load(graph, save_path)
+
+        # Should have same nodes in optimized dict
+        assert CompiledStartNode in loaded.optimized
+        assert CompiledEndNode in loaded.optimized
