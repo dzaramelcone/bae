@@ -10,18 +10,20 @@ See: .planning/PROJECT.md (updated 2026-02-04)
 ## Current Position
 
 Phase: 2 of 4 (DSPy Integration)
-Plan: 3 of TBD in current phase
+Plan: 1+3 of 5 in current phase (executed out of order)
 Status: In progress
-Last activity: 2026-02-05 — Completed 02-03-PLAN.md (DSPyBackend)
+Last activity: 2026-02-05 - Completed 02-01-PLAN.md (Foundation Types)
 
 Progress: [████░░░░░░] 40%
+
+Note: Plans 02-01 and 02-03 completed. Plans 02-02, 02-04, 02-05 remaining.
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 5 min
-- Total execution time: 0.25 hours
+- Total execution time: 0.33 hours
 
 **By Phase:**
 
@@ -29,11 +31,11 @@ Progress: [████░░░░░░] 40%
 |-------|-------|-------|----------|
 | 01-signature-generation | 1 | 8 min | 8 min |
 | 01.1-deps-signature-extension | 1 | 3 min | 3 min |
-| 02-dspy-integration | 1 | 4 min | 4 min |
+| 02-dspy-integration | 2 | 10 min | 5 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (8 min), 01.1-01 (3 min), 02-03 (4 min)
-- Trend: Improving (TDD plans faster due to clear scope)
+- Last 5 plans: 01-01 (8 min), 01.1-01 (3 min), 02-03 (4 min), 02-01 (6 min)
+- Trend: Consistent (TDD plans ~5 min average)
 
 *Updated after each plan completion*
 
@@ -52,6 +54,8 @@ Recent decisions affecting current work:
 - **NEW**: `__call__` body `...` signals automatic routing; custom logic still works
 - **NEW (02-03)**: Self-correction retry - pass parse error as input hint on retry
 - **NEW (02-03)**: Two-step decide - separate choice prediction from instance creation
+- **NEW (02-01)**: Bind marker - empty marker for type-unique field binding
+- **NEW (02-01)**: Exception hierarchy - BaeError/BaeParseError/BaeLMError with cause chaining
 
 ### Research Flags
 
@@ -70,5 +74,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-05
-Stopped at: Completed 02-03-PLAN.md (DSPyBackend)
+Stopped at: Completed 02-01-PLAN.md (Foundation Types) and 02-03-PLAN.md (DSPyBackend)
 Resume file: None
