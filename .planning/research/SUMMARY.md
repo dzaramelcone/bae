@@ -1,259 +1,208 @@
 # Project Research Summary
 
-**Project:** Bae - Type-driven agent graphs with DSPy optimization
-**Domain:** LLM agent framework with prompt compilation
-**Researched:** 2026-02-04
-**Confidence:** MEDIUM-HIGH
+**Project:** Bae v2.0 "Context Frames"
+**Domain:** Type-driven agent graphs with dependency injection, trace-based recall, and DSPy optimization
+**Researched:** 2026-02-07
+**Confidence:** HIGH
 
 ## Executive Summary
 
-Bae integrates DSPy's prompt optimization framework into an existing type-driven agent graph system. The core insight from research: DSPy doesn't replace Bae's execution framework—it optimizes the prompts used during execution. Bae's existing Node-based architecture (Pydantic models with type hints) maps cleanly to DSPy's Signature-based approach. Class names become task descriptions, field annotations become input/output specs, and DSPy's optimizers tune these prompts from traced executions.
+Bae v2.0's context frame pattern is a genuine innovation in the agent framework space. By making Pydantic model fields the dependency injection site—where each field independently declares how it gets its value via `Dep(callable)` or `Recall()` metadata—bae inverts the typical control flow. Instead of nodes producing successors, bae orchestrates field assembly from three sources (dependency callables, trace search, LLM generation), then constructs nodes. No surveyed framework (FastAPI, PydanticAI, LangGraph, DSPy, Dagster) implements per-field dependency resolution on model classes or type-based trace recall for runtime injection.
 
-The recommended approach is incremental integration. Phase 1 establishes the Node-to-Signature conversion and validates that Bae's two-step decide pattern (pick type, then fill fields) works with DSPy. Phase 2 adds trace collection during normal graph execution. Phase 3 wires optimizers (starting with BootstrapFewShot for simplicity). Phase 4 handles deployment of optimized prompts. This phasing avoids the critical pitfall of integration complexity underestimation—treating DSPy as a complete solution rather than a prompt optimization layer.
+The recommended approach leverages stdlib exclusively—no new dependencies needed. Python's `graphlib.TopologicalSorter` handles dependency chaining with cycle detection, `get_type_hints(include_extras=True)` extracts Annotated metadata, and Pydantic's `FieldInfo.metadata` categorizes field sources. The one dependency to remove is `incant`, which v2's simpler, purpose-built `Dep(callable)` system replaces entirely. Critical validation shows all patterns work correctly on Python 3.14 + Pydantic 2.12.5.
 
-Key risks center on architectural mismatches: the two-step decide pattern needs explicit validation with DSPy, adapter selection must match model capabilities (ChatAdapter default, JSONAdapter only for models with response_format support), and Bae's make/decide abstraction may become redundant once DSPy modules handle LM calls. The mitigation strategy is to prototype these integration points in Phase 1 before committing to larger architectural changes, and be willing to refactor redundant layers rather than maintaining duplicate abstractions.
+The primary architectural risk is Pydantic's eager validation of required fields at `__init__` time, which conflicts with bae's intent to populate Dep/Recall fields after construction. Using `model_construct()` for internal node creation (bypassing validation) followed by explicit validation solves this cleanly without polluting type signatures with `Optional` everywhere. Secondary risks include circular dependency chains (mitigated by upfront DAG validation with `graphlib.CycleError`) and type collision in Recall (mitigated by uniqueness validation at graph build time). The refactoring is focused, not a rewrite—existing topology discovery, validation, and trace collection survive with minor modifications.
 
 ## Key Findings
 
 ### Recommended Stack
 
-DSPy 3.1.x (current stable: 3.1.2) provides mature Pydantic integration that aligns perfectly with Bae's BaseModel-based nodes. The critical discovery: DSPy's ChatAdapter handles Pydantic types natively, and `dspy.Predict` replaces the deprecated `TypedPredictor`. The integration path is straightforward—convert Node classes to Signature classes at compile time, use class names and docstrings as instructions, and let DSPy's optimizers tune from there.
+v2.0 requires **zero new dependencies**. Every capability—DAG resolution, Annotated metadata extraction, field categorization, trace search—is covered by Python's stdlib (`graphlib`, `typing`) and Pydantic's existing `FieldInfo` API. The key verified insight: Pydantic's `FieldInfo.metadata` already contains `Dep`/`Recall` instances when fields use `Annotated[T, Dep(fn)]`, enabling clean introspection without re-parsing.
 
 **Core technologies:**
-- **dspy ^3.1.0**: Prompt optimization framework — current stable with full Pydantic support, avoid deprecated TypedPredictor
-- **dspy.Predict**: LLM invocation with structured output — core module for Node-to-LLM translation
-- **dspy.ChatAdapter**: Signature-to-prompt translation — default adapter, handles Pydantic BaseModel automatically (use JSONAdapter only for models with response_format)
-- **BootstrapFewShot optimizer**: Few-shot optimization from traces — start here (needs 10+ examples), graduate to MIPROv2 later (needs 50+)
-- **litellm**: Multi-provider LLM backend — DSPy's recommended abstraction, may replace existing backends
+- **`graphlib.TopologicalSorter` (stdlib)**: Dependency chain resolution — guaranteed available since Python 3.9, handles cycle detection via `CycleError`, provides execution order in one call
+- **`typing.get_type_hints(include_extras=True)` (stdlib)**: Annotated metadata extraction — needed for dep function parameter introspection, resolves type aliases transparently
+- **Pydantic `FieldInfo.metadata` (existing)**: Field categorization — simpler than stdlib approach for node field introspection, already parsed by Pydantic
+- **Remove `incant`**: Replaced by purpose-built Dep system — eliminates hook factory indirection, unnecessary generic DI framework
 
-**Critical versions:**
-- DSPy 3.x required (2.5.30+ has threading issues)
-- Python 3.14 already required by Bae for PEP 649
-- Pydantic 2.x compatibility confirmed
+**Version compatibility:**
+- Python: 3.9 minimum for `graphlib`, 3.14 installed (PEP 649 deferred annotations)
+- Pydantic: 2.11+ minimum (class-level `model_fields` access), 2.12.5 installed
 
 ### Expected Features
 
+Research surveyed FastAPI, PydanticAI, LangGraph, DSPy, Dagster to identify table stakes vs differentiators for dependency injection and trace-based recall patterns.
+
 **Must have (table stakes):**
-- **Signature generation from class names** — Core DSPy pattern; class name becomes task description, field names become I/O spec
-- **Typed output parsing** — DSPy's value prop; Pydantic validation without manual parsing
-- **Trace capture during execution** — Required for all optimizers; capture (input_node, output_node) pairs during graph.run()
-- **Few-shot example collection** — BootstrapFewShot baseline; needs metric function to score outputs
-- **Compiled program serialization** — Users need save/load for optimized prompts
+- **Type-based dependency resolution** — Core pattern in FastAPI, Dagster, PydanticAI; users expect deps matched by type
+- **Dep callable invocation** — FastAPI `Depends(fn)` is canonical; if annotated `Dep(fn)`, framework must call fn
+- **Dep chaining (recursive resolution)** — FastAPI resolves sub-dependencies recursively; expected for `Dep(fn)` where fn itself has deps
+- **Clear error on missing deps** — All surveyed frameworks give clear errors; must name missing type and requesting node
+- **Execution trace as list of typed nodes** — LangGraph checkpoints, DSPy traces, Prefect task results all track history
+- **LLM fills unannotated fields** — Core bae identity: "no annotation = LLM fills it"
+- **Caching within single run** — FastAPI caches per-request; prevents calling expensive deps (API calls, DB) twice
 
 **Should have (competitive differentiators):**
-- **Class name as primary signal** — Make docstrings optional, let descriptive names like "AnalyzeUserIntent" drive prompts
-- **Graph topology from type hints** — Unique to Bae; derive successor types from __call__ return hints
-- **Node field descriptions from Pydantic** — Leverage Field(description=...) for DSPy field hints
-- **Zero-config compilation** — Good DX: compile_graph(graph) works out of box
-- **Per-node signature customization** — NodeConfigDict allows per-node prompt/optimization overrides
+- **`Dep(callable)` on fields, not params** — Novel pattern; fields declare their own data sources, node class IS the dependency spec
+- **`Recall()` type-based trace search** — `Annotated[WeatherResult, Recall()]` searches execution trace for most recent match; no explicit data passing needed
+- **Node class name = LLM instruction** — Already in v1; class name IS the prompt instruction, no docstrings required
+- **Fields as context frame** — Node fields = assembled prompt context from heterogeneous sources (Dep, Recall, LLM)
+- **Dep chaining across heterogeneous sources** — Unique to bae; dep callable params can be other Dep types, Recall types, or plain values
 
 **Defer (v2+):**
-- **MIPROv2 integration** — More complex, needs 50+ training examples
-- **Graph-aware optimization** — Novel idea (optimize nodes considering predecessors/successors) but complex
-- **Incremental compilation** — Nice for iteration speed but not essential
-- **Async interface** — DSPy's async support is limited; start sync-only
-
-**Anti-features (explicitly avoid):**
-- Manual prompt templates — defeats DSPy's automation
-- Custom optimizer implementations — use DSPy's battle-tested optimizers
-- Real-time optimization — compile offline, run optimized program in production
+- **Cross-source chaining** (dep callable taking Recall param) — Novel but complex; get basic chaining working first
+- **Recall with filters** (e.g., "recall from node named X") — Start with simple type matching
+- **Async dep resolution** — Bae is sync-only; don't add async
+- **Custom resolution strategies** — Three sources (Dep, Recall, LLM) are sufficient; no plugin architecture needed
 
 ### Architecture Approach
 
-DSPy operates as a prompt optimization layer, not a replacement for Bae's execution framework. The integration preserves Bae's Graph execution loop and Node-based state management while routing LM calls through DSPy modules when optimized prompts exist. The key architectural decision: wrap existing LM backends with OptimizedLM that checks for DSPy modules per node type and falls back to naive prompts if not optimized.
+v2 inverts control from "nodes produce successors" (v1) to "bae orchestrates field assembly, nodes declare what they need" (v2). The execution loop changes from LM producing entire next nodes to LM filling only plain fields after bae resolves Dep and Recall fields. This is a focused refactoring, not a rewrite—topology discovery, validation, and trace collection survive with minor modifications.
 
 **Major components:**
-1. **NodeSignature converter** — Maps Node class (fields, docstring, successors) to dspy.Signature class dynamically
-2. **OptimizedLM wrapper** — Implements LM protocol, routes decide() through DSPy modules when available, preserves make() fallback
-3. **Compiler (rewritten)** — Extracts signatures from Graph, creates dspy.Predict modules, runs BootstrapFewShot optimizer, saves optimized modules
-4. **CompiledGraph** — Holds optimized modules per node type, provides OptimizedLM configured with these modules
-5. **TraceStore** — Collects (input_node, output_node) pairs during graph.run() for training data
+1. **markers.py (refactored)** — New `Dep(fn: Callable)` with callable, new `Recall()`, remove `Context`/`Bind`
+2. **resolver.py (NEW module)** — Houses Dep/Recall resolution logic: `resolve_fields()`, `resolve_dep()` with chaining via DAG, `resolve_recall()` with trace search
+3. **graph.py (major changes to run())** — Remove incant dependency, add field resolution step before LM call, modified execution loop with type-then-fill pattern
+4. **lm.py (protocol changes)** — Replace `make()`/`decide()` with `choose_type()` (pick successor from union) + `fill()` (populate plain fields given resolved context)
+5. **compiler.py (signature generation changes)** — Dep/Recall fields become InputFields (context for LLM), plain fields become OutputFields (LLM must produce)
+6. **node.py (minimal changes)** — Remove `lm` parameter from `__call__`, update default implementation to ellipsis
 
-**Data flow:**
-- Compilation phase (offline): Graph → NodeSignature → dspy.Signature → dspy.Predict → optimizer.compile() → save optimized modules
-- Execution phase (online): load optimized modules → OptimizedLM → graph.run() routes through DSPy when modules exist
-
-**Critical integration point:** Bae's two-step decide (pick successor type, then fill fields) must map to DSPy signatures. Two approaches possible: (1) single signature with union output type, or (2) chained modules. Needs prototype validation in Phase 1.
+**Data flow (v2):**
+```
+Graph.run() loop iteration:
+  1. Determine target node TYPE (lm.choose_type or return type analysis)
+  2. Resolve target's Dep fields (topological order, call functions)
+  3. Resolve target's Recall fields (search trace backward)
+  4. LM fills remaining plain fields (given resolved deps/recalls as context)
+  5. Construct node instance from all field sources
+  6. Append to trace
+```
 
 ### Critical Pitfalls
 
-1. **Adapter format mismatch** — Using JSONAdapter without verifying model supports response_format causes silent failures. Start with ChatAdapter (default), switch to JSONAdapter only after confirming model compatibility. Add validation tests with actual model calls.
+**Top 5 from PITFALLS.md:**
 
-2. **Async/threading confusion** — DSPy 2.5.30+ has threading issues, dspy.asyncify doesn't enable true parallelism, underlying calls remain synchronous. Start sync-only, avoid Python threading with predictors. Add timing tests if async needed later.
+1. **Pydantic validation fires before Dep/Recall population** — Pydantic validates all fields at `__init__`, but bae populates Dep/Recall after construction. **Solution:** Use `model_construct()` for internal node creation (bypasses validation), populate fields, then optionally validate. Avoids `Optional` pollution of type signatures.
 
-3. **Premature signature optimization** — Hand-tuning keywords/field names before seeing failures. DSPy docs warn: "don't prematurely tune... optimizers will do better." Start with minimal signatures (simple class names, basic descriptions), let optimizers handle tuning.
+2. **Circular dependencies in Dep chains** — Dep chaining (e.g., `get_weather` depends on `LocationDep`) can create cycles. **Solution:** Build Dep DAG at `Graph.__init__()` using `graphlib.TopologicalSorter`, which raises `CycleError` with exact cycle path. Fail fast at graph build time.
 
-4. **Statelessness surprise** — DSPy doesn't manage multi-turn context automatically. Design explicit state management from Phase 1. For Bae's two-step decide, chain prompts or use custom state container.
+3. **Type collision in Recall** — If two nodes both have `str` field or same domain type, Recall finds wrong one. **Solution:** Validate type uniqueness at graph build time—each Recall target type should appear on exactly one upstream node. Log Recall resolutions for debugging.
 
-5. **Integration complexity underestimation** — DSPy enhances LM backbone but doesn't replace orchestration. Bae's make/decide abstraction may become redundant with DSPy modules. Budget time for integration work, evaluate architectural redundancy, be willing to refactor.
+4. **`from __future__ import annotations` breaks runtime extraction** — Existing codebase uses future import, turns annotations into strings. **Solution:** Audit all annotation access to use `get_type_hints(include_extras=True)`, never `__annotations__` directly. Consider removing future import entirely since Python 3.14 PEP 649 provides deferred evaluation natively.
 
-6. **Two-step decide validation gap** — Bae's pattern (pick type, then fill) may not align naturally with DSPy. Prototype both approaches (single signature vs. chained modules) in Phase 1 before committing. Be willing to restructure if DSPy suggests better architecture.
+5. **Removing Context/Bind breaks existing tests** — v1 API exports these markers; all tests use them. Big-bang removal breaks everything at once. **Solution:** Parallel implementation—add `Recall` and new `Dep(callable)` alongside existing markers, get new system working, then remove old markers. Use `@warnings.deprecated` during transition.
+
+**Additional notable pitfall:**
+- **Error propagation in Dep chains** — Errors in chained deps show generic framework error, not actual user function error. Wrap dep execution with chain context tracking: "Error in dep chain: get_weather -> get_location: ConnectionError(...)".
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure:
+Based on research, v2.0 implementation should follow dependency-driven phase structure:
 
-### Phase 1: Foundation (Signature Extraction & Validation)
-**Rationale:** Must validate core integration assumptions before building on them. The two-step decide pattern and Node-to-Signature conversion are architectural foundations that need proof-of-concept.
+### Phase 1: Foundation (Markers + Resolver)
+**Rationale:** Everything else depends on markers and resolver being correct; testable in isolation without touching graph.py or lm.py.
+**Delivers:** New `Dep(callable)` and `Recall()` markers, resolver module with Dep DAG resolution (topological sort), Recall trace search, error handling for cycles and missing types.
+**Addresses:** Table stakes (type-based resolution, dep chaining, clear errors) and critical pitfall #2 (circular deps via graphlib).
+**Avoids:** Pitfall #1 (Pydantic validation)—decide `model_construct()` strategy upfront; Pitfall #4 (annotation access)—audit and standardize before any feature work.
+**Research flag:** Standard patterns (FastAPI `Depends` analog, graphlib docs comprehensive)—skip phase research.
 
-**Delivers:**
-- node_to_dspy_signature() implementation for all Node classes
-- Validation that signatures match Bae's type system
-- Prototype proving two-step decide works with DSPy (single signature vs. chained modules)
-- Adapter selection strategy (ChatAdapter default, validation tests)
-- Sync-only interface confirmed
+### Phase 2: Node + LM Protocol (Interface)
+**Rationale:** Node changes are small but affect every test; LM protocol change gates execution loop rewrite; must happen before Phase 3 integration.
+**Delivers:** Remove `lm` parameter from node `__call__`, update LM protocol to `choose_type()` + `fill()`, implement new protocol in one backend (PydanticAI or DSPy).
+**Addresses:** Differentiator (implicit LM configuration) and pitfall #8 (testability)—build `TestLM`/`StubLM` alongside.
+**Avoids:** Pitfall #5 (breaking tests)—support both v1 and v2 `__call__` signatures during transition (pitfall #13).
+**Research flag:** Standard patterns (protocol refactoring, documented in existing backends)—skip phase research.
 
-**Addresses:**
-- Signature generation from class names (table stakes)
-- Class name as primary signal (differentiator)
-- Node field descriptions from Pydantic (differentiator)
+### Phase 3: Execution Loop (Integration)
+**Rationale:** Integration phase where Phase 1 (resolver) and Phase 2 (protocol) come together; largest code change in graph.py but built on tested components.
+**Delivers:** Rewritten `Graph.run()` with resolver integration, validation changes (remove Bind checks, add start node + DAG checks), remove incant dependency.
+**Addresses:** Table stakes (caching per-run, execution trace) and differentiators (context frame assembly).
+**Avoids:** Pitfall #7 (incant caching)—custom resolver replaces incant entirely; Pitfall #10 (model_fields_set unreliable)—static field classification at build time.
+**Research flag:** May need validation phase research if error handling patterns unclear during implementation—most logic is integration of tested components, but edge cases may surface.
 
-**Avoids:**
-- Two-step decide validation gap (critical pitfall #6)
-- Integration complexity underestimation (critical pitfall #5)
-- Adapter format mismatch (critical pitfall #1)
-- Async/threading confusion (critical pitfall #2)
+### Phase 4: Compiler + Optimization (Adaptation)
+**Rationale:** Compiler and optimization are downstream of core execution changes; DSPy signature generation must adapt to new field taxonomy.
+**Delivers:** Updated `compiler.py` (Dep/Recall as InputField, plain as OutputField), updated `optimizer.py` (trace format changes), `OptimizedLM` implementing new protocol.
+**Addresses:** Table stakes (LLM fills unannotated fields) with new context assembly model.
+**Avoids:** Breaking DSPy optimization pipeline—trace structure remains compatible, only signature generation changes.
+**Research flag:** Standard patterns (DSPy Signature construction documented)—skip phase research unless optimization metrics need redesign.
 
-**No behavior change:** Signatures generated but not used yet. Existing graph execution unchanged.
-
-### Phase 2: Trace Collection Pipeline
-**Rationale:** Optimizers need training data. Must collect real execution traces before optimization can happen. This is pure infrastructure—no optimization behavior yet.
-
-**Delivers:**
-- TraceStore implementation for recording (input_node, output_node) pairs
-- Trace capture hooks in Graph.run()
-- bae_trace_to_dspy_example() conversion
-- node_transition_metric() function
-- Storage/retrieval for training examples
-
-**Uses:**
-- dspy.Example format (from STACK.md)
-- Trace-based bootstrapping pattern (from ARCHITECTURE.md)
-
-**Implements:**
-- TraceStore component (from Architecture)
-
-**Addresses:**
-- Trace capture during execution (table stakes)
-- Few-shot example collection (table stakes)
-
-**Avoids:**
-- Premature optimization (critical pitfall #3) — collecting data, not tuning yet
-
-### Phase 3: Optimization Integration
-**Rationale:** With traces collected, wire optimizers to tune prompts. Start simple (BootstrapFewShot) before graduating to complex optimizers.
-
-**Delivers:**
-- dspy.Predict module creation for each node type
-- BootstrapFewShot optimizer integration
-- Compiled program save/load
-- OptimizedLM wrapper implementing LM protocol
-- CompiledGraph container for optimized modules
-
-**Uses:**
-- BootstrapFewShot optimizer (from STACK.md)
-- Wrapper pattern for LM integration (from ARCHITECTURE.md)
-
-**Implements:**
-- Compiler (rewritten), CompiledGraph, OptimizedLM components
-
-**Addresses:**
-- Typed output parsing (table stakes)
-- Compiled program serialization (table stakes)
-- Zero-config compilation (differentiator)
-
-**Avoids:**
-- Statelessness surprise (critical pitfall #4) — explicit state management established in Phase 1
-
-### Phase 4: Production Deployment
-**Rationale:** Optimized prompts need deployment infrastructure. This phase makes compilation production-ready.
-
-**Delivers:**
-- Load optimized modules at graph startup
-- Fallback behavior for unoptimized nodes
-- Observability (which nodes optimized, cache hit rates)
-- Prompt versioning/storage strategy
-- Error wrapping for user-facing DSPy errors
-
-**Addresses:**
-- Per-node signature customization (differentiator)
-
-**Avoids:**
-- Integration complexity underestimation (critical pitfall #5) — deployment planned upfront
-
-### Phase 5: Advanced Features (Post-MVP)
-**Rationale:** Nice-to-haves that aren't essential for proving the concept.
-
-**Delivers:**
-- MIPROv2 integration (needs 50+ examples)
-- Graph-aware optimization (novel, complex)
-- Incremental compilation (iteration speed)
-- Per-node config overrides (NodeConfigDict)
-
-**Deferred from v1:** Advanced optimizers, graph-level awareness, performance optimizations
+### Phase 5: Cleanup + Migration
+**Rationale:** Final phase removes deprecated v1 patterns after new system is fully working; documentation and testing catchall.
+**Delivers:** Remove `Context`/`Bind` from `__init__.py` exports, update all tests to v2 patterns, verify `examples/ootd.py` end-to-end.
+**Addresses:** Pitfall #5 (breaking changes)—by this point parallel implementation complete.
+**Avoids:** Pitfall #12 (dep alias scattering)—document conventions, add `graph.describe()` for dep visibility.
+**Research flag:** No research needed—cleanup work.
 
 ### Phase Ordering Rationale
 
-- **Phase 1 first:** Validates core assumptions (two-step decide, Node-to-Signature mapping) before building infrastructure. Failure here means architectural pivot needed.
-- **Phase 2 before 3:** Can't optimize without training data. Trace collection is pure infrastructure that doesn't depend on optimization logic.
-- **Phase 3 before 4:** Must prove optimization works before investing in deployment infrastructure.
-- **Dependencies:** 1 → 2 → 3 → 4 are strictly sequential. Phase 5 is independent enhancements.
-- **Risk mitigation:** Front-loads validation (Phase 1) to catch integration mismatches early. Defers complex features (Phase 5) until core value proven.
+- **Phase 1 before 2 before 3:** Dependency chain (resolver → protocol → integration). Can't rewrite `run()` without new LM protocol; can't change protocol without resolver to call.
+- **Phase 4 after 3:** Compiler adapts to new execution model; needs working graph to test against.
+- **Phase 5 last:** Cleanup only safe after new system validated end-to-end.
+
+**Critical path insight:** Pitfall #1 (Pydantic validation) and #4 (annotation access) must be addressed in Phase 1 or earlier—they block everything. Pitfall #2 (circular deps) must be solved in Phase 1 resolver design. Pitfall #5 (breaking tests) spans all phases via parallel implementation strategy.
 
 ### Research Flags
 
-**Phases needing deeper research during planning:**
-- **Phase 1:** Two-step decide validation — no existing DSPy examples found for Bae's pattern. Needs prototyping to determine single signature vs. chained modules approach.
-- **Phase 3:** Metric function design — Domain-specific quality evaluation for node transitions. What makes a "good" graph execution? Needs design research.
-
 **Phases with standard patterns (skip research-phase):**
-- **Phase 2:** Trace collection — Well-documented pattern in DSPy observability docs
-- **Phase 4:** Save/load compiled programs — DSPy has built-in serialization, just needs integration
-- **Phase 5:** Advanced features — Documentation exists for MIPROv2, just complex to implement
+- **Phase 1:** FastAPI `Depends` pattern well-documented, `graphlib` stdlib docs comprehensive, Pydantic `FieldInfo` API stable
+- **Phase 2:** Protocol refactoring straightforward, existing backends provide reference implementation
+- **Phase 4:** DSPy signature construction documented, existing compiler provides starting point
+- **Phase 5:** Cleanup work, no domain research needed
+
+**Phases potentially needing validation during planning:**
+- **Phase 3:** Integration edge cases may surface during implementation (error propagation in complex dep chains, Recall type matching with inheritance). Standard patterns exist but bae's combination is novel. Consider lightweight validation if unexpected issues arise, but start without phase research.
+
+**No phases require deep research** — all patterns verified against live Python 3.14 + Pydantic 2.12.5 environment.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Official DSPy 3.1.2 docs, verified Pydantic integration, clear version requirements |
-| Features | MEDIUM-HIGH | Table stakes well-documented, differentiators synthesized from Bae context, anti-features based on DSPy design philosophy |
-| Architecture | MEDIUM | Integration pattern synthesized from multiple sources, Node-to-Signature mapping inferred (needs validation), two-step decide needs prototyping |
-| Pitfalls | HIGH | Based on official docs warnings, DSPy 2.5.30+ release notes, community discussions, and Bae architecture analysis |
+| Stack | HIGH | All patterns verified in bae's venv (Python 3.14, Pydantic 2.12.5); no new dependencies needed; incant removal confirmed viable |
+| Features | HIGH | Table stakes verified via official docs for 5 frameworks; differentiators confirmed novel (no framework does per-field dep resolution or type-based trace recall) |
+| Architecture | HIGH | Codebase analysis complete; phase dependencies clear; v2 reference implementation (`ootd.py`) demonstrates patterns work |
+| Pitfalls | HIGH | Grounded in codebase analysis + verified patterns from FastAPI, Pydantic, graphlib; solutions tested or documented in stdlib |
 
-**Overall confidence:** MEDIUM-HIGH
-
-Research is solid on DSPy fundamentals and Bae's existing architecture. Medium confidence on integration specifics—particularly the two-step decide pattern mapping—because no direct examples exist. The phased approach with Phase 1 validation mitigates this by proving integration patterns before committing to full implementation.
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Two-step decide pattern:** No DSPy examples found for Bae's pick-type-then-fill-fields pattern. Phase 1 must prototype both single signature (union output type) and chained modules approaches to determine which works better.
+Research is comprehensive with no major gaps. Minor items to validate during implementation:
 
-- **make/decide abstraction redundancy:** Once DSPy modules handle LM calls, Bae's make/decide protocol may be unnecessary duplication. Phase 1 should evaluate if OptimizedLM can simplify or replace this abstraction. Don't maintain duplicate layers for backward compatibility—refactor if redundant.
+- **Dep cache scope decision:** Per-run caching (recommended) vs per-step caching. Start with per-run; add `cache=False` to Dep if needed later (YAGNI).
+- **Custom `__call__` escape hatch:** When node has custom logic, should it return a type (bae resolves fields) or dict of field overrides + type? Recommend type-only for simplicity; extend to dict if needed.
+- **Start node Dep/Recall validation:** Should bae error (recommended) or silently skip if start node has Dep/Recall fields? Recommend error—start node fields are caller-provided, Dep on start node is user mistake.
+- **Recall recency semantics:** Should Recall return most recent match (recommended), all matches, or fail if multiple? Start with most recent single match; add multi-match support if use cases emerge.
 
-- **Metric function design:** What makes a "good" node transition? Type correctness is obvious, but field quality evaluation is domain-specific. Phase 3 needs design work on metric functions beyond simple type matching.
-
-- **ChatAdapter vs JSONAdapter performance:** Research shows JSONAdapter has lower latency but requires response_format support. Need production profiling to determine if ChatAdapter token overhead is acceptable or if model-specific adapter selection is worth the complexity.
-
-- **Optimizer data requirements:** BootstrapFewShot needs 10+ examples, MIPROv2 needs 50+. No guidance on how to collect this much training data for a new graph. Phase 2 needs strategy for cold-start problem (zero-shot with docstrings only, then collect traces, then optimize).
+All gaps are design decisions, not knowledge gaps. Defaults are reasonable; extensions can be added if real use cases emerge.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [DSPy Official Documentation](https://dspy.ai) — Signatures, Modules, Optimizers, Adapters
-- [DSPy GitHub Repository](https://github.com/stanfordnlp/dspy) v3.1.2 (Jan 2026) — Code examples, issue discussions
-- [DSPy Cheatsheet](https://dspy.ai/cheatsheet/) — Quick reference for API patterns
-- [MIPROv2 API Documentation](https://dspy.ai/api/optimizers/MIPROv2/) — Optimizer parameters and data requirements
+- [Python graphlib documentation](https://docs.python.org/3/library/graphlib.html) — TopologicalSorter API, CycleError
+- [Python typing documentation](https://docs.python.org/3/library/typing.html) — get_type_hints, Annotated, get_origin, get_args
+- [Pydantic Fields API](https://docs.pydantic.dev/latest/api/fields/) — FieldInfo.metadata, FieldInfo.is_required()
+- [Pydantic Models documentation](https://docs.pydantic.dev/latest/concepts/models/) — model_fields, model_construct
+- [FastAPI Dependencies](https://fastapi.tiangolo.com/tutorial/dependencies/) — Depends() pattern, chaining, caching
+- [PydanticAI Dependencies](https://ai.pydantic.dev/dependencies/) — RunContext, deps_type pattern
+- [DSPy Modules](https://dspy.ai/learn/programming/modules/) — Module composition, trace
+- [LangGraph Runtime Docs](https://docs.langchain.com/oss/python/langchain/runtime) — InjectedState, Runtime context
+- [Dagster Resources](https://dagster.io/blog/a-practical-guide-to-dagster-resources) — Type-annotated resource injection
+- Live testing in bae's venv (Python 3.14, Pydantic 2.12.5, graphlib stdlib)
+- Bae codebase analysis (`node.py`, `graph.py`, `lm.py`, `compiler.py`, `markers.py`, `examples/ootd.py`)
 
 ### Secondary (MEDIUM confidence)
-- [TypedPredictor deprecation discussion](https://github.com/stanfordnlp/dspy/issues/724) — Use dspy.Predict instead
-- [Pydantic to DSPy Signature gist](https://gist.github.com/seanchatmangpt/7e25b66ebffdedba7310d9c90f377463) — Community pattern for conversion
-- [DSPydantic library](https://github.com/davidberenstein1957/dspydantic) — Pydantic-first wrapper showing integration patterns
-- [LangGraph + DSPy integration article](https://www.rajapatnaik.com/blog/2025/10/23/langgraph-dspy-gepa-researcher) — Hybrid framework approach
+- [PEP 649 — Deferred Evaluation of Annotations](https://peps.python.org/pep-0649/)
+- [PEP 749 — Implementing PEP 649](https://peps.python.org/pep-0749/)
+- [Pydantic v2.12 release notes](https://pydantic.dev/articles/pydantic-v2-12-release) — MISSING sentinel (experimental, decided against)
+- [incant documentation](https://incant.threeofwands.com/en/stable/usage.html) — Hook factory pattern (v1 usage)
+- [Anthropic Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — Context as assembled frame
 
-### Tertiary (LOW confidence - needs validation)
-- [Behavioral optimization for multi-step agents](https://viksit.substack.com/p/behavioral-optimization-for-multi) — Graph-aware optimization concept
-- Community discussions on statelessness and async limitations — Consistent pattern but no official documentation
+### Tertiary (LOW confidence, used for landscape only)
+- [Prefect vs Dagster comparison](https://www.decube.io/post/dagster-prefect-compare) — Data passing patterns
+- GitHub issues (LangGraph InjectedState, FastAPI Python 3.14 TYPE_CHECKING) — Edge case patterns
 
 ---
-*Research completed: 2026-02-04*
+*Research completed: 2026-02-07*
 *Ready for roadmap: yes*
