@@ -16,7 +16,7 @@ class Context:
             data: Annotated[str, Context(description="The data to process")]
     """
 
-    description: str
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,7 @@ class Dep:
                 ...
     """
 
-    description: str
+    description: str = ""
 
 
 @dataclass(frozen=True)

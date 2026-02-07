@@ -1,4 +1,4 @@
-"""Weather-based outfit recommendation example.
+"""OOTD recommendation example.
 
 Demonstrates:
 - External service injection (WeatherService, CalendarService)
@@ -25,9 +25,13 @@ from __future__ import annotations
 
 import argparse
 import base64
+import json
+import re
 import webbrowser
 from pathlib import Path
 from typing import Annotated
+
+from pydantic import BaseModel
 
 from bae import (
     Bind,
@@ -40,63 +44,135 @@ from bae import (
     trace_to_examples,
 )
 
-# =============================================================================
-# Fixture Loading
-# =============================================================================
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-def _load_fixture(name: str) -> str:
-    """Load a fixture file by name."""
-    return (FIXTURES_DIR / name).read_text()
+# ---------------------------------------------------------------------
+# ---------------------- Service Models -------------------------------
+# ---------------------------------------------------------------------
 
 
-# =============================================================================
-# External Services (injected as deps)
-# =============================================================================
+class GeoLocation(BaseModel):
+    name: str
+    lat: float
+    lon: float
+    country: str
+    state: str
 
 
-class LocationService:
-    """Mock geocoding service returning OpenWeatherMap Geo API-style JSON."""
+class WeatherCondition(BaseModel):
+    main: str
+    description: str
 
-    def geocode(self, query: str) -> str:
-        """Geocode a location name. Returns raw JSON string."""
+
+class WeatherResult(BaseModel):
+    name: str
+    conditions: list[WeatherCondition]
+    temp: float
+    feels_like: float
+    temp_min: float
+    temp_max: float
+    humidity: int
+    wind_speed: float
+    clouds: int
+    visibility: int
+
+    @classmethod
+    def from_openweathermap(cls, data: dict) -> WeatherResult:
+        return cls(
+            name=data["name"],
+            conditions=[
+                WeatherCondition(main=w["main"], description=w["description"])
+                for w in data["weather"]
+            ],
+            temp=data["main"]["temp"],
+            feels_like=data["main"]["feels_like"],
+            temp_min=data["main"]["temp_min"],
+            temp_max=data["main"]["temp_max"],
+            humidity=data["main"]["humidity"],
+            wind_speed=data["wind"]["speed"],
+            clouds=data["clouds"]["all"],
+            visibility=data["visibility"],
+        )
+
+
+class CalendarEvent(BaseModel):
+    summary: str
+    location: str
+    description: str
+    start: str
+    end: str
+    categories: list[str]
+
+
+class CalendarResult(BaseModel):
+    events: list[CalendarEvent]
+
+    @classmethod
+    def from_ics(cls, text: str) -> CalendarResult:
+        events = []
+        for block in re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", text, re.DOTALL):
+            fields: dict[str, str] = {}
+            for line in block.strip().splitlines():
+                if ":" in line:
+                    key, _, value = line.partition(":")
+                    fields[key.strip()] = value.strip()
+            events.append(
+                CalendarEvent(
+                    summary=fields.get("SUMMARY", ""),
+                    location=fields.get("LOCATION", ""),
+                    description=fields.get("DESCRIPTION", ""),
+                    start=fields.get("DTSTART", ""),
+                    end=fields.get("DTEND", ""),
+                    categories=[
+                        c.strip() for c in fields.get("CATEGORIES", "").split(",") if c.strip()
+                    ],
+                )
+            )
+        return cls(events=events)
+
+
+# ---------------------------------------------------------------------
+# ---------------------- External Services ----------------------------
+# ---------------------------------------------------------------------
+
+
+def _load_json(dir: str, name: str) -> dict:
+    return json.loads((FIXTURES_DIR / dir / (name + ".json")).read_text())
+
+
+def _load_text(dir: str, name: str) -> str:
+    return (FIXTURES_DIR / dir / name).read_text()
+
+
+class Location:
+    def get(self, query: str) -> GeoLocation:
         if "seattle" in query.lower():
-            return _load_fixture("geo_seattle.json")
+            data = _load_json(dir="geo", name="seattle")
         elif "phoenix" in query.lower():
-            return _load_fixture("geo_phoenix.json")
+            data = _load_json(dir="geo", name="phoenix")
         else:
-            return _load_fixture("geo_portland.json")
+            data = _load_json(dir="geo", name="portland")
+        return GeoLocation.model_validate(data[0])
 
 
-class WeatherService:
-    """Mock weather service returning OpenWeatherMap-style JSON."""
-
-    def __init__(self, api_key: str | None = None):
-        self.api_key = api_key
-
-    def get_current(self, location: str) -> str:
-        """Get current weather. Returns raw JSON string (OpenWeatherMap format)."""
-        if "seattle" in location.lower():
-            return _load_fixture("weather_seattle.json")
-        elif "phoenix" in location.lower():
-            return _load_fixture("weather_phoenix.json")
-        else:
-            return _load_fixture("weather_portland.json")
+LocationDep = Annotated[GeoLocation, Dep(Location().get)]
 
 
-class CalendarService:
-    """Mock calendar service returning iCalendar (.ics) format."""
-
-    def __init__(self, user_id: str | None = None):
-        self.user_id = user_id
-
-    def get_todays_events(self) -> str:
-        """Get today's calendar events. Returns raw ICS string."""
-        return _load_fixture("calendar_events.ics")
+class Weather:
+    def get(self, location: LocationDep) -> WeatherResult:
+        return WeatherResult.from_openweathermap(_load_json("weather", location.name))
 
 
+class Calendar:
+    def get(self) -> CalendarResult:
+        text = _load_text(dir="cal", name="today.ics")
+        return CalendarResult.from_ics(text)
+
+
+WeatherDep = Annotated[WeatherResult, Dep(Weather().get)]
+CalendarDep = Annotated[CalendarResult, Dep(Calendar().get)]
 # =============================================================================
 # Graph Nodes
 # =============================================================================
@@ -108,108 +184,26 @@ class CalendarService:
 # tags with plain language names reinforce structure more than JSON's {}/"" noise.
 
 
-class CheckWeather(Node):
-    """Check the weather for the user's location."""
-
-    location: Annotated[str, Context(description="User's location (city name)")]
-    weather_json: Annotated[str | None, Bind()] = None
-
-    def __call__(
-        self,
-        lm: LM,
-        weather_service: Annotated[WeatherService, Dep(description="Weather API client")],
-    ) -> CheckSchedule:
-        """Fetch weather and continue to schedule check."""
-        self.weather_json = weather_service.get_current(self.location)
-        return CheckSchedule(
-            weather_json=self.weather_json,
-            events_ics="",
-        )
+class IsTheUserGettingDressed(Node):
+    def __call__(self) -> AnticipateUsersDay: ...
 
 
-class CheckSchedule(Node):
-    """Check today's calendar for events."""
+class AnticipateUsersDay(Node):
+    weather: WeatherDep
+    schedule: CalendarDep
+    location: LocationDep
 
-    weather_json: Annotated[str, Context(description="Current weather (OpenWeatherMap JSON)")]
-    events_ics: Annotated[str | None, Bind()] = None
-
-    def __call__(
-        self,
-        lm: LM,
-        calendar_service: Annotated[CalendarService, Dep(description="Calendar API client")],
-    ) -> DecideActivity:
-        """Fetch schedule and decide what to do."""
-        self.events_ics = calendar_service.get_todays_events()
-        return DecideActivity(
-            weather_json=self.weather_json,
-            events_ics=self.events_ics,
-        )
+    def __call__(self) -> RecommendOOTD: ...
 
 
-class DecideActivity(Node):
-    """Decide whether to go out or stay home based on weather and schedule."""
-
-    weather_json: Annotated[str, Context(description="Current weather (OpenWeatherMap JSON)")]
-    events_ics: Annotated[str, Context(description="Today's calendar (iCalendar/ICS format)")]
-
-    def __call__(self) -> GoingOut | StayingHome:
-        """LLM decides based on weather and schedule.
-
-        Consider:
-        - Outdoor events in bad weather -> might reschedule
-        - All indoor events in nice weather -> still might go out
-        - Multiple outdoor events -> definitely need weather-appropriate clothes
-        """
-        ...
-
-
-class GoingOut(Node):
-    """User is going out today. Recommend appropriate outfit."""
-
-    weather_json: Annotated[str, Context(description="Weather to dress for (JSON)")]
-    events_ics: Annotated[str, Context(description="Events to dress for (ICS)")]
-    primary_activity: Annotated[str, Context(description="Main reason for going out")]
-
-    def __call__(self) -> OutfitRecommendation:
-        """Generate outfit recommendation for going out."""
-        ...
-
-
-class StayingHome(Node):
-    """User is staying home today. Recommend comfort clothes."""
-
-    weather_json: Annotated[str, Context(description="Weather for indoor temp context (JSON)")]
-    reason: Annotated[str, Context(description="Why staying home (weather, no events, etc.)")]
-
-    def __call__(self) -> OutfitRecommendation:
-        """Generate comfort outfit recommendation."""
-        ...
-
-
-class OutfitRecommendation(Node):
-    """Final outfit recommendation with conversational reply."""
-
+class RecommendOOTD(Node):
     top: str
     bottom: str
     footwear: str
     accessories: list[str]
     explanation: Annotated[str, Context(description="Brief conversational explanation")]
 
-    def __call__(self) -> None:
-        """Terminal node - recommendation complete."""
-        ...
-
-    def to_message(self) -> str:
-        """Format as a friendly message."""
-        accessories_str = ", ".join(self.accessories) if self.accessories else "nothing extra"
-        return f"""{self.explanation}
-
-Here's what I'd suggest:
-  - Top: {self.top}
-  - Bottom: {self.bottom}
-  - Shoes: {self.footwear}
-  - Accessories: {accessories_str}
-"""
+    def __call__(self) -> None: ...
 
 
 # =============================================================================
@@ -219,15 +213,7 @@ Here's what I'd suggest:
 
 def create_graph() -> Graph:
     """Create the weather outfit recommendation graph."""
-    return Graph(start=CheckWeather)
-
-
-def create_services() -> dict:
-    """Create external service instances."""
-    return {
-        "weather_service": WeatherService(),
-        "calendar_service": CalendarService(),
-    }
+    return Graph(start=GetUserInfo)
 
 
 # =============================================================================
@@ -297,11 +283,6 @@ def show_graph(graph: Graph) -> None:
     print("Mermaid diagram:")
     print(mermaid)
     print()
-
-    # Encode for mermaid.live
-    # Format: https://mermaid.live/edit#pako:<base64>
-    # Simpler: https://mermaid.live/view#base64:<base64>
-    import base64
 
     encoded = base64.urlsafe_b64encode(mermaid.encode()).decode()
     url = f"https://mermaid.live/view#base64:{encoded}"

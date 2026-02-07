@@ -150,7 +150,7 @@ class Node(BaseModel, arbitrary_types_allowed=True):
 
     model_config: ClassVar[NodeConfig] = NodeConfig()
 
-    def __call__(self, lm: LM) -> Node | None:
+    def __call__(self, lm: LM, *_args: object, **_kwargs: object) -> Node | None:
         """Execute node logic and return next node.
 
         Override this to implement custom routing logic.
