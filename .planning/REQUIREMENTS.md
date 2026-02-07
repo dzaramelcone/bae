@@ -15,7 +15,7 @@
 
 ### Graph Routing
 
-- [x] **ROUTE-01**: Graph.run() auto-routes based on return type (union → decide, single → make)
+- [x] **ROUTE-01**: Graph.run() auto-routes based on return type (union -> decide, single -> make)
 - [x] **ROUTE-02**: `__call__` body `...` signals automatic routing
 - [x] **ROUTE-03**: Custom `__call__` logic still works as escape hatch
 
@@ -128,12 +128,35 @@
 | OPT-04 | Phase 3 | Complete |
 | RUN-01 | Phase 4 | Complete |
 | RUN-02 | Phase 4 | Complete |
+| DEP2-01 | Phase 5 | Pending |
+| DEP2-02 | Phase 5 | Pending |
+| DEP2-03 | Phase 5 | Pending |
+| DEP2-04 | Phase 5 | Pending |
+| DEP2-05 | Phase 5 | Pending |
+| RCL-01 | Phase 5 | Pending |
+| RCL-02 | Phase 5 | Pending |
+| RCL-03 | Phase 5 | Pending |
+| NODE-01 | Phase 6 | Pending |
+| NODE-02 | Phase 6 | Pending |
+| NODE-03 | Phase 6 | Pending |
+| NODE-04 | Phase 6 | Pending |
+| LM-01 | Phase 6 | Pending |
+| LM-02 | Phase 6 | Pending |
+| LM-03 | Phase 6 | Pending |
+| LM-04 | Phase 6 | Pending |
+| DEP2-06 | Phase 7 | Pending |
+| CLN-03 | Phase 7 | Pending |
+| CLN-01 | Phase 8 | Pending |
+| CLN-02 | Phase 8 | Pending |
+| CLN-04 | Phase 8 | Pending |
+| CLN-05 | Phase 8 | Pending |
 
 **Coverage:**
-- v1 requirements: 19 total (3 new routing/dep reqs)
-- Mapped to phases: 19
+- v1 requirements: 19 mapped, 19 complete
+- v2.0 requirements: 22 total
+- Mapped to phases: 22
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-04*
-*Traceability updated: 2026-02-04*
+*v2.0 traceability updated: 2026-02-07*

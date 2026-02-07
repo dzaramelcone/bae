@@ -5,14 +5,35 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v2.0 Context Frames — redesigning node API around context frame paradigm
+**Current focus:** Phase 5 — Markers & Resolver
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-07 — Milestone v2.0 started
+Phase: 5 of 8 (Markers & Resolver)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-02-07 — v2.0 roadmap created
+
+Progress: [##########..........] 50% (v1.0 complete, v2.0 starting)
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 13 (v1.0)
+- Average duration: —
+- Total execution time: —
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| 1. Signature Generation | 1 | — | — |
+| 1.1 Deps & Signature Extension | 1 | — | — |
+| 2. DSPy Integration | 5 | — | — |
+| 3. Optimization | 4 | — | — |
+| 4. Production Runtime | 2 | — | — |
+
+*Updated after each plan completion*
 
 ## Accumulated Context
 
@@ -21,14 +42,11 @@ Last activity: 2026-02-07 — Milestone v2.0 started
 Decisions are logged in PROJECT.md Key Decisions table.
 v2 design decisions documented in PROJECT.md v2 Design Decisions section.
 
-Key v2 decisions:
-- Nodes are context frames (fields = prompt context, class name = instruction)
-- Dep(callable) for external data with chaining
-- Recall() replaces Bind (searches trace by type)
-- Context marker eliminated (redundant)
-- LM is implicit (graph-level, not in __call__)
-- Start node fields are caller-provided
-- Terminal node fields ARE the output
+Key v2 decisions affecting Phase 5:
+- Use `model_construct()` for internal node creation (bypass Pydantic validation for deferred field population)
+- `graphlib.TopologicalSorter` for dep chain resolution and cycle detection
+- Dep on start node is allowed (auto-resolved); Recall on start node is an error
+- Per-run dep caching (same dep function + args = cached result within one graph run)
 
 ### Pending Todos
 
@@ -36,10 +54,10 @@ None.
 
 ### Blockers/Concerns
 
-None.
+- **Claude CLI session noise**: Optimizer runs create many boring test sessions that drown out real sessions in Claude CLI history. When using ClaudeCLIBackend for optimization, set the "don't save session to disk" flag to avoid polluting session history.
 
 ## Session Continuity
 
 Last session: 2026-02-07
-Stopped at: Milestone v2.0 initialization
+Stopped at: v2.0 roadmap created
 Resume file: None
