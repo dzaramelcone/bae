@@ -20,19 +20,22 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 - ✓ ClaudeCLIBackend — existing
 - ✓ Terminal node detection (returns None) — existing
 
-### Active
+### Active (v2.0)
 
-- [ ] DSPy compilation from class names
-- [ ] DSPy compilation from docstrings (optional hints)
-- [ ] NodeConfigDict for per-node config
-- [ ] AgentConfigDict for graph-level config
-- [ ] Traced execution for optimization
+- [ ] Dep(callable) with dep chaining — `Annotated[T, Dep(fn)]`, DAG resolution
+- [ ] Recall() for graph state — `Annotated[T, Recall()]`, trace search
+- [ ] Remove Context marker — fields with/without values replaces it
+- [ ] Remove Bind marker — replaced by Recall (read) + implicit trace (write)
+- [ ] Implicit LM — graph-level config, removed from `__call__` signature
+- [ ] Start node semantics — fields are caller-provided input
+- [ ] Terminal node = response schema — fields ARE the output
 
 ### Out of Scope
 
+- BindFor explicit writes — implicit trace search is clean enough (YAGNI)
+- Parallel fan-out (`tuple[A, B]`) — not needed for v2 (YAGNI)
 - Validation error retry loops — DSPy optimization may solve this
 - Async interface — sync is simpler, revisit if needed
-- Explicit deps injection — model may pass state via fields
 
 ## Context
 
@@ -87,5 +90,18 @@ Discussed and agreed before v2 milestone planning.
 | `Recall()` | Bae searches the trace to fill this field | Prior node in graph execution |
 | *(none)* | LLM fills this field | Previous node's context → LLM generation |
 
+## Current Milestone: v2.0 Context Frames
+
+**Goal:** Redesign the node API around the "nodes as context frames" paradigm — Dep/Recall field annotations, implicit LM, clean start/terminal semantics.
+
+**Target features:**
+- Dep(callable) with automatic dep chaining
+- Recall() for graph state lookup from trace
+- Remove Context and Bind markers (redundant in new model)
+- Implicit LM (graph-level, not per-node)
+- Start node fields = caller input, terminal node fields = response schema
+
+**Reference implementation:** `examples/ootd.py`
+
 ---
-*Last updated: 2026-02-07 after v2 design discussion*
+*Last updated: 2026-02-07 — v2.0 milestone started*
