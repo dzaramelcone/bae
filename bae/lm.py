@@ -118,11 +118,11 @@ def _build_fill_prompt(
     1. Input schema (transform_schema of source class, so LLM understands structure)
     2. Source node data (previous node as JSON)
     3. Resolved dep/recall values (as JSON under "context" key)
-    4. Output schema (transform_schema of target's plain model)
-    5. Instruction (class name + optional docstring)
+    4. Instruction (class name + optional docstring)
 
-    JSON input avoids CLI agent mode (XML triggers it).
-    Output constrained by --json-schema via constrained decoding.
+    Output schema is NOT included in the prompt — it's passed separately via
+    --json-schema for constrained decoding (ClaudeCLIBackend) or as output_type
+    (PydanticAIBackend). Including it would send it twice.
     """
     import json
 
@@ -140,9 +140,6 @@ def _build_fill_prompt(
         for k, v in resolved.items():
             context[k] = v.model_dump(mode="json") if isinstance(v, BaseModel) else v
         parts.append(f"Context:\n{json.dumps(context, indent=2)}")
-
-    output_schema = transform_schema(_build_plain_model(target))
-    parts.append(f"Output schema:\n{json.dumps(output_schema, indent=2)}")
 
     parts.append(instruction)
 
@@ -398,16 +395,21 @@ class ClaudeCLIBackend:
         import json
         import subprocess
 
-        # Strip 'format' fields — CLI rejects schemas containing them
+        # Strip 'format' fields — CLI silently rejects schemas containing them
+        # (e.g. format:uri from HttpUrl). The API supports format but the CLI
+        # doesn't create the structured output tool when it's present.
         clean_schema = _strip_format(schema)
 
         cmd = [
             "claude",
-            "-p", prompt,
+            "-p", prompt,                               # single-shot prompt mode
             "--model", self.model,
-            "--output-format", "json",
-            "--json-schema", json.dumps(clean_schema),
-            "--no-session-persistence",
+            "--output-format", "json",                   # return conversation as JSON stream
+            "--json-schema", json.dumps(clean_schema),   # constrained decoding via structured output tool
+            "--no-session-persistence",                  # don't save to CLI session history
+            "--tools", "",                               # disable built-in tools (Bash, Edit, etc.)
+            "--strict-mcp-config",                       # disable MCP servers (no --mcp-config = none)
+            "--setting-sources", "",                     # skip loading project/user settings
         ]
 
         try:
