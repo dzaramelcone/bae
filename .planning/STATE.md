@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-08)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v3.0 Self-Optimizing Graphs — researching eval ecosystem
+**Current focus:** v3.0 Async Graphs — parallel dep resolution + subgraph composition
 
 ## Current Position
 
 Phase: Not started (defining requirements)
 Plan: —
-Status: Researching
-Last activity: 2026-02-08 — Milestone v3.0 started
+Status: Defining scope
+Last activity: 2026-02-08 — Pivoted v3.0 from evals to async
 
 Progress: [░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 0% v3.0
 
@@ -30,10 +30,12 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░░░
 See PROJECT.md Key Decisions table and milestones/v2.0-ROADMAP.md for full decision history.
 
 v3.0 decisions so far:
+- Pivoted from evals to async — parallel deps + subgraph composition is more fundamental
+- Full async, not threading — correct long-term play, formulaic conversion
+- Dep is already fan-out/join primitive — async makes it concurrent
+- Eval research preserved in .planning/research/ for v4.0
 - System prompt not needed — class name + Field(description) carries the weight
 - PydanticAI backend may be removed — LM proxies making backends commodity
-- Evals first, docs/marketing later — product must be solid before onboarding
-- `--setting-sources ""` root-caused and resolved
 
 ### Pending Todos
 
@@ -49,6 +51,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: v3.0 milestone initialization — research phase next
+Stopped at: v3.0 pivoted to async — need requirements + roadmap
 Branch: main
 Resume file: None
