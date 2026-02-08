@@ -111,10 +111,10 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — TDD: v2 Dep/Recall markers, RecallError, classify_fields
-- [ ] 05-02-PLAN.md — TDD: Dep DAG construction and build-time validation
-- [ ] 05-03-PLAN.md — TDD: Recall from trace
-- [ ] 05-04-PLAN.md — TDD: Resolver (dep resolution, caching, resolve_fields)
+- [x] 05-01-PLAN.md — TDD: v2 Dep/Recall markers, RecallError, classify_fields
+- [x] 05-02-PLAN.md — TDD: Dep DAG construction and build-time validation
+- [x] 05-03-PLAN.md — TDD: Recall from trace
+- [x] 05-04-PLAN.md — TDD: Resolver (dep resolution, caching, resolve_fields)
 
 **Success Criteria** (what must be TRUE):
   1. `Annotated[T, Dep(fn)]` field causes the resolver to call `fn` and return the result for injection
@@ -172,7 +172,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8
 | 2. DSPy Integration | v1.0 | 5/5 | Complete | 2026-02-05 |
 | 3. Optimization | v1.0 | 4/4 | Complete | 2026-02-05 |
 | 4. Production Runtime | v1.0 | 2/2 | Complete | 2026-02-05 |
-| 5. Markers & Resolver | v2.0 | 0/4 | Planned | - |
+| 5. Markers & Resolver | v2.0 | 4/4 | Complete | 2026-02-08 |
 | 6. Node & LM Protocol | v2.0 | 0/TBD | Not started | - |
 | 7. Integration | v2.0 | 0/TBD | Not started | - |
 | 8. Cleanup & Migration | v2.0 | 0/TBD | Not started | - |

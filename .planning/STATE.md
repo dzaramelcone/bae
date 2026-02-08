@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Phase 5 complete -- ready for Phase 6 (Graph Engine v2)
+**Current focus:** Phase 5 complete, verified — ready for Phase 6 (Node & LM Protocol)
 
 ## Current Position
 
-Phase: 5 of 8 (Markers & Resolver)
+Phase: 5 of 8 (Markers & Resolver) — COMPLETE
 Plan: 4 of 4 in current phase
-Status: Phase complete
-Last activity: 2026-02-08 — Completed 05-04-PLAN.md
+Status: Phase complete and verified (5/5 must-haves)
+Last activity: 2026-02-08 — Phase 5 verified and closed
 
 Progress: [#############.......] 65% (17/26 plans complete)
 

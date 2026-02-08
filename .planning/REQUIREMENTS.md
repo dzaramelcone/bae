@@ -48,18 +48,18 @@
 
 ### Dependency Injection
 
-- [ ] **DEP2-01**: Dep(callable) resolves fields — `Annotated[T, Dep(fn)]` causes bae to call `fn` and inject the result into the field
-- [ ] **DEP2-02**: Dep chaining resolves recursively — dep functions with dep-typed params are resolved bottom-up via topological sort
-- [ ] **DEP2-03**: Circular dep chains detected at graph build time with clear error naming the cycle
-- [ ] **DEP2-04**: Per-run dep caching — same dep function with same resolved args returns cached result within a single graph run
-- [ ] **DEP2-05**: Clear error when dep callable fails — error names the dep function, the node, and the underlying exception
+- [x] **DEP2-01**: Dep(callable) resolves fields — `Annotated[T, Dep(fn)]` causes bae to call `fn` and inject the result into the field
+- [x] **DEP2-02**: Dep chaining resolves recursively — dep functions with dep-typed params are resolved bottom-up via topological sort
+- [x] **DEP2-03**: Circular dep chains detected at graph build time with clear error naming the cycle
+- [x] **DEP2-04**: Per-run dep caching — same dep function with same resolved args returns cached result within a single graph run
+- [x] **DEP2-05**: Clear error when dep callable fails — error names the dep function, the node, and the underlying exception
 - [ ] **DEP2-06**: Dep fields on start node are auto-resolved before graph execution begins
 
 ### Trace & Recall
 
-- [ ] **RCL-01**: Recall() searches execution trace backward for most recent node with matching field type
-- [ ] **RCL-02**: Clear error when Recall target type is not found in trace
-- [ ] **RCL-03**: Recall on start node raises error at graph build time (no trace exists yet)
+- [x] **RCL-01**: Recall() searches execution trace backward for most recent node with matching field type
+- [x] **RCL-02**: Clear error when Recall target type is not found in trace
+- [x] **RCL-03**: Recall on start node raises error at graph build time (no trace exists yet)
 
 ### Node Semantics
 
@@ -128,14 +128,14 @@
 | OPT-04 | Phase 3 | Complete |
 | RUN-01 | Phase 4 | Complete |
 | RUN-02 | Phase 4 | Complete |
-| DEP2-01 | Phase 5 | Pending |
-| DEP2-02 | Phase 5 | Pending |
-| DEP2-03 | Phase 5 | Pending |
-| DEP2-04 | Phase 5 | Pending |
-| DEP2-05 | Phase 5 | Pending |
-| RCL-01 | Phase 5 | Pending |
-| RCL-02 | Phase 5 | Pending |
-| RCL-03 | Phase 5 | Pending |
+| DEP2-01 | Phase 5 | Complete |
+| DEP2-02 | Phase 5 | Complete |
+| DEP2-03 | Phase 5 | Complete |
+| DEP2-04 | Phase 5 | Complete |
+| DEP2-05 | Phase 5 | Complete |
+| RCL-01 | Phase 5 | Complete |
+| RCL-02 | Phase 5 | Complete |
+| RCL-03 | Phase 5 | Complete |
 | NODE-01 | Phase 6 | Pending |
 | NODE-02 | Phase 6 | Pending |
 | NODE-03 | Phase 6 | Pending |
