@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import graphlib
 from dataclasses import FrozenInstanceError
 from typing import Annotated
 
@@ -10,7 +11,12 @@ import pytest
 from bae.exceptions import BaeError, RecallError
 from bae.markers import Dep, Recall
 from bae.node import Node
-from bae.resolver import classify_fields, recall_from_trace
+from bae.resolver import (
+    build_dep_dag,
+    classify_fields,
+    recall_from_trace,
+    validate_node_deps,
+)
 
 
 def get_data() -> str:
@@ -19,6 +25,65 @@ def get_data() -> str:
 
 def get_other() -> str:
     return "other data"
+
+
+# --- Dep functions for DAG tests ---
+
+
+def get_location() -> str:
+    return "NYC"
+
+
+def get_weather(location: Annotated[str, Dep(get_location)]) -> str:
+    return f"Weather in {location}"
+
+
+def get_forecast(weather: Annotated[str, Dep(get_weather)]) -> str:
+    return f"Forecast: {weather}"
+
+
+def get_temperature() -> int:
+    return 72
+
+
+# Circular dep functions — define first, then patch annotations
+def circular_a(b: str) -> str:
+    return b
+
+
+def circular_b(a: str) -> str:
+    return a
+
+
+circular_a.__annotations__["b"] = Annotated[str, Dep(circular_b)]
+circular_b.__annotations__["a"] = Annotated[str, Dep(circular_a)]
+
+
+# For return type mismatch test: returns int but field expects str
+def get_wrong_type() -> int:
+    return 42
+
+
+# For missing return annotation test
+def no_return_annotation(x: str):
+    return x
+
+
+# For subclass return type test
+class Fruit:
+    """Base type for dep return type subclass test."""
+
+    pass
+
+
+class Apple(Fruit):
+    """Subclass of Fruit."""
+
+    pass
+
+
+def get_apple() -> Apple:
+    return Apple()
 
 
 class TestDepMarker:
@@ -235,3 +300,141 @@ class TestRecallFromTrace:
         node = RecallNode.model_construct(recalled="recalled value", original="real value")
         trace = [node]
         assert recall_from_trace(trace, str) == "real value"
+
+
+# --- Test classes for dep DAG and validation ---
+
+
+class TestBuildDepDag:
+    def test_single_dep(self):
+        """Node with one Dep field produces a DAG containing that dep function."""
+
+        class SingleDepNode(Node):
+            loc: Annotated[str, Dep(get_location)]
+
+        ts = build_dep_dag(SingleDepNode)
+        order = list(ts.static_order())
+        assert get_location in order
+
+    def test_chained_deps(self):
+        """Dep that itself has a Dep param is walked transitively.
+
+        get_weather depends on get_location, so get_location must come first.
+        """
+
+        class ChainedNode(Node):
+            weather: Annotated[str, Dep(get_weather)]
+
+        ts = build_dep_dag(ChainedNode)
+        order = list(ts.static_order())
+        loc_idx = order.index(get_location)
+        weather_idx = order.index(get_weather)
+        assert loc_idx < weather_idx
+
+    def test_deep_chain(self):
+        """Three-level dep chain: forecast -> weather -> location."""
+
+        class DeepNode(Node):
+            forecast: Annotated[str, Dep(get_forecast)]
+
+        ts = build_dep_dag(DeepNode)
+        order = list(ts.static_order())
+        loc_idx = order.index(get_location)
+        weather_idx = order.index(get_weather)
+        forecast_idx = order.index(get_forecast)
+        assert loc_idx < weather_idx < forecast_idx
+
+    def test_multiple_independent_deps(self):
+        """Node with two independent dep fields includes both in DAG."""
+
+        class MultiNode(Node):
+            loc: Annotated[str, Dep(get_location)]
+            temp: Annotated[int, Dep(get_temperature)]
+
+        ts = build_dep_dag(MultiNode)
+        order = list(ts.static_order())
+        assert get_location in order
+        assert get_temperature in order
+
+    def test_shared_transitive_dep(self):
+        """Two dep fields that share a transitive dep: leaf appears once."""
+
+        class SharedNode(Node):
+            weather: Annotated[str, Dep(get_weather)]
+            forecast: Annotated[str, Dep(get_forecast)]
+
+        ts = build_dep_dag(SharedNode)
+        order = list(ts.static_order())
+        # get_location is a transitive dep of both get_weather and get_forecast
+        assert order.count(get_location) == 1
+
+    def test_circular_deps_detected(self):
+        """Circular dep chain raises CycleError on static_order/prepare."""
+
+        class CircularNode(Node):
+            a: Annotated[str, Dep(circular_a)]
+
+        ts = build_dep_dag(CircularNode)
+        with pytest.raises(graphlib.CycleError):
+            list(ts.static_order())
+
+
+class TestValidateNodeDeps:
+    def test_valid_deps_no_errors(self):
+        """Node with properly typed dep produces no validation errors."""
+
+        class ValidNode(Node):
+            loc: Annotated[str, Dep(get_location)]
+
+        errors = validate_node_deps(ValidNode, is_start=False)
+        assert errors == []
+
+    def test_return_type_mismatch(self):
+        """Dep returning int for a str field is caught as a type error."""
+
+        class MismatchNode(Node):
+            data: Annotated[str, Dep(get_wrong_type)]
+
+        errors = validate_node_deps(MismatchNode, is_start=False)
+        assert len(errors) >= 1
+        error_msg = errors[0]
+        assert "get_wrong_type" in error_msg
+        assert "str" in error_msg
+
+    def test_missing_return_annotation(self):
+        """Dep function without return type annotation is caught."""
+
+        class NoReturnNode(Node):
+            data: Annotated[str, Dep(no_return_annotation)]
+
+        errors = validate_node_deps(NoReturnNode, is_start=False)
+        assert len(errors) >= 1
+        assert "no_return_annotation" in errors[0]
+
+    def test_subclass_return_type_valid(self):
+        """Dep returning a subclass of the field type passes MRO check."""
+
+        class SubclassNode(Node):
+            fruit: Annotated[Fruit, Dep(get_apple)]
+
+        errors = validate_node_deps(SubclassNode, is_start=False)
+        assert errors == []
+
+    def test_recall_on_start_node_error(self):
+        """Recall field on a start node is an error."""
+
+        class StartRecallNode(Node):
+            prev: Annotated[str, Recall()]
+
+        errors = validate_node_deps(StartRecallNode, is_start=True)
+        assert len(errors) >= 1
+        assert "recall" in errors[0].lower() or "Recall" in errors[0]
+
+    def test_recall_on_non_start_valid(self):
+        """Recall field on a non-start node is fine."""
+
+        class NonStartRecallNode(Node):
+            prev: Annotated[str, Recall()]
+
+        errors = validate_node_deps(NonStartRecallNode, is_start=False)
+        assert errors == []
