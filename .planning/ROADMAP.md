@@ -186,14 +186,17 @@ Plans:
 **Depends on**: Phase 8 (v2.0 complete)
 **Status**: In progress on spike/e2e-cli branch
 
-**Design**: Claude CLI's `--json-schema` flag enables constrained decoding (Anthropic structured outputs). `transform_schema()` from the Anthropic SDK prepares Pydantic models for this — strips unsupported constraints, adds `additionalProperties: false`. Prompt is JSON (source node + resolved deps + instruction). Response is guaranteed schema-conformant.
+**Design**: Claude CLI's `--json-schema` flag enables constrained decoding (Anthropic structured outputs). `transform_schema()` from the Anthropic SDK prepares Pydantic models for both input and output schemas — strips unsupported constraints, adds `additionalProperties: false`. Prompt includes input schema + input data + output schema + instruction, all JSON. Response guaranteed schema-conformant by constrained decoding. XML in prompts causes CLI to hang (enters agent mode); JSON works reliably.
+
+**Reference**: `tests/traces/json_structured_fill_reference.py` — working E2E pattern
 
 **Success Criteria** (what must be TRUE):
-  1. fill() prompt is structured as: source node JSON + resolved deps JSON + instruction text
-  2. JSON schema for plain fields generated via `_build_plain_model()` + `transform_schema()`; LLM response guaranteed conformant by constrained decoding
+  1. fill() prompt includes: input schema (transform_schema of source), source data JSON, resolved deps JSON, output schema (transform_schema of plain model), instruction text
+  2. Output JSON schema generated via `_build_plain_model()` + `transform_schema()`; LLM response guaranteed conformant by constrained decoding
   3. Dep/recall fields validated at resolve time (DepError); plain fields validated separately (FillError) — clear boundary
   4. ClaudeCLIBackend uses JSON mode (`--json-schema` + `--output-format json`) for both fill and choose_type
-  5. `examples/ootd.py` runs end-to-end producing valid OOTD recommendation
+  5. All `format_as_xml` usage removed from lm.py and dspy_backend.py — JSON everywhere
+  6. `examples/ootd.py` runs end-to-end producing valid OOTD recommendation
 
 #### Phase 10: AdditionalContext Annotation
 **Goal**: Replace implicit docstring extraction with explicit AdditionalContext annotation for LLM instruction context

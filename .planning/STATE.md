@@ -90,18 +90,24 @@ Key decisions from Phase 8:
 
 Key decisions from Phase 9 (JSON Structured Fill):
 - Pivoted from XML completion to JSON structured output — Claude CLI's `--json-schema` provides constrained decoding (guaranteed schema-conformant responses)
-- `transform_schema()` from Anthropic SDK prepares Pydantic models for constrained decoding (strips unsupported constraints, adds additionalProperties: false)
+- XML in CLI prompts causes agent mode / hangs — JSON prompts work reliably (~10-15s)
+- `transform_schema()` from Anthropic SDK used for BOTH input and output schemas — input schema in prompt for comprehension, output schema via --json-schema for constrained decoding
 - `_build_plain_model()` creates dynamic Pydantic model with only plain fields for LLM output schema
 - `_build_choice_schema()` uses dynamic Pydantic enum + transform_schema for choose_type constrained decoding
-- `_build_fill_prompt()` serializes source node and resolved deps as JSON (not XML)
-- `--setting-sources ""` BREAKS structured output in Claude CLI — removes StructuredOutput internal tool. Must NOT be used.
+- `_build_fill_prompt()` uses JSON: input schema + source data + context + output schema + instruction
+- ALL format_as_xml usage to be removed from lm.py and dspy_backend.py
+- `--setting-sources ""` correlates with broken structured output — root cause unknown, needs investigation
 - `validate_plain_fields()` validates LLM-generated plain fields through Pydantic (FillError on failure)
+- Working reference: tests/traces/json_structured_fill_reference.py
 
 ### Pending Todos
 
-- Real CLI E2E Turn 2 still fails — need to debug after JSON pivot changes are solid
-- `format_as_xml` still used in v1 methods (_node_to_prompt) and choose_type (PydanticAIBackend) — clean up or keep for v1 compat
-- Tests need verification after _build_fill_prompt JSON change (311 passed before this edit)
+- Implement JSON fill prompt in `_build_fill_prompt()` with input/output schemas via transform_schema
+- Remove all `format_as_xml` from lm.py (all methods, both backends) and dspy_backend.py
+- JSON serialization for choose_type context on all backends
+- Root-cause `--setting-sources ""` breaking structured output (vague correlation, not understood)
+- Run real CLI E2E after implementation
+- Nice-to-have: use inflect library to singularize field names for list item tags
 
 ### Blockers/Concerns
 
@@ -110,6 +116,6 @@ Key decisions from Phase 9 (JSON Structured Fill):
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Phase 9 in progress — JSON pivot code done, planning docs updated, need to run tests and real CLI E2E
+Stopped at: Phase 9 — JSON prompt pattern validated (reference saved), need to implement in _build_fill_prompt and remove all XML
 Branch: spike/e2e-cli
 Resume file: None
