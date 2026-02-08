@@ -44,22 +44,21 @@ def _build_plain_model(target_cls: type) -> type[BaseModel]:
     """Create a dynamic Pydantic model with only plain fields from target.
 
     Used to constrain LLM output to only the fields it should generate
-    (not dep/recall fields). Works for both JSON schema generation and
-    pydantic-ai output_type.
+    (not dep/recall fields). Preserves Field(description=...) metadata
+    so descriptions flow into JSON schemas for constrained decoding.
     """
     fields = classify_fields(target_cls)
     hints = get_type_hints(target_cls, include_extras=True)
 
-    # Collect plain fields with their types
+    # Collect plain fields with their types and original FieldInfo.
+    # Passing FieldInfo preserves description, default, default_factory,
+    # json_schema_extra, and all other field metadata.
     plain_fields: dict[str, Any] = {}
     for name in target_cls.model_fields:
         if fields.get(name, "plain") == "plain":
             base_type = _get_base_type(hints.get(name))
             field_info = target_cls.model_fields[name]
-            if field_info.default is not None:
-                plain_fields[name] = (base_type, field_info.default)
-            else:
-                plain_fields[name] = (base_type, ...)
+            plain_fields[name] = (base_type, field_info)
 
     return create_model(
         f"{target_cls.__name__}Plain",
