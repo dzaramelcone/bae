@@ -117,6 +117,11 @@ Key decisions from Phase 10 (Hint Annotation):
 - Root-cause `--setting-sources ""` breaking structured output (vague correlation, not understood)
 - Nice-to-have: use inflect library to singularize field names for list item tags
 - Consider Dzara's question about partially-completed JSON prompts (DSPy InputField/OutputField pattern)
+- Add `--system-prompt` to ClaudeCLIBackend — currently no system prompt at all, LLM has no framing for the fill task
+- PydanticAIBackend.choose_type uses free-text string + fuzzy matching — should constrain output (enum like ClaudeCLI does)
+- Update `tests/traces/json_structured_fill_reference.py` — drifted from real backend (includes output schema in prompt, missing CLI flags, no validate_plain_fields)
+- **OTel observability**: Add OpenTelemetry spans with decorators for node ins/outs. Jaeger in Docker for local trace visualization. Per-node spans showing resolved deps, LLM fill inputs/outputs, timing.
+- **Replace CLI trace capture with logging**: The trace writer pattern (OotdCapturingLM / ootd_cli_real.txt) should be a standard Python logger. Log all fill/choose_type ins and outs. Custom Formatter/Handler for dumping to file. Decouples observability from test mocks.
 
 ### Blockers/Concerns
 
