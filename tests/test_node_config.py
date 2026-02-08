@@ -2,7 +2,7 @@
 
 NodeConfig is a standalone TypedDict (not extending ConfigDict).
 node_config is a ClassVar on Node, separate from model_config.
-_wants_lm detects whether a method declares an lm parameter.
+_wants_lm detects whether a parameter is type-hinted as LM protocol.
 """
 
 from __future__ import annotations
@@ -119,10 +119,10 @@ class TestNodeConfigClassVar:
 
 
 class TestWantsLm:
-    """_wants_lm detects whether __call__ declares an lm parameter."""
+    """_wants_lm detects whether __call__ has a parameter type-hinted as LM."""
 
-    def test_wants_lm_with_typed_lm_param(self):
-        """Returns True for def __call__(self, lm: LM)."""
+    def test_typed_lm_param_named_lm(self):
+        """Returns True for def __call__(self, lm: LM) -- LM type hint present."""
 
         class NodeWithLM(Node):
             value: str
@@ -131,36 +131,46 @@ class TestWantsLm:
 
         assert _wants_lm(NodeWithLM.__call__) is True
 
-    def test_wants_lm_with_untyped_lm_param(self):
-        """Returns True for def __call__(self, lm)."""
+    def test_typed_lm_param_different_name(self):
+        """Returns True for def __call__(self, model: LM) -- LM type hint, different name."""
 
-        class NodeWithUntypedLM(Node):
+        class NodeWithModel(Node):
             value: str
 
-            def __call__(self, lm) -> None: ...
+            def __call__(self, model: LM) -> None: ...
 
-        assert _wants_lm(NodeWithUntypedLM.__call__) is True
+        assert _wants_lm(NodeWithModel.__call__) is True
 
-    def test_wants_lm_without_lm_param(self):
-        """Returns False for def __call__(self)."""
+    def test_no_params(self):
+        """Returns False for def __call__(self) -- no LM param."""
 
-        class NodeWithoutLM(Node):
+        class NodeNoParams(Node):
             value: str
 
             def __call__(self) -> None: ...
 
-        assert _wants_lm(NodeWithoutLM.__call__) is False
+        assert _wants_lm(NodeNoParams.__call__) is False
 
-    def test_wants_lm_with_different_param_name(self):
-        """Returns False for def __call__(self, other_param)."""
+    def test_untyped_param_named_lm(self):
+        """Returns False for def __call__(self, lm) -- untyped, even named 'lm'."""
 
-        class NodeWithOtherParam(Node):
+        class NodeUntypedLM(Node):
             value: str
 
-            def __call__(self, other_param) -> None: ...
+            def __call__(self, lm) -> None: ...
 
-        assert _wants_lm(NodeWithOtherParam.__call__) is False
+        assert _wants_lm(NodeUntypedLM.__call__) is False
 
-    def test_wants_lm_base_node(self):
-        """Base Node.__call__ has lm parameter, returns True."""
+    def test_non_lm_type_hint(self):
+        """Returns False for def __call__(self, x: int) -- non-LM type hint."""
+
+        class NodeWithInt(Node):
+            value: str
+
+            def __call__(self, x: int) -> None: ...
+
+        assert _wants_lm(NodeWithInt.__call__) is False
+
+    def test_base_node_call(self):
+        """Base Node.__call__ has LM type hint, returns True."""
         assert _wants_lm(Node.__call__) is True
