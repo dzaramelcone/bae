@@ -170,16 +170,12 @@ class VibeCheck(BaseModel):
 
 
 class IsTheUserGettingDressed(Node):
-    """Read the user's message and decide if they need outfit help."""
-
     user_message: str  # caller provides this — start node fields are always user-provided
 
     def __call__(self) -> AnticipateUsersDay: ...
 
 
 class AnticipateUsersDay(Node):
-    """Given weather, schedule, location, and user vibe — anticipate what their day looks like."""
-
     weather: WeatherDep
     schedule: CalendarDep
     location: LocationDep
