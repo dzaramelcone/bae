@@ -4,13 +4,11 @@ Tests the optimized LM backend that uses pre-loaded predictors when available,
 with graceful fallback to naive (fresh) predictors.
 """
 
-from typing import Annotated
 from unittest.mock import MagicMock, patch
 
 import dspy
 import pytest
 
-from bae.markers import Context
 from bae.node import Node
 
 
@@ -18,13 +16,13 @@ from bae.node import Node
 class OptimizedNode(Node):
     """A node with optimization available."""
 
-    content: Annotated[str, Context(description="The content")]
+    content: str
 
 
 class UnoptimizedNode(Node):
     """A node without optimization."""
 
-    data: Annotated[str, Context(description="The data")]
+    data: str
 
 
 class ResultNode(Node):
@@ -309,7 +307,7 @@ class TestOptimizedLMInheritance:
 
         # Create a node that returns single type
         class SingleReturnNode(Node):
-            data: Annotated[str, Context(description="data")]
+            data: str
 
             def __call__(self, lm) -> ResultNode:
                 ...

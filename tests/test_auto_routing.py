@@ -8,13 +8,11 @@ Tests:
 
 import ast
 import inspect
-from typing import Annotated
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bae.lm import LM
-from bae.markers import Context
 from bae.graph import Graph, _get_routing_strategy
 from bae.node import Node, _has_ellipsis_body
 from bae.result import GraphResult
@@ -47,7 +45,7 @@ class TargetB(Node):
 class EllipsisUnionNode(Node):
     """Node with ellipsis body and union return type."""
 
-    content: Annotated[str, Context(description="Content")]
+    content: str
 
     def __call__(self, lm: LM) -> TargetA | TargetB:
         ...
@@ -56,7 +54,7 @@ class EllipsisUnionNode(Node):
 class EllipsisSingleNode(Node):
     """Node with ellipsis body and single return type."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
 
     def __call__(self, lm: LM) -> TargetA:
         ...
@@ -65,7 +63,7 @@ class EllipsisSingleNode(Node):
 class EllipsisOptionalSingleNode(Node):
     """Node with ellipsis body and optional single return type (A | None)."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
 
     def __call__(self, lm: LM) -> TargetA | None:
         ...
@@ -74,7 +72,7 @@ class EllipsisOptionalSingleNode(Node):
 class EllipsisOptionalUnionNode(Node):
     """Node with ellipsis body and optional union return type (A | B | None)."""
 
-    content: Annotated[str, Context(description="Content")]
+    content: str
 
     def __call__(self, lm: LM) -> TargetA | TargetB | None:
         ...
@@ -83,7 +81,7 @@ class EllipsisOptionalUnionNode(Node):
 class EllipsisTerminalNode(Node):
     """Node with ellipsis body and pure None return type."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
 
     def __call__(self, lm: LM) -> None:
         ...
@@ -93,7 +91,7 @@ class EllipsisTerminalNode(Node):
 class CustomLogicNode(Node):
     """Node with custom __call__ logic."""
 
-    content: Annotated[str, Context(description="Content")]
+    content: str
 
     def __call__(self, lm: LM) -> TargetA | TargetB:
         return lm.decide(self)
@@ -102,7 +100,7 @@ class CustomLogicNode(Node):
 class CustomMakeNode(Node):
     """Node with custom logic using lm.make."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
 
     def __call__(self, lm: LM) -> TargetA:
         return lm.make(self, TargetA)
@@ -111,7 +109,7 @@ class CustomMakeNode(Node):
 class CustomConditionNode(Node):
     """Node with custom conditional logic."""
 
-    query: Annotated[str, Context(description="Query")]
+    query: str
 
     def __call__(self, lm: LM) -> TargetA | TargetB:
         if "special" in self.query:
@@ -133,7 +131,7 @@ class TerminalTarget(Node):
 class StartUnionNode(Node):
     """Start node with union return type and ellipsis body."""
 
-    content: Annotated[str, Context(description="Content")]
+    content: str
 
     def __call__(self, lm: LM) -> TerminalTarget | TargetB:
         ...
@@ -143,7 +141,7 @@ class StartUnionNode(Node):
 class StartSingleNode(Node):
     """Start node with single return type and ellipsis body."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
 
     def __call__(self, lm: LM) -> TerminalTarget:
         ...
@@ -153,7 +151,7 @@ class StartSingleNode(Node):
 class StartCustomNode(Node):
     """Start node with custom logic (escape hatch)."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
     call_count: int = 0
 
     def __call__(self, lm: LM) -> TerminalTarget:
