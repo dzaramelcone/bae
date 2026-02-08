@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import time
 import types
-from typing import TYPE_CHECKING, Annotated, Any, TypeVar, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, TypeVar, get_args, get_type_hints
 
 import dspy
 from pydantic import ValidationError
@@ -17,7 +17,6 @@ from pydantic_ai import format_as_xml
 
 from bae.compiler import node_to_signature
 from bae.exceptions import BaeLMError, BaeParseError
-from bae.markers import Context, Dep
 
 if TYPE_CHECKING:
     from bae.node import Node
@@ -63,26 +62,9 @@ class DSPyBackend:
         """
         self.max_retries = max_retries
 
-    def _extract_context_fields(self, node: Node) -> dict[str, Any]:
-        """Extract Context-annotated field values from node."""
-        fields = {}
-        hints = get_type_hints(node.__class__, include_extras=True)
-
-        for name, hint in hints.items():
-            if get_origin(hint) is Annotated:
-                args = get_args(hint)
-                metadata = args[1:]
-
-                for meta in metadata:
-                    if isinstance(meta, Context):
-                        fields[name] = getattr(node, name)
-                        break
-
-        return fields
-
     def _build_inputs(self, node: Node, **deps: Any) -> dict[str, Any]:
-        """Build input dict from node Context fields and deps."""
-        inputs = self._extract_context_fields(node)
+        """Build input dict from node fields and deps."""
+        inputs = {name: getattr(node, name) for name in node.model_fields}
         inputs.update(deps)
         return inputs
 

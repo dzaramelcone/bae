@@ -10,7 +10,6 @@ from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
 from bae.exceptions import BaeError, DepError, RecallError
 from bae.lm import LM
-from bae.markers import Bind
 from bae.node import Node, _has_ellipsis_body, _wants_lm
 from bae.resolver import resolve_fields
 from bae.result import GraphResult
@@ -187,42 +186,6 @@ class Graph:
                 issues.append(
                     f"{node_cls.__name__} has no path to a terminal node "
                     f"(potential infinite loop)"
-                )
-
-        # Check for duplicate Bind types across nodes
-        issues.extend(self._validate_bind_uniqueness())
-
-        return issues
-
-    def _validate_bind_uniqueness(self) -> list[str]:
-        """Check that each Bind type appears at most once in the graph."""
-        issues = []
-
-        # Collect all Bind types -> list of (node_cls, field_name)
-        bind_types: dict[type, list[tuple[type[Node], str]]] = {}
-
-        for node_cls in self._nodes:
-            hints = get_type_hints(node_cls, include_extras=True)
-            for field_name, hint in hints.items():
-                if get_origin(hint) is Annotated:
-                    args = get_args(hint)
-                    base_type = args[0]
-                    metadata = args[1:]
-
-                    for meta in metadata:
-                        if isinstance(meta, Bind):
-                            if base_type not in bind_types:
-                                bind_types[base_type] = []
-                            bind_types[base_type].append((node_cls, field_name))
-                            break
-
-        # Report duplicates
-        for bind_type, locations in bind_types.items():
-            if len(locations) > 1:
-                node_names = [f"{n.__name__}.{f}" for n, f in locations]
-                issues.append(
-                    f"Duplicate Bind for type {bind_type.__name__}: "
-                    f"{', '.join(node_names)}"
                 )
 
         return issues

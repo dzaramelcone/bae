@@ -7,12 +7,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Any, get_args, get_origin, get_type_hints
+from typing import Any, get_type_hints
 
 import dspy
 
 from bae.graph import Graph, _get_base_type
-from bae.markers import Context
 from bae.node import Node
 from bae.resolver import classify_fields
 
@@ -88,31 +87,6 @@ class CompiledGraph:
         compiled = compile_graph(graph)
         compiled.optimized = load_optimized(list(graph.nodes), Path(path))
         return compiled
-
-
-def _extract_context_fields(
-    node_cls: type[Node],
-) -> dict[str, tuple[type, dspy.InputField]]:
-    """Extract Context-annotated class fields as InputFields.
-
-    Kept for backward compatibility with v1 callers. The v2 node_to_signature
-    uses classify_fields() from bae.resolver instead.
-    """
-    fields: dict[str, tuple[type, dspy.InputField]] = {}
-
-    hints = get_type_hints(node_cls, include_extras=True)
-    for name, hint in hints.items():
-        if get_origin(hint) is Annotated:
-            args = get_args(hint)
-            base_type = args[0]
-            metadata = args[1:]
-
-            for meta in metadata:
-                if isinstance(meta, Context):
-                    fields[name] = (base_type, dspy.InputField(desc=meta.description))
-                    break
-
-    return fields
 
 
 def node_to_signature(

@@ -24,8 +24,8 @@ class LM(Protocol):
     - Current node state (fields)
     - Target type(s) to produce
 
-    v1 methods (make/decide): node-centric, will be removed in Phase 8.
-    v2 methods (choose_type/fill): context-dict-centric, used by v2 runtime.
+    v1 methods (make/decide): node-centric, kept for custom __call__ escape-hatch nodes.
+    v2 methods (choose_type/fill): context-dict-centric, used by the graph runtime.
     """
 
     def make(self, node: Node, target: type[T]) -> T:

@@ -6,7 +6,7 @@ from bae.optimized_lm import OptimizedLM
 from bae.exceptions import BaeError, BaeLMError, BaeParseError, DepError, FillError, RecallError
 from bae.graph import Graph
 from bae.lm import LM, ClaudeCLIBackend, PydanticAIBackend
-from bae.markers import Bind, Context, Dep, Recall
+from bae.markers import Dep, Recall
 from bae.node import Node, NodeConfig
 from bae.optimizer import (
     load_optimized,
@@ -25,10 +25,8 @@ __all__ = [
     "Graph",
     "GraphResult",
     # Markers
-    "Context",
     "Dep",
     "Recall",
-    "Bind",
     # Resolver
     "classify_fields",
     "resolve_fields",
