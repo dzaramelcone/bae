@@ -147,13 +147,17 @@ def _build_fill_prompt(
 
 
 def _strip_format(schema: dict) -> dict:
-    """Recursively strip 'format' from a JSON schema.
+    """Recursively move 'format' from JSON schema into 'description'.
 
     Claude CLI silently rejects --json-schema when the schema contains
     'format' constraints (e.g. 'format': 'uri' from HttpUrl). The API
     supports it, but the CLI doesn't create the structured output tool.
+
+    Instead of dropping format entirely, we append it to the description
+    so the LLM still knows the semantic type (e.g. "format: uri").
     """
     out: dict = {}
+    fmt = schema.get("format")
     for k, v in schema.items():
         if k == "format":
             continue
@@ -163,6 +167,10 @@ def _strip_format(schema: dict) -> dict:
             out[k] = [_strip_format(i) if isinstance(i, dict) else i for i in v]
         else:
             out[k] = v
+    if fmt:
+        existing = out.get("description", "")
+        hint = f"format: {fmt}"
+        out["description"] = f"{existing}, {hint}" if existing else hint
     return out
 
 

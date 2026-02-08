@@ -207,13 +207,23 @@ class TestValidatePlainFields:
 
 
 class TestStripFormat:
-    """_strip_format removes 'format' fields that break Claude CLI --json-schema."""
+    """_strip_format moves 'format' into 'description' for Claude CLI --json-schema."""
 
-    def test_strips_top_level_format(self):
+    def test_moves_format_to_description(self):
         from bae.lm import _strip_format
 
         schema = {"type": "string", "format": "uri"}
-        assert _strip_format(schema) == {"type": "string"}
+        result = _strip_format(schema)
+        assert "format" not in result
+        assert result["description"] == "format: uri"
+
+    def test_appends_to_existing_description(self):
+        from bae.lm import _strip_format
+
+        schema = {"type": "string", "format": "uri", "description": "a link"}
+        result = _strip_format(schema)
+        assert "format" not in result
+        assert result["description"] == "a link, format: uri"
 
     def test_strips_nested_format(self):
         from bae.lm import _strip_format
@@ -227,6 +237,7 @@ class TestStripFormat:
         }
         result = _strip_format(schema)
         assert "format" not in result["properties"]["link"]
+        assert result["properties"]["link"]["description"] == "format: uri"
         assert result["properties"]["name"] == {"type": "string"}
 
     def test_strips_format_in_array_items(self):
@@ -237,7 +248,7 @@ class TestStripFormat:
             "items": {"type": "string", "format": "uri", "description": "a url"},
         }
         result = _strip_format(schema)
-        assert result["items"] == {"type": "string", "description": "a url"}
+        assert result["items"] == {"type": "string", "description": "a url, format: uri"}
 
     def test_preserves_non_format_fields(self):
         from bae.lm import _strip_format
