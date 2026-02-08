@@ -5,7 +5,7 @@ Provides a clean interface for LLM backends to produce typed node instances.
 
 from __future__ import annotations
 
-import types
+import enum
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -115,20 +115,35 @@ def _build_fill_prompt(
     """Build the prompt for fill() — shared across backends.
 
     Prompt structure:
-    1. Source node context (previous node, as XML for readability)
+    1. Source node context (previous node, as JSON)
     2. Resolved dep/recall values (so LLM knows what data is available)
     3. Instruction (class name + optional docstring)
     """
+    import json
+
     parts: list[str] = []
     if source is not None:
-        parts.append(format_as_xml(
-            source.model_dump(), root_tag=source.__class__.__name__
-        ))
+        source_data = {source.__class__.__name__: source.model_dump(mode="json")}
+        parts.append(json.dumps(source_data, indent=2))
     if resolved:
-        parts.append(format_as_xml(resolved, root_tag="context"))
+        # Serialize resolved values — Pydantic models need model_dump
+        context: dict[str, object] = {}
+        for k, v in resolved.items():
+            context[k] = v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+        parts.append(json.dumps({"context": context}, indent=2))
     parts.append(instruction)
 
     return "\n\n".join(parts)
+
+
+def _build_choice_schema(type_names: list[str]) -> dict:
+    """Build a JSON schema for picking one of N type names.
+
+    Uses a dynamic Pydantic model + transform_schema for constrained decoding.
+    """
+    ChoiceEnum = enum.Enum("ChoiceEnum", {n: n for n in type_names})
+    ChoiceModel = create_model("Choice", choice=(ChoiceEnum, ...))
+    return transform_schema(ChoiceModel)
 
 
 @runtime_checkable
@@ -324,21 +339,6 @@ class ClaudeCLIBackend:
 
         return xml
 
-    def _build_schema(self, types: tuple[type, ...], allow_none: bool) -> dict:
-        """Build JSON schema for union of types."""
-        schemas = []
-        for t in types:
-            schema = t.model_json_schema()
-            schema["title"] = t.__name__
-            schemas.append(schema)
-
-        if allow_none:
-            schemas.append({"type": "null", "title": "None"})
-
-        if len(schemas) == 1:
-            return schemas[0]
-        return {"oneOf": schemas}
-
     def make(self, node: Node, target: type[T]) -> T:
         """Produce an instance of target type using Claude CLI."""
         prompt = self._node_to_prompt(node)
@@ -346,7 +346,7 @@ class ClaudeCLIBackend:
         if target.__doc__:
             full_prompt += f"\n{target.__name__}: {target.__doc__}"
 
-        schema = target.model_json_schema()
+        schema = transform_schema(target)
         data = self._run_cli_json(full_prompt, schema)
         return target.model_validate(data)
 
@@ -379,7 +379,9 @@ class ClaudeCLIBackend:
             for item in reversed(data):
                 if item.get("type") == "result" and "structured_output" in item:
                     return item["structured_output"]
-            raise RuntimeError("No structured_output in Claude CLI response")
+            raise RuntimeError(
+                f"No structured_output in Claude CLI response: {json.dumps(data, indent=2)[:2000]}"
+            )
 
         return data
 
@@ -411,11 +413,7 @@ class ClaudeCLIBackend:
         if is_terminal:
             choice_prompt += "\n- None: Terminate processing"
 
-        choice_schema = {
-            "type": "object",
-            "properties": {"choice": {"type": "string", "enum": type_names}},
-            "required": ["choice"],
-        }
+        choice_schema = _build_choice_schema(type_names)
 
         choice_data = self._run_cli_json(choice_prompt, choice_schema)
         chosen = choice_data["choice"]
@@ -445,11 +443,7 @@ class ClaudeCLIBackend:
             if t.__doc__:
                 prompt += f"\n- {t.__name__}: {t.__doc__}"
 
-        choice_schema = {
-            "type": "object",
-            "properties": {"choice": {"type": "string", "enum": type_names}},
-            "required": ["choice"],
-        }
+        choice_schema = _build_choice_schema(type_names)
 
         choice_data = self._run_cli_json(prompt, choice_schema)
         chosen = choice_data["choice"]
