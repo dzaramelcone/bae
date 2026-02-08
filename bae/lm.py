@@ -622,7 +622,8 @@ class ClaudeCLIBackend:
         "You are an XML completion engine. "
         "The user provides an incomplete XML document that ends at an open tag. "
         "Continue the document from exactly where it left off. "
-        "Output ONLY the XML continuation — no commentary, no markdown, no explanation."
+        "Output ONLY the XML continuation — no commentary, no markdown, no explanation. "
+        "Be concise. Field values should be brief and information-dense."
     )
 
     def _run_cli_text(self, prompt: str) -> str:

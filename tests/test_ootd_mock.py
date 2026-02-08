@@ -1,11 +1,11 @@
-"""End-to-end test for ootd.py graph with mocked LLM.
+"""Mocked ootd.py graph test with prompt/response trace capture.
 
 Verifies the full graph execution flow matches the plan:
 1. IsTheUserGettingDressed → AnticipateUsersDay (deps resolved, vibe LLM-filled)
 2. AnticipateUsersDay → RecommendOOTD (all plain, LLM-filled)
 3. RecommendOOTD → None (terminal)
 
-Saves full prompt/response traces to tests/traces/ootd_e2e.txt.
+Saves full prompt/response traces to tests/traces/ootd_mock.txt.
 """
 
 from __future__ import annotations
@@ -251,10 +251,10 @@ class TestOotdE2E:
         assert "OOTD = outfit of the day." in lm.fill_calls[1]["instruction"]
 
     def test_writes_trace_file(self):
-        """E2E run saves trace to tests/traces/ootd_e2e.txt."""
+        """E2E run saves trace to tests/traces/ootd_mock.txt."""
         _, lm = self._run_graph()
 
-        trace_path = TRACES_DIR / "ootd_e2e.txt"
+        trace_path = TRACES_DIR / "ootd_mock.txt"
         lm.write_trace(trace_path)
 
         content = trace_path.read_text()
