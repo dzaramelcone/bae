@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 ## Current Position
 
 Phase: 10 (Hint Annotation) of 10+ — COMPLETE
-Plan: 02 of 2 in phase
+Plan: 03 of 3 in phase (gap closure)
 Status: Phase complete
-Last activity: 2026-02-08 — Completed 10-02-PLAN.md (Field description preservation)
+Last activity: 2026-02-08 — Completed 10-03-PLAN.md (DSPyBackend __doc__ removal, gap closure)
 
-Progress: [################################] 100% v2.0 (32/32 plans) | Phase 10 complete
+Progress: [################################] 100% v2.0 (33/33 plans) | Phase 10 complete (all gaps closed)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 32 (13 v1.0 + 19 v2.0)
+- Total plans completed: 33 (13 v1.0 + 20 v2.0)
 - Average duration: —
 - Total execution time: —
 
@@ -37,7 +37,7 @@ Progress: [################################] 100% v2.0 (32/32 plans) | Phase 10 
 | 7. Integration | 4/4 | ~20min | ~5min |
 | 8. Cleanup & Migration | 4/4 | ~11min | ~3min |
 | 9. JSON Structured Fill | 1/1 | — | — |
-| 10. Hint Annotation | 2/2 | ~10min | ~5min |
+| 10. Hint Annotation | 3/3 | ~14min | ~5min |
 
 ## Accumulated Context
 
@@ -108,6 +108,9 @@ Key decisions from Phase 10 (Hint Annotation):
 - Explicit Field(description=...) replaces implicit docstring extraction for per-field LLM hints
 - _build_plain_model passes (type, FieldInfo) to create_model — preserves description, default_factory, all metadata
 - RecommendOOTD demonstrates Field(description=...) on all 6 plain fields
+- node_to_signature returns class name only (docstring not appended to instruction)
+- DSPyBackend.choose_type does not include type docstrings in LLM context
+- Zero __doc__ references in all 4 LLM-facing files (compiler.py, dspy_backend.py, graph.py, lm.py)
 
 ### Pending Todos
 
@@ -122,6 +125,6 @@ Key decisions from Phase 10 (Hint Annotation):
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 10-02-PLAN.md (Field description preservation). Phase 10 complete.
+Stopped at: Completed 10-03-PLAN.md (DSPyBackend __doc__ removal, gap closure). Phase 10 fully complete — all verification gaps closed.
 Branch: main
 Resume file: None
