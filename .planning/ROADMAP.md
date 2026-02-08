@@ -147,10 +147,16 @@ Plans:
 **Goal**: Graph.run() assembles context frames from all sources and executes the full node lifecycle
 **Depends on**: Phase 5, Phase 6
 **Requirements**: DEP2-06, CLN-03
-**Plans**: TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — TDD: Error hierarchy (DepError/FillError) + _wants_lm type-hint detection
+- [ ] 07-02-PLAN.md — TDD: Graph.run() v2 rewrite with resolve_fields and choose_type/fill
+- [ ] 07-03-PLAN.md — Test migration + incant removal from pyproject.toml
+- [ ] 07-04-PLAN.md — Phase gate: regression + success criteria verification
 
 **Success Criteria** (what must be TRUE):
-  1. Dep fields on the start node are auto-resolved before graph execution begins (caller provides non-dep fields, bae resolves dep fields)
+  1. Dep fields on the start node are auto-resolved in the first loop iteration (caller provides non-dep fields, bae resolves dep fields)
   2. Each execution loop iteration resolves deps, resolves recalls, then has LM fill remaining fields — in that order
   3. The incant dependency is removed; dep resolution uses bae's own resolver
   4. A multi-node graph with deps, recalls, and LLM-filled fields runs end-to-end producing correct results
@@ -181,7 +187,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8
 | 4. Production Runtime | v1.0 | 2/2 | Complete | 2026-02-05 |
 | 5. Markers & Resolver | v2.0 | 4/4 | Complete | 2026-02-08 |
 | 6. Node & LM Protocol | v2.0 | 5/5 | Complete | 2026-02-08 |
-| 7. Integration | v2.0 | 0/TBD | Not started | - |
+| 7. Integration | v2.0 | 0/4 | In progress | - |
 | 8. Cleanup & Migration | v2.0 | 0/TBD | Not started | - |
 
 ---
