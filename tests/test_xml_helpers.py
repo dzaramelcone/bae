@@ -6,6 +6,7 @@ Tests:
 - _parse_xml_completion: parse LLM continuation, extract fields, validate
 - _build_plain_model: dynamic Pydantic model with only plain fields
 - _serialize_value: convert Pydantic models/scalars to XML string
+- validate_plain_fields: two-stage validation separating dep errors from LLM errors
 """
 
 from __future__ import annotations
@@ -315,3 +316,104 @@ class TestSerializeValue:
         assert "<items>" in xml
         assert "<item>a</item>" in xml
         assert "<item>b</item>" in xml
+
+
+# ── validate_plain_fields ──────────────────────────────────────────────
+
+
+class NodeWithTypedPlains(Node):
+    """Node with typed plain fields for validation testing."""
+
+    weather: WeatherDep
+    temp_f: float
+    summary: str
+    tags: list[str]
+
+    def __call__(self) -> None: ...
+
+
+class TestValidatePlainFields:
+    """validate_plain_fields validates only LLM-generated plain fields."""
+
+    def test_valid_plain_fields_pass(self):
+        """Valid plain field values pass validation and return validated dict."""
+        from bae.lm import validate_plain_fields
+
+        raw = {"temp_f": "72.5", "summary": "warm day", "tags": ["sunny", "nice"]}
+        result = validate_plain_fields(raw, NodeWithTypedPlains)
+
+        assert result["temp_f"] == 72.5  # coerced from string
+        assert result["summary"] == "warm day"
+        assert result["tags"] == ["sunny", "nice"]
+
+    def test_invalid_plain_fields_raise_fill_error(self):
+        """Invalid plain field values raise FillError with validation details."""
+        from bae.exceptions import FillError
+        from bae.lm import validate_plain_fields
+
+        raw = {"temp_f": "not_a_number", "summary": "ok", "tags": ["fine"]}
+
+        with pytest.raises(FillError) as exc_info:
+            validate_plain_fields(raw, NodeWithTypedPlains)
+
+        err = exc_info.value
+        assert err.node_type is NodeWithTypedPlains
+        assert "temp_f" in err.validation_errors
+        assert err.attempts == 0  # no retry, just validation
+
+    def test_missing_required_field_raises_fill_error(self):
+        """Missing required plain fields raise FillError."""
+        from bae.exceptions import FillError
+        from bae.lm import validate_plain_fields
+
+        raw = {"temp_f": "72.5"}  # missing summary and tags
+
+        with pytest.raises(FillError) as exc_info:
+            validate_plain_fields(raw, NodeWithTypedPlains)
+
+        err = exc_info.value
+        assert "summary" in err.validation_errors or "tags" in err.validation_errors
+
+    def test_dep_fields_excluded_from_validation(self):
+        """Dep fields are NOT included in plain field validation."""
+        from bae.lm import validate_plain_fields
+
+        # Only plain fields in the raw dict — no weather (dep)
+        raw = {"temp_f": "72.5", "summary": "warm", "tags": ["a"]}
+        result = validate_plain_fields(raw, NodeWithTypedPlains)
+
+        assert "weather" not in result
+
+    def test_returns_validated_model_dump(self):
+        """Return value is a dict of validated+coerced plain field values."""
+        from bae.lm import validate_plain_fields
+
+        raw = {"temp_f": "99", "summary": "hot", "tags": ["desert"]}
+        result = validate_plain_fields(raw, NodeWithTypedPlains)
+
+        # Should be a plain dict, not a model instance
+        assert isinstance(result, dict)
+        assert isinstance(result["temp_f"], float)
+
+    def test_nested_model_validated(self):
+        """Nested BaseModel plain fields are validated through Pydantic."""
+        from bae.lm import validate_plain_fields
+
+        raw = {"vibe": {"mood": "happy", "style": "casual"}}
+        result = validate_plain_fields(raw, MixedNode)
+
+        # Should be a validated VibeCheck instance after model_dump
+        assert result["vibe"]["mood"] == "happy"
+
+    def test_nested_model_invalid_raises_fill_error(self):
+        """Invalid nested model data raises FillError."""
+        from bae.exceptions import FillError
+        from bae.lm import validate_plain_fields
+
+        # VibeCheck requires mood and style — provide neither
+        raw = {"vibe": {"wrong_key": "bad"}}
+
+        with pytest.raises(FillError) as exc_info:
+            validate_plain_fields(raw, MixedNode)
+
+        assert "vibe" in exc_info.value.validation_errors

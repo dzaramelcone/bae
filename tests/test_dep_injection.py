@@ -43,8 +43,8 @@ class MockV2LM:
                 return t
         return types[0]
 
-    def fill(self, target: type, context: dict, instruction: str) -> Node:
-        self.fill_calls.append((target, context, instruction))
+    def fill(self, target: type, resolved: dict, instruction: str, source=None) -> Node:
+        self.fill_calls.append((target, resolved, instruction))
         return self.responses[target]
 
     # Keep v1 methods as stubs to satisfy Protocol shape

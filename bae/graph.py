@@ -278,17 +278,23 @@ class Graph:
                     current = current()
             else:
                 # Ellipsis body -- LM routing via v2 API
-                context = _build_context(current)
-
                 if strategy[0] == "make":
                     target_type = strategy[1]
-                    instruction = _build_instruction(target_type)
-                    current = lm.fill(target_type, context, instruction)
                 elif strategy[0] == "decide":
                     types_list = list(strategy[1])
-                    chosen = lm.choose_type(types_list, context)
-                    instruction = _build_instruction(chosen)
-                    current = lm.fill(chosen, context, instruction)
+                    context = _build_context(current)
+                    target_type = lm.choose_type(types_list, context)
+                else:
+                    current = None
+                    iters += 1
+                    continue
+
+                # Resolve target's dep/recall fields before fill
+                target_resolved = resolve_fields(target_type, trace, dep_cache)
+                instruction = _build_instruction(target_type)
+                current = lm.fill(
+                    target_type, target_resolved, instruction, source=current
+                )
 
             iters += 1
 

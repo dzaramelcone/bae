@@ -337,19 +337,21 @@ class DSPyBackend:
     def fill(
         self,
         target: type[T],
-        context: dict[str, Any],
+        resolved: dict[str, Any],
         instruction: str,
+        source: "Node | None" = None,
     ) -> T:
         """Populate a node's plain fields using dspy.Predict.
 
         Uses node_to_signature(target, is_start=False) so plain fields
         become OutputFields (LLM fills them) and Dep/Recall fields become
-        InputFields (provided via context dict).
+        InputFields (provided via resolved dict).
 
         Args:
             target: The Node type to instantiate.
-            context: Resolved field values (Dep + Recall results).
+            resolved: Only the target's resolved dep/recall values.
             instruction: Class name + optional docstring for the LLM.
+            source: The previous node (context frame). Not yet used by DSPy.
 
         Returns:
             An instance of target with all fields populated.
@@ -361,14 +363,14 @@ class DSPyBackend:
         signature = node_to_signature(target, is_start=False)
         predictor = dspy.Predict(signature)
 
-        # Context dict provides InputField values; LLM generates OutputField values
-        result = self._call_with_retry(predictor, context)
+        # resolved dict provides InputField values; LLM generates OutputField values
+        result = self._call_with_retry(predictor, resolved)
 
-        # Collect all field values: context (InputFields) + LM output (OutputFields)
-        all_fields = dict(context)
+        # Collect all field values: resolved (InputFields) + LM output (OutputFields)
+        all_fields = dict(resolved)
         # Extract OutputField values from prediction
         for key in result.keys():
-            if key not in context:
+            if key not in resolved:
                 all_fields[key] = getattr(result, key)
 
         return target.model_construct(**all_fields)

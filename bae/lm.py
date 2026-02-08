@@ -293,6 +293,45 @@ def _build_plain_model(target_cls: type) -> type[BaseModel]:
     )
 
 
+def validate_plain_fields(
+    raw: dict[str, Any],
+    target_cls: type,
+) -> dict[str, Any]:
+    """Validate only LLM-generated plain fields through Pydantic.
+
+    Builds a dynamic model from target_cls's plain fields, validates the raw
+    dict through it, and returns the validated+coerced values as a dict.
+
+    This is the LLM validation boundary — dep/recall fields are validated
+    separately at resolve time. Errors here are FillError, not DepError.
+
+    Args:
+        raw: Dict of raw parsed values for plain fields only.
+        target_cls: The target Node class (used to build the plain model).
+
+    Returns:
+        Dict of validated, type-coerced plain field values.
+
+    Raises:
+        FillError: If any plain field fails Pydantic validation.
+    """
+    from bae.exceptions import FillError
+
+    PlainModel = _build_plain_model(target_cls)
+
+    try:
+        validated = PlainModel.model_validate(raw)
+        return validated.model_dump()
+    except Exception as e:
+        raise FillError(
+            f"Plain field validation failed for {target_cls.__name__}",
+            node_type=target_cls,
+            validation_errors=str(e),
+            attempts=0,
+            cause=e,
+        ) from e
+
+
 @runtime_checkable
 class LM(Protocol):
     """Protocol for language model backends.
@@ -324,10 +363,18 @@ class LM(Protocol):
     def fill(
         self,
         target: type[T],
-        context: dict[str, object],
+        resolved: dict[str, object],
         instruction: str,
+        source: Node | None = None,
     ) -> T:
-        """Populate a node's plain fields given resolved context."""
+        """Populate a node's plain fields given resolved dep/recall values.
+
+        Args:
+            target: The Node type to populate.
+            resolved: Only the target's resolved dep/recall values.
+            instruction: Class name + optional docstring.
+            source: The previous node (context frame), serialized in prompt.
+        """
         ...
 
 
@@ -443,17 +490,34 @@ class PydanticAIBackend:
     def fill(
         self,
         target: type[T],
-        context: dict[str, object],
+        resolved: dict[str, object],
         instruction: str,
+        source: Node | None = None,
     ) -> T:
         """Populate target node fields using pydantic-ai."""
-        agent = self._get_agent((target,), allow_none=False)
+        plain_model = _build_plain_model(target)
+        agent = self._get_agent((plain_model,), allow_none=False)
 
-        context_xml = format_as_xml(context, root_tag="context")
-        prompt = f"{context_xml}\n\n{instruction}"
+        # Build prompt: source XML + schema + instruction
+        parts: list[str] = []
+        if source is not None:
+            parts.append(format_as_xml(
+                source.model_dump(), root_tag=source.__class__.__name__
+            ))
+        parts.append(_build_xml_schema(target))
+        if resolved:
+            parts.append(format_as_xml(resolved, root_tag="resolved"))
+        parts.append(instruction)
+
+        prompt = "\n\n".join(parts)
 
         result = agent.run_sync(prompt)
-        return result.output
+        # Merge LLM output with resolved deps
+        all_fields = dict(resolved)
+        plain_output = result.output
+        if isinstance(plain_output, BaseModel):
+            all_fields.update(plain_output.model_dump())
+        return target.model_construct(**all_fields)
 
 
 class ClaudeCLIBackend:
@@ -495,11 +559,11 @@ class ClaudeCLIBackend:
             full_prompt += f"\n{target.__name__}: {target.__doc__}"
 
         schema = target.model_json_schema()
-        data = self._run_cli(full_prompt, schema)
+        data = self._run_cli_json(full_prompt, schema)
         return target.model_validate(data)
 
-    def _run_cli(self, prompt: str, schema: dict) -> dict | None:
-        """Run Claude CLI and extract structured output."""
+    def _run_cli_json(self, prompt: str, schema: dict) -> dict | None:
+        """Run Claude CLI with JSON schema and extract structured output."""
         import json
         import subprocess
 
@@ -509,6 +573,7 @@ class ClaudeCLIBackend:
             "--model", self.model,
             "--output-format", "json",
             "--json-schema", json.dumps(schema),
+            "--no-session-persistence",
         ]
 
         try:
@@ -529,6 +594,28 @@ class ClaudeCLIBackend:
             raise RuntimeError("No structured_output in Claude CLI response")
 
         return data
+
+    def _run_cli_text(self, prompt: str) -> str:
+        """Run Claude CLI in text mode and return raw output."""
+        import subprocess
+
+        cmd = [
+            "claude",
+            "-p", prompt,
+            "--model", self.model,
+            "--output-format", "text",
+            "--no-session-persistence",
+        ]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Claude CLI timed out after {self.timeout}s")
+
+        if result.returncode != 0:
+            raise RuntimeError(f"Claude CLI failed: {result.stderr}")
+
+        return result.stdout
 
     def decide(self, node: Node) -> Node | None:
         """Let LLM pick successor type and produce it using Claude CLI.
@@ -564,7 +651,7 @@ class ClaudeCLIBackend:
             "required": ["choice"],
         }
 
-        choice_data = self._run_cli(choice_prompt, choice_schema)
+        choice_data = self._run_cli_json(choice_prompt, choice_schema)
         chosen = choice_data["choice"]
 
         if chosen == "None":
@@ -598,7 +685,7 @@ class ClaudeCLIBackend:
             "required": ["choice"],
         }
 
-        choice_data = self._run_cli(prompt, choice_schema)
+        choice_data = self._run_cli_json(prompt, choice_schema)
         chosen = choice_data["choice"]
 
         # Map name back to type
@@ -611,13 +698,45 @@ class ClaudeCLIBackend:
     def fill(
         self,
         target: type[T],
-        context: dict[str, object],
+        resolved: dict[str, object],
         instruction: str,
+        source: Node | None = None,
     ) -> T:
-        """Populate target node fields using Claude CLI."""
-        context_xml = format_as_xml(context, root_tag="context")
-        prompt = f"{context_xml}\n\n{instruction}"
+        """Populate target node fields via XML next-token completion.
 
-        schema = target.model_json_schema()
-        data = self._run_cli(prompt, schema)
-        return target.model_validate(data)
+        Builds prompt: source XML + schema + partial XML ending at open tag
+        of first plain field. LLM continues the XML document.
+        """
+        fields = classify_fields(target)
+        plain_fields = [n for n in target.model_fields if fields.get(n) == "plain"]
+
+        if not plain_fields:
+            # No plain fields — nothing to fill, construct from resolved
+            return target.model_construct(**resolved)
+
+        first_plain = plain_fields[0]
+
+        # Build prompt parts
+        parts: list[str] = []
+        if source is not None:
+            parts.append(format_as_xml(
+                source.model_dump(), root_tag=source.__class__.__name__
+            ))
+        parts.append(_build_xml_schema(target))
+        parts.append(_build_partial_xml(target, resolved))
+
+        prompt = "\n\n".join(parts)
+
+        # Call CLI in text mode — LLM continues the XML document
+        response = self._run_cli_text(prompt)
+
+        # Parse the XML completion into raw dict
+        parsed = _parse_xml_completion(response, target, first_plain)
+
+        # Validate plain fields only (LLM boundary — FillError on failure)
+        validated = validate_plain_fields(parsed, target)
+
+        # Merge independently-validated halves via model_construct
+        all_fields = dict(resolved)
+        all_fields.update(validated)
+        return target.model_construct(**all_fields)

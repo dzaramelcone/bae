@@ -252,20 +252,30 @@ class TestPydanticAIBackendFill:
     """PydanticAIBackend.fill returns target instance."""
 
     def test_fill_returns_target_instance(self):
-        """fill() returns an instance of the target type."""
+        """fill() returns an instance of the target type via model_construct."""
+        from bae.lm import _build_plain_model
+
         backend = PydanticAIBackend()
-        context = {"name": "Alice"}
+        # Greet has no Dep/Recall fields, so resolved is empty
+        # All fields are plain — LLM fills everything
+        resolved: dict = {}
+
+        PlainModel = _build_plain_model(Greet)
+        plain_output = PlainModel.model_validate(
+            {"name": "Alice", "greeting": "Hello Alice"}
+        )
 
         with patch.object(backend, "_get_agent") as mock_get_agent:
             mock_agent = MagicMock()
             mock_get_agent.return_value = mock_agent
             mock_result = MagicMock()
-            mock_result.output = Greet(name="Alice", greeting="Hello Alice")
+            mock_result.output = plain_output
             mock_agent.run_sync.return_value = mock_result
 
-            result = backend.fill(Greet, context, "Greet")
+            result = backend.fill(Greet, resolved, "Greet")
 
             assert isinstance(result, Greet)
+            assert result.name == "Alice"
             assert result.greeting == "Hello Alice"
 
 
@@ -287,7 +297,7 @@ class TestClaudeCLIBackendChooseType:
         """choose_type with multiple types calls CLI to pick."""
         backend = ClaudeCLIBackend()
 
-        with patch.object(backend, "_run_cli") as mock_cli:
+        with patch.object(backend, "_run_cli_json") as mock_cli:
             mock_cli.return_value = {"choice": "Farewell"}
 
             result = backend.choose_type([Greet, Farewell], {"name": "Alice"})
@@ -300,33 +310,40 @@ class TestClaudeCLIBackendChooseType:
 
 
 class TestClaudeCLIBackendFill:
-    """ClaudeCLIBackend.fill uses CLI with JSON schema."""
+    """ClaudeCLIBackend.fill uses XML next-token completion."""
 
     def test_fill_returns_target_instance(self):
-        """fill() calls CLI and returns parsed target instance."""
+        """fill() calls CLI in text mode and returns parsed target instance."""
         backend = ClaudeCLIBackend()
-        context = {"name": "Alice"}
+        # Greet has all plain fields — resolved is empty
+        resolved: dict = {}
 
-        with patch.object(backend, "_run_cli") as mock_cli:
-            mock_cli.return_value = {"name": "Alice", "greeting": "Hello Alice"}
+        # LLM continues from <name> open tag
+        xml_response = """Alice</name>
+  <greeting>Hello Alice</greeting>
+</Greet>"""
 
-            result = backend.fill(Greet, context, "Greet")
+        with patch.object(backend, "_run_cli_text") as mock_cli:
+            mock_cli.return_value = xml_response
+
+            result = backend.fill(Greet, resolved, "Greet")
 
             assert isinstance(result, Greet)
             assert result.name == "Alice"
             assert result.greeting == "Hello Alice"
 
-    def test_fill_passes_schema_to_cli(self):
-        """fill() passes target's JSON schema to _run_cli."""
+    def test_fill_calls_cli_text_not_json(self):
+        """fill() uses _run_cli_text (text mode), not _run_cli_json."""
         backend = ClaudeCLIBackend()
-        context = {"name": "Alice"}
+        resolved: dict = {}
 
-        with patch.object(backend, "_run_cli") as mock_cli:
-            mock_cli.return_value = {"name": "Alice", "greeting": "Hi"}
+        xml_response = "Alice</name>\n  <greeting>Hi</greeting>\n</Greet>"
 
-            backend.fill(Greet, context, "Greet")
+        with patch.object(backend, "_run_cli_text") as mock_text:
+            mock_text.return_value = xml_response
 
-            call_args = mock_cli.call_args
-            # Second arg should be the schema
-            schema = call_args[0][1]
-            assert "properties" in schema
+            with patch.object(backend, "_run_cli_json") as mock_json:
+                backend.fill(Greet, resolved, "Greet")
+
+                mock_text.assert_called_once()
+                mock_json.assert_not_called()

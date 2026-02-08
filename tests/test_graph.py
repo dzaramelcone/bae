@@ -35,7 +35,7 @@ class MockLM:
     def choose_type(self, types, context):
         raise NotImplementedError("v1 test mock -- custom nodes don't use choose_type")
 
-    def fill(self, target, context, instruction):
+    def fill(self, target, resolved, instruction, source=None):
         raise NotImplementedError("v1 test mock -- custom nodes don't use fill")
 
 

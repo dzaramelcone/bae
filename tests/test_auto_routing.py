@@ -289,8 +289,8 @@ class MockLM:
             return types[0]
         return type(next_node)
 
-    def fill(self, target, context, instruction):
-        self.fill_calls.append((target, context, instruction))
+    def fill(self, target, resolved, instruction, source=None):
+        self.fill_calls.append((target, resolved, instruction))
         result = self.sequence[self.index]
         self.index += 1
         return result

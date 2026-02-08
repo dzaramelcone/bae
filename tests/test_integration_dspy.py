@@ -129,8 +129,8 @@ class MockLM:
                 return t
         return types[0]
 
-    def fill(self, target, context, instruction):
-        self.fill_calls.append((target, context, instruction))
+    def fill(self, target, resolved, instruction, source=None):
+        self.fill_calls.append((target, resolved, instruction))
         return self.responses[target]
 
     # v1 stubs for custom __call__ nodes that call lm.make/decide directly
