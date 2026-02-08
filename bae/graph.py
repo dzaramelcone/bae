@@ -48,11 +48,8 @@ def _build_context(node: Node) -> dict[str, object]:
 
 
 def _build_instruction(target_type: type) -> str:
-    """Build instruction string from class name + optional docstring."""
-    instruction = target_type.__name__
-    if target_type.__doc__:
-        instruction += f": {target_type.__doc__.strip()}"
-    return instruction
+    """Build instruction string from class name."""
+    return target_type.__name__
 
 
 def _get_routing_strategy(

@@ -118,7 +118,7 @@ def _build_fill_prompt(
     1. Input schema (transform_schema of source class, so LLM understands structure)
     2. Source node data (previous node as JSON)
     3. Resolved dep/recall values (as JSON under "context" key)
-    4. Instruction (class name + optional docstring)
+    4. Instruction (class name)
 
     Output schema is NOT included in the prompt — it's passed separately via
     --json-schema for constrained decoding (ClaudeCLIBackend) or as output_type
@@ -224,7 +224,7 @@ class LM(Protocol):
         Args:
             target: The Node type to populate.
             resolved: Only the target's resolved dep/recall values.
-            instruction: Class name + optional docstring.
+            instruction: Class name.
             source: The previous node (context frame), serialized in prompt.
         """
         ...
