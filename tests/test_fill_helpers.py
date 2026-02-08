@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Annotated
 
 import pytest
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 
 from bae.markers import Dep, Recall
 from bae.node import Node
@@ -268,3 +268,58 @@ class TestStripFormat:
         original = {"type": "string", "format": "uri"}
         _strip_format(original)
         assert "format" in original  # original unchanged
+
+
+# ── Field description preservation ─────────────────────────────────
+
+
+class DescribedNode(Node):
+    """Node with Field(description=...) on some fields."""
+
+    weather: WeatherDep
+    top: str = Field(description="a specific garment for the upper body")
+    bottom: str = Field(description="a specific garment for the lower body")
+    accessories: list[str] = Field(default_factory=list)  # no description
+
+    def __call__(self) -> None: ...
+
+
+class TestPlainModelDescriptions:
+    """_build_plain_model preserves Field(description=...) metadata."""
+
+    def test_plain_model_preserves_field_description(self):
+        """Plain model carries description from Field(description=...)."""
+        from bae.lm import _build_plain_model
+
+        PlainModel = _build_plain_model(DescribedNode)
+
+        assert PlainModel.model_fields["top"].description == "a specific garment for the upper body"
+        assert PlainModel.model_fields["bottom"].description == "a specific garment for the lower body"
+
+    def test_plain_model_description_in_json_schema(self):
+        """transform_schema output includes description strings from plain model."""
+        from anthropic import transform_schema
+
+        from bae.lm import _build_plain_model
+
+        PlainModel = _build_plain_model(DescribedNode)
+        schema = transform_schema(PlainModel)
+
+        assert schema["properties"]["top"]["description"] == "a specific garment for the upper body"
+        assert schema["properties"]["bottom"]["description"] == "a specific garment for the lower body"
+
+    def test_plain_model_no_description_field_works(self):
+        """Field without description still works — description is None."""
+        from bae.lm import _build_plain_model
+
+        PlainModel = _build_plain_model(DescribedNode)
+
+        assert PlainModel.model_fields["accessories"].description is None
+
+    def test_plain_model_default_preserved_with_description(self):
+        """Field with default_factory preserves the default in plain model."""
+        from bae.lm import _build_plain_model
+
+        PlainModel = _build_plain_model(DescribedNode)
+
+        assert PlainModel.model_fields["accessories"].default_factory is list
