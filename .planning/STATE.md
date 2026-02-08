@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Phase 5 complete, verified — ready for Phase 6 (Node & LM Protocol)
+**Current focus:** Phase 6 in progress — Node & LM Protocol
 
 ## Current Position
 
-Phase: 5 of 8 (Markers & Resolver) — COMPLETE
-Plan: 4 of 4 in current phase
-Status: Phase complete and verified (5/5 must-haves)
-Last activity: 2026-02-08 — Phase 5 verified and closed
+Phase: 6 of 8 (Node & LM Protocol) — IN PROGRESS
+Plan: 4 of 5 in current phase (plans 01-04 complete)
+Status: Wave 2 in progress, plan 04 complete
+Last activity: 2026-02-08 — Completed 06-04-PLAN.md
 
-Progress: [#############.......] 65% (17/26 plans complete)
+Progress: [################....] 81% (21/26 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17 (13 v1.0 + 4 v2.0)
+- Total plans completed: 21 (13 v1.0 + 8 v2.0)
 - Average duration: —
 - Total execution time: —
 
@@ -33,6 +33,7 @@ Progress: [#############.......] 65% (17/26 plans complete)
 | 3. Optimization | 4 | — | — |
 | 4. Production Runtime | 2 | — | — |
 | 5. Markers & Resolver | 4/4 | ~25min | ~6min |
+| 6. Node & LM Protocol | 4/5 | — | ~8min |
 
 *Updated after each plan completion*
 
@@ -59,6 +60,15 @@ Key v2 decisions affecting Phase 5:
 - Dep function exceptions propagate raw (no BaeError wrapping)
 - resolve_fields returns only Dep and Recall field values, not plain fields
 
+Key v2 decisions from Phase 6:
+- NodeConfig is standalone TypedDict (not extending Pydantic ConfigDict)
+- _wants_lm checks for 'lm' parameter in __call__ signature
+- node_to_signature uses classify_fields from resolver (not Context markers)
+- is_start parameter controls plain field direction (InputField vs OutputField)
+- choose_type/fill take context dict, not node instance (decoupled from v1)
+- Single-type lists skip LLM call entirely (optimization on all backends)
+- DSPyBackend.fill uses model_construct to merge context + LM output
+
 ### Pending Todos
 
 None.
@@ -70,5 +80,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 05-04-PLAN.md (Phase 5 complete)
+Stopped at: Completed 06-04-PLAN.md
 Resume file: None
