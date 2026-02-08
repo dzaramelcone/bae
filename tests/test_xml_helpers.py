@@ -246,6 +246,25 @@ class TestParseXmlCompletion:
         assert result["footwear"] == "Cool sneakers"
         assert result["accessories"] == ["Watch", "Scarf"]
 
+    def test_handles_json_array_in_list_field(self):
+        """Parses list fields when LLM writes JSON array instead of <item> tags."""
+        from bae.lm import _parse_xml_completion
+
+        response = """Cool sneakers</footwear>
+  <accessories>["Watch", "Scarf", "Hat"]</accessories>
+</SomeNode>"""
+
+        class SomeNode(Node):
+            footwear: str
+            accessories: list[str]
+
+            def __call__(self) -> None: ...
+
+        result = _parse_xml_completion(response, SomeNode, "footwear")
+
+        assert result["footwear"] == "Cool sneakers"
+        assert result["accessories"] == ["Watch", "Scarf", "Hat"]
+
 
 # ── _build_plain_model ─────────────────────────────────────────────────
 

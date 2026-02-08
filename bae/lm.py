@@ -280,7 +280,23 @@ def _element_to_dict(elem: ET.Element) -> dict[str, Any]:
 
 
 def _element_to_list(elem: ET.Element) -> list[Any]:
-    """Convert an XML element with <item> children to a list."""
+    """Convert an XML element with child elements to a list.
+
+    Falls back to JSON parse if text content looks like a JSON array
+    (LLM sometimes writes ["a", "b"] instead of <item> tags).
+    """
+    import json
+
+    if len(elem) == 0:
+        # No child elements — check for JSON array in text content
+        text = (elem.text or "").strip()
+        if text.startswith("["):
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                pass
+        return []
+
     items = []
     for child in elem:
         if len(child) > 0:
@@ -637,6 +653,7 @@ class ClaudeCLIBackend:
             "--output-format", "text",
             "--no-session-persistence",
             "--system-prompt", self._FILL_SYSTEM_PROMPT,
+            "--setting-sources", "",
         ]
 
         try:
