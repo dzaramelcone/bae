@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v3.0 Phase 9 — JSON Structured Fill
+**Current focus:** v3.0 Phase 10 — Hint Annotation
 
 ## Current Position
 
-Phase: 9 (JSON Structured Fill) — COMPLETE
-Plan: spike/e2e-cli branch
-Status: Complete — JSON structured fill working E2E, all XML removed
-Last activity: 2026-02-08 — Real CLI E2E verified (3-node ootd graph, ~25s haiku)
+Phase: 10 (Hint Annotation) of 10+
+Plan: 01 of 2 in phase
+Status: In progress
+Last activity: 2026-02-08 — Completed 10-01-PLAN.md (docstring removal from LLM prompts)
 
-Progress: [##############################] 100% v2.0 (30/30 plans) | Phase 9 in progress
+Progress: [################################] 100% v2.0 (31/32 plans) | Phase 10 plan 1/2
 
 ## Performance Metrics
 
@@ -36,8 +36,8 @@ Progress: [##############################] 100% v2.0 (30/30 plans) | Phase 9 in 
 | 6. Node & LM Protocol | 5/5 | ~40min | ~8min |
 | 7. Integration | 4/4 | ~20min | ~5min |
 | 8. Cleanup & Migration | 4/4 | ~11min | ~3min |
-
-*All phases complete*
+| 9. JSON Structured Fill | 1/1 | — | — |
+| 10. Hint Annotation | 1/2 | ~3min | ~3min |
 
 ## Accumulated Context
 
@@ -102,6 +102,11 @@ Key decisions from Phase 9 (JSON Structured Fill):
 - Working reference: tests/traces/json_structured_fill_reference.py
 - Real CLI E2E verified: 3-node ootd graph completes in ~25s with haiku
 
+Key decisions from Phase 10 (Hint Annotation):
+- _build_instruction returns class name only -- docstrings are developer docs, not LLM prompts
+- All __doc__ references removed from both PydanticAIBackend and ClaudeCLIBackend prompt builders
+- Explicit Field(description=...) replaces implicit docstring extraction for per-field LLM hints
+
 ### Pending Todos
 
 - Root-cause `--setting-sources ""` breaking structured output (vague correlation, not understood)
@@ -115,6 +120,6 @@ Key decisions from Phase 9 (JSON Structured Fill):
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Phase 9 complete. E2E verified. Remaining: --setting-sources root cause, partially-completed JSON question
-Branch: spike/e2e-cli
+Stopped at: Completed 10-01-PLAN.md (docstring removal). Plan 10-02 in progress concurrently.
+Branch: main
 Resume file: None
