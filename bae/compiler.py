@@ -100,7 +100,7 @@ def node_to_signature(
     - Plain fields + is_start -> InputField (caller-provided)
     - Plain fields + not is_start -> OutputField (LLM fills)
 
-    Instruction is built from class name + optional docstring.
+    Instruction is built from class name only — docstrings are inert (Phase 10).
 
     Args:
         node_cls: The node class to convert.
@@ -126,10 +126,8 @@ def node_to_signature(
             # Plain field on non-start node -> LLM fills
             fields[name] = (base_type, dspy.OutputField())
 
-    # Build instruction from class name + optional docstring
+    # Build instruction from class name only — docstrings are inert (Phase 10)
     instruction = node_cls.__name__
-    if node_cls.__doc__ is not None:
-        instruction += f": {node_cls.__doc__.strip()}"
 
     return dspy.make_signature(fields, instruction)
 

@@ -115,7 +115,7 @@ class TestMixedFields:
 
 
 class TestInstructionFromClassName:
-    """Class name (+ optional docstring) is the Signature instruction."""
+    """Class name is the Signature instruction — docstrings are inert."""
 
     def test_class_name_becomes_instruction(self):
         from bae.compiler import node_to_signature
@@ -126,7 +126,7 @@ class TestInstructionFromClassName:
         sig = node_to_signature(AnalyzeUserIntent)
         assert sig.instructions == "AnalyzeUserIntent"
 
-    def test_docstring_appended_to_instruction(self):
+    def test_docstring_ignored_in_instruction(self):
         from bae.compiler import node_to_signature
 
         class AnalyzeUserIntent(Node):
@@ -135,7 +135,8 @@ class TestInstructionFromClassName:
             query: str
 
         sig = node_to_signature(AnalyzeUserIntent)
-        assert sig.instructions == "AnalyzeUserIntent: Determine what the user wants from their query."
+        # Phase 10: docstrings are inert — instruction is class name only
+        assert sig.instructions == "AnalyzeUserIntent"
 
     def test_no_docstring_just_class_name(self):
         from bae.compiler import node_to_signature
