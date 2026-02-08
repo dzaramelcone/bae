@@ -6,7 +6,7 @@ Provides a clean interface for LLM backends to produce typed node instances.
 from __future__ import annotations
 
 import types
-from typing import TYPE_CHECKING, Protocol, TypeVar, get_args
+from typing import TYPE_CHECKING, Protocol, TypeVar, get_args, runtime_checkable
 
 from pydantic_ai import Agent, format_as_xml
 
@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="Node")
 
 
+@runtime_checkable
 class LM(Protocol):
     """Protocol for language model backends.
 

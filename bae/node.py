@@ -14,11 +14,10 @@ import ast
 import inspect
 import textwrap
 import types
-from typing import TYPE_CHECKING, ClassVar, TypedDict, get_type_hints, get_args
+from typing import ClassVar, TypedDict, get_type_hints, get_args
 from pydantic import BaseModel, ConfigDict
 
-if TYPE_CHECKING:
-    from bae.lm import LM
+from bae.lm import LM
 
 
 def _has_ellipsis_body(method) -> bool:
@@ -107,18 +106,24 @@ def _hint_includes_none(hint) -> bool:
 
 
 def _wants_lm(method) -> bool:
-    """Check if a method declares an 'lm' parameter (besides self).
+    """Check if __call__ has a parameter type-hinted as LM protocol.
 
     Used to detect whether a node's __call__ opts in to LM injection.
+    Checks type hints (not parameter names) so any name works.
 
     Args:
         method: A method (function) to inspect.
 
     Returns:
-        True if the method has a parameter named 'lm', False otherwise.
+        True if any parameter has LM type hint, False otherwise.
     """
-    sig = inspect.signature(method)
-    return "lm" in sig.parameters
+    hints = get_type_hints(method)
+    for name, hint in hints.items():
+        if name == "return" or name == "self":
+            continue
+        if hint is LM:
+            return True
+    return False
 
 
 class NodeConfig(TypedDict, total=False):

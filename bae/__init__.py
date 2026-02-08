@@ -3,7 +3,7 @@
 from bae.compiler import compile_graph, create_optimized_lm, node_to_signature
 from bae.dspy_backend import DSPyBackend
 from bae.optimized_lm import OptimizedLM
-from bae.exceptions import BaeError, BaeLMError, BaeParseError, RecallError
+from bae.exceptions import BaeError, BaeLMError, BaeParseError, DepError, FillError, RecallError
 from bae.graph import Graph
 from bae.lm import LM, ClaudeCLIBackend, PydanticAIBackend
 from bae.markers import Bind, Context, Dep, Recall
@@ -52,5 +52,7 @@ __all__ = [
     "BaeError",
     "BaeParseError",
     "BaeLMError",
+    "DepError",
+    "FillError",
     "RecallError",
 ]
