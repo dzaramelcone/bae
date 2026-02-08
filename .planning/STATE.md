@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Phase 6 complete, verified — ready for Phase 7 (Graph Run Redesign)
+**Current focus:** Phase 7 (Integration) — rewriting Graph.run() and migrating tests to v2
 
 ## Current Position
 
-Phase: 6 of 8 (Node & LM Protocol) — COMPLETE
-Plan: 5 of 5 in current phase
-Status: Phase complete and verified (291 tests pass, 0 failures)
-Last activity: 2026-02-08 — Completed 06-05-PLAN.md (Phase 6 gate)
+Phase: 7 of 8 (Integration)
+Plan: 02 of 04 complete
+Status: In progress
+Last activity: 2026-02-08 — Completed 07-02-PLAN.md
 
-Progress: [#################...] 85% (22/26 plans complete)
+Progress: [####################....] 92% (24/26 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 22 (13 v1.0 + 9 v2.0)
+- Total plans completed: 24 (13 v1.0 + 11 v2.0)
 - Average duration: —
 - Total execution time: —
 
@@ -34,6 +34,7 @@ Progress: [#################...] 85% (22/26 plans complete)
 | 4. Production Runtime | 2 | — | — |
 | 5. Markers & Resolver | 4/4 | ~25min | ~6min |
 | 6. Node & LM Protocol | 5/5 | ~40min | ~8min |
+| 7. Integration | 2/4 | ~12min | ~6min |
 
 *Updated after each plan completion*
 
@@ -69,16 +70,26 @@ Key v2 decisions from Phase 6:
 - Single-type lists skip LLM call entirely (optimization on all backends)
 - DSPyBackend.fill uses model_construct to merge context + LM output
 
+Key v2 decisions from Phase 7:
+- _get_base_type kept in graph.py (compiler.py imports it, not incant-specific)
+- recall_from_trace skips Dep fields; tests use bridge node pattern for Recall
+- max_iters=0 means infinite (falsy check skips iteration guard)
+- Terminal nodes appended to trace before loop exit
+- Graph.run() no longer accepts **kwargs (external dep injection removed)
+- 13 v1 tests expected to fail until Plan 03 migrates them
+
 ### Pending Todos
 
 None.
 
 ### Blockers/Concerns
 
+- **13 v1 test failures**: test_graph.py, test_auto_routing.py, test_integration.py, test_integration_dspy.py use v1 API (make/decide, max_steps, **kwargs). Plan 03 will fix these.
+- **compiler.py CompiledGraph.run()**: Passes **deps to graph.run() which no longer accepts **kwargs. Will need update in Plan 03 or 04.
 - **Claude CLI session noise**: Optimizer runs create many boring test sessions that drown out real sessions in Claude CLI history. When using ClaudeCLIBackend for optimization, set the "don't save session to disk" flag to avoid polluting session history.
 
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 06-05-PLAN.md (Phase 6 complete)
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
