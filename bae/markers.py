@@ -4,6 +4,7 @@ These markers are used with typing.Annotated to add metadata to Node fields.
 The compiler uses these markers to generate DSPy Signatures.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 
@@ -21,12 +22,20 @@ class Context:
 
 @dataclass(frozen=True)
 class Dep:
-    """Marker for __call__ parameters that are injected dependencies.
+    """Marker for dependency-injected fields and parameters.
 
-    Dep-annotated parameters become InputFields in the DSPy Signature,
-    making them visible to the LLM during optimization.
+    v2 (field annotation): Dep(callable) stores a callable whose return value
+    populates the field before node execution.
 
-    Usage:
+    v1 (call parameter annotation): Dep(description="...") annotates __call__
+    parameters for DSPy Signature generation. Deprecated; will be removed in
+    Phase 8 cleanup.
+
+    Usage (v2):
+        class MyNode(Node):
+            data: Annotated[str, Dep(get_data)]
+
+    Usage (v1, deprecated):
         class MyNode(Node):
             def __call__(
                 self,
@@ -36,6 +45,7 @@ class Dep:
                 ...
     """
 
+    fn: Callable | None = None
     description: str = ""
 
 
@@ -59,6 +69,21 @@ class Bind:
             ) -> None:
                 # conn will be injected from MyNode's Bind field
                 ...
+    """
+
+    pass
+
+
+@dataclass(frozen=True)
+class Recall:
+    """Marker for fields populated from the execution trace.
+
+    Recall() searches backward through the execution trace for the most
+    recent node whose type matches (via MRO) and copies the field value.
+
+    Usage:
+        class ReviewCode(Node):
+            prev_analysis: Annotated[str, Recall()]
     """
 
     pass

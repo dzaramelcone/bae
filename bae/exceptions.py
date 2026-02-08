@@ -33,3 +33,9 @@ class BaeLMError(BaeError):
     """
 
     pass
+
+
+class RecallError(BaeError):
+    """Raised when Recall() finds no matching field in the execution trace."""
+
+    pass
