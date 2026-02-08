@@ -298,3 +298,95 @@ class DSPyBackend:
             target = types_list[0]  # Fallback
 
         return self.make(node, target)
+
+    def choose_type(
+        self,
+        types: list[type],
+        context: dict[str, Any],
+    ) -> type:
+        """Pick successor type from candidates using dspy.Predict.
+
+        For single-type lists, returns the type directly without an LLM call.
+
+        Args:
+            types: List of candidate Node types.
+            context: Resolved field values (from resolve_fields).
+
+        Returns:
+            One of the types from the list.
+        """
+        if len(types) == 1:
+            return types[0]
+
+        type_names = [t.__name__ for t in types]
+
+        # Build choice signature with context as InputField
+        fields = {
+            "context": (str, dspy.InputField(desc="Resolved context fields")),
+            "choice": (str, dspy.OutputField(desc=f"Choose one: {', '.join(type_names)}")),
+        }
+
+        choice_signature = dspy.make_signature(fields, "ChooseNextType")
+        predictor = dspy.Predict(choice_signature)
+
+        # Format context for the LLM
+        context_str = format_as_xml(context, root_tag="context")
+
+        # Add type docstrings to context
+        for t in types:
+            if t.__doc__:
+                context_str += f"\n- {t.__name__}: {t.__doc__}"
+
+        result = predictor(context=context_str)
+        chosen = result.choice.strip()
+
+        # Map name back to type
+        for t in types:
+            if t.__name__ == chosen:
+                return t
+
+        # Fallback: partial/case-insensitive match
+        for t in types:
+            if t.__name__.lower() in chosen.lower():
+                return t
+
+        return types[0]
+
+    def fill(
+        self,
+        target: type[T],
+        context: dict[str, Any],
+        instruction: str,
+    ) -> T:
+        """Populate a node's plain fields using dspy.Predict.
+
+        Uses node_to_signature(target, is_start=False) so plain fields
+        become OutputFields (LLM fills them) and Dep/Recall fields become
+        InputFields (provided via context dict).
+
+        Args:
+            target: The Node type to instantiate.
+            context: Resolved field values (Dep + Recall results).
+            instruction: Class name + optional docstring for the LLM.
+
+        Returns:
+            An instance of target with all fields populated.
+
+        Raises:
+            BaeParseError: If parsing fails after retry.
+            BaeLMError: If API fails after retry.
+        """
+        signature = node_to_signature(target, is_start=False)
+        predictor = dspy.Predict(signature)
+
+        # Context dict provides InputField values; LLM generates OutputField values
+        result = self._call_with_retry(predictor, context)
+
+        # Collect all field values: context (InputFields) + LM output (OutputFields)
+        all_fields = dict(context)
+        # Extract OutputField values from prediction
+        for key in result.keys():
+            if key not in context:
+                all_fields[key] = getattr(result, key)
+
+        return target.model_construct(**all_fields)

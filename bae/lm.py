@@ -22,6 +22,9 @@ class LM(Protocol):
     The LM produces typed node instances based on:
     - Current node state (fields)
     - Target type(s) to produce
+
+    v1 methods (make/decide): node-centric, will be removed in Phase 8.
+    v2 methods (choose_type/fill): context-dict-centric, used by v2 runtime.
     """
 
     def make(self, node: Node, target: type[T]) -> T:
@@ -30,6 +33,23 @@ class LM(Protocol):
 
     def decide(self, node: Node) -> Node | None:
         """Let LLM decide which successor to produce based on return type hint."""
+        ...
+
+    def choose_type(
+        self,
+        types: list[type[Node]],
+        context: dict[str, object],
+    ) -> type[Node]:
+        """Pick successor type from candidates, given resolved context fields."""
+        ...
+
+    def fill(
+        self,
+        target: type[T],
+        context: dict[str, object],
+        instruction: str,
+    ) -> T:
+        """Populate a node's plain fields given resolved context."""
         ...
 
 
@@ -105,6 +125,56 @@ class PydanticAIBackend:
                 full_prompt += f"\n- {t.__name__}: {t.__doc__}"
 
         result = agent.run_sync(full_prompt)
+        return result.output
+
+    def choose_type(
+        self,
+        types: list[type[Node]],
+        context: dict[str, object],
+    ) -> type[Node]:
+        """Pick successor type from candidates using pydantic-ai."""
+        if len(types) == 1:
+            return types[0]
+
+        # Ask agent to pick a type name
+        agent = self._get_agent((str,), allow_none=False)
+        type_names = [t.__name__ for t in types]
+
+        context_xml = format_as_xml(context, root_tag="context")
+        prompt = f"{context_xml}\n\nPick one type: {', '.join(type_names)}"
+
+        for t in types:
+            if t.__doc__:
+                prompt += f"\n- {t.__name__}: {t.__doc__}"
+
+        result = agent.run_sync(prompt)
+        chosen = result.output.strip()
+
+        # Map name back to type
+        for t in types:
+            if t.__name__ == chosen:
+                return t
+
+        # Fallback: partial match
+        for t in types:
+            if t.__name__.lower() in chosen.lower():
+                return t
+
+        return types[0]
+
+    def fill(
+        self,
+        target: type[T],
+        context: dict[str, object],
+        instruction: str,
+    ) -> T:
+        """Populate target node fields using pydantic-ai."""
+        agent = self._get_agent((target,), allow_none=False)
+
+        context_xml = format_as_xml(context, root_tag="context")
+        prompt = f"{context_xml}\n\n{instruction}"
+
+        result = agent.run_sync(prompt)
         return result.output
 
 
@@ -225,3 +295,51 @@ class ClaudeCLIBackend:
         # Step 2: Fill the chosen type
         target = next(t for t in successors if t.__name__ == chosen)
         return self.make(node, target)
+
+    def choose_type(
+        self,
+        types: list[type[Node]],
+        context: dict[str, object],
+    ) -> type[Node]:
+        """Pick successor type from candidates using Claude CLI."""
+        if len(types) == 1:
+            return types[0]
+
+        type_names = [t.__name__ for t in types]
+
+        context_xml = format_as_xml(context, root_tag="context")
+        prompt = f"{context_xml}\n\nPick one type: {', '.join(type_names)}"
+
+        for t in types:
+            if t.__doc__:
+                prompt += f"\n- {t.__name__}: {t.__doc__}"
+
+        choice_schema = {
+            "type": "object",
+            "properties": {"choice": {"type": "string", "enum": type_names}},
+            "required": ["choice"],
+        }
+
+        choice_data = self._run_cli(prompt, choice_schema)
+        chosen = choice_data["choice"]
+
+        # Map name back to type
+        for t in types:
+            if t.__name__ == chosen:
+                return t
+
+        return types[0]
+
+    def fill(
+        self,
+        target: type[T],
+        context: dict[str, object],
+        instruction: str,
+    ) -> T:
+        """Populate target node fields using Claude CLI."""
+        context_xml = format_as_xml(context, root_tag="context")
+        prompt = f"{context_xml}\n\n{instruction}"
+
+        schema = target.model_json_schema()
+        data = self._run_cli(prompt, schema)
+        return target.model_validate(data)
