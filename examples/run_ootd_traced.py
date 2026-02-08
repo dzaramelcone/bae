@@ -15,18 +15,20 @@ class TracingClaudeCLI(ClaudeCLIBackend):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.turns: list[dict[str, str]] = []
+        self.turns: list[dict] = []
         self._turn_count = 0
 
-    def _run_cli_text(self, prompt: str) -> str:
+    def _run_cli_json(self, prompt: str, schema: dict) -> dict | None:
         self._turn_count += 1
         print(f"  Turn {self._turn_count}: sending prompt ({len(prompt)} chars)...")
-        response = super()._run_cli_text(prompt)
-        print(f"  Turn {self._turn_count}: got response ({len(response)} chars)")
-        self.turns.append({"prompt": prompt, "response": response})
+        response = super()._run_cli_json(prompt, schema)
+        print(f"  Turn {self._turn_count}: got response")
+        self.turns.append({"prompt": prompt, "schema": schema, "response": response})
         return response
 
     def write_trace(self, path: Path) -> None:
+        import json
+
         path.parent.mkdir(parents=True, exist_ok=True)
         lines: list[str] = []
 
@@ -39,9 +41,13 @@ class TracingClaudeCLI(ClaudeCLIBackend):
             lines.append("")
             lines.append(turn["prompt"])
             lines.append("")
+            lines.append(f"{'─' * 39} SCHEMA {'─' * 39}")
+            lines.append("")
+            lines.append(json.dumps(turn["schema"], indent=2))
+            lines.append("")
             lines.append(f"{'─' * 39} OUTPUT {'─' * 39}")
             lines.append("")
-            lines.append(turn["response"])
+            lines.append(json.dumps(turn["response"], indent=2))
             lines.append("")
             lines.append("")
 

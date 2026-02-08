@@ -310,21 +310,16 @@ class TestClaudeCLIBackendChooseType:
 
 
 class TestClaudeCLIBackendFill:
-    """ClaudeCLIBackend.fill uses XML next-token completion."""
+    """ClaudeCLIBackend.fill uses JSON structured output."""
 
     def test_fill_returns_target_instance(self):
-        """fill() calls CLI in text mode and returns parsed target instance."""
+        """fill() calls CLI with JSON schema and returns parsed target instance."""
         backend = ClaudeCLIBackend()
         # Greet has all plain fields — resolved is empty
         resolved: dict = {}
 
-        # LLM continues from <name> open tag
-        xml_response = """Alice</name>
-  <greeting>Hello Alice</greeting>
-</Greet>"""
-
-        with patch.object(backend, "_run_cli_text") as mock_cli:
-            mock_cli.return_value = xml_response
+        with patch.object(backend, "_run_cli_json") as mock_cli:
+            mock_cli.return_value = {"name": "Alice", "greeting": "Hello Alice"}
 
             result = backend.fill(Greet, resolved, "Greet")
 
@@ -332,18 +327,20 @@ class TestClaudeCLIBackendFill:
             assert result.name == "Alice"
             assert result.greeting == "Hello Alice"
 
-    def test_fill_calls_cli_text_not_json(self):
-        """fill() uses _run_cli_text (text mode), not _run_cli_json."""
+    def test_fill_uses_json_schema(self):
+        """fill() calls _run_cli_json with JSON schema from plain model."""
         backend = ClaudeCLIBackend()
         resolved: dict = {}
 
-        xml_response = "Alice</name>\n  <greeting>Hi</greeting>\n</Greet>"
+        captured_schema = {}
 
-        with patch.object(backend, "_run_cli_text") as mock_text:
-            mock_text.return_value = xml_response
+        def capture(prompt, schema):
+            captured_schema.update(schema)
+            return {"name": "Alice", "greeting": "Hi"}
 
-            with patch.object(backend, "_run_cli_json") as mock_json:
-                backend.fill(Greet, resolved, "Greet")
+        with patch.object(backend, "_run_cli_json", side_effect=capture):
+            backend.fill(Greet, resolved, "Greet")
 
-                mock_text.assert_called_once()
-                mock_json.assert_not_called()
+        assert "properties" in captured_schema
+        assert "name" in captured_schema["properties"]
+        assert "greeting" in captured_schema["properties"]

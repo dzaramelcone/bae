@@ -25,7 +25,7 @@ from examples.ootd import (
 from pydantic import HttpUrl
 from pydantic_ai import format_as_xml
 
-from bae.lm import _build_partial_xml, _build_xml_schema, _serialize_value
+from bae.lm import _build_fill_prompt
 from bae.node import Node
 from bae.resolver import classify_fields
 from bae.result import GraphResult
@@ -56,18 +56,7 @@ class OotdCapturingLM:
         })
 
         # Build the actual prompt (same as ClaudeCLIBackend.fill)
-        fields = classify_fields(target)
-        plain_fields = [n for n in target.model_fields if fields.get(n) == "plain"]
-        first_plain = plain_fields[0] if plain_fields else None
-
-        prompt_parts: list[str] = []
-        if source is not None:
-            prompt_parts.append(
-                _serialize_value(source.__class__.__name__, source)
-            )
-        prompt_parts.append(_build_xml_schema(target))
-        prompt_parts.append(_build_partial_xml(target, resolved))
-        prompt = "\n\n".join(prompt_parts)
+        prompt = _build_fill_prompt(target, resolved, instruction, source)
 
         # Generate canned response
         if target is AnticipateUsersDay:
@@ -262,6 +251,6 @@ class TestOotdE2E:
         assert "TURN 2:" in content
         assert "INPUT" in content
         assert "OUTPUT" in content
-        assert "<IsTheUserGettingDressed>" in content
-        assert "<AnticipateUsersDay>" in content
-        assert "<RecommendOOTD>" in content
+        assert "IsTheUserGettingDressed" in content
+        assert "AnticipateUsersDay" in content
+        assert "RecommendOOTD" in content

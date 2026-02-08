@@ -5,9 +5,7 @@ Provides a clean interface for LLM backends to produce typed node instances.
 
 from __future__ import annotations
 
-import re
 import types
-import xml.etree.ElementTree as ET
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -23,7 +21,6 @@ from typing import (
 from pydantic import BaseModel, create_model
 from pydantic_ai import Agent, format_as_xml
 
-from bae.markers import Dep, Recall
 from bae.resolver import classify_fields
 
 if TYPE_CHECKING:
@@ -32,22 +29,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="Node")
 
 
-# ── XML helpers for fill() ──────────────────────────────────────────────
-
-
-def _get_type_name(hint: Any) -> str:
-    """Get a human-readable type name from a type hint."""
-    origin = get_origin(hint)
-    if origin is list:
-        args = get_args(hint)
-        if args:
-            return f"list[{_get_type_name(args[0])}]"
-        return "list"
-    if origin is Annotated:
-        return _get_type_name(get_args(hint)[0])
-    if isinstance(hint, type):
-        return hint.__name__
-    return str(hint)
+# ── Fill helpers ─────────────────────────────────────────────────────────
 
 
 def _get_base_type(hint: Any) -> Any:
@@ -57,275 +39,12 @@ def _get_base_type(hint: Any) -> Any:
     return hint
 
 
-def _build_xml_schema(target_cls: type) -> str:
-    """Generate XML schema showing field types and source annotations.
-
-    Dep fields get source="dep" with their base type name.
-    Plain fields show their type structure (nested model fields or type name).
-    """
-    fields = classify_fields(target_cls)
-    hints = get_type_hints(target_cls, include_extras=True)
-
-    # Build schema tag with optional description
-    attrs = f'name="{target_cls.__name__}"'
-    if target_cls.__doc__:
-        doc = target_cls.__doc__.strip().split("\n")[0]
-        attrs += f' description="{doc}"'
-
-    lines = [f"<schema {attrs}>"]
-
-    for name in target_cls.model_fields:
-        hint = hints.get(name)
-        if hint is None:
-            continue
-
-        base = _get_base_type(hint)
-        kind = fields.get(name, "plain")
-
-        if kind == "dep":
-            type_name = _get_type_name(base)
-            lines.append(f'  <{name} source="dep">{type_name}</{name}>')
-        elif kind == "recall":
-            type_name = _get_type_name(base)
-            lines.append(f'  <{name} source="recall">{type_name}</{name}>')
-        else:
-            # Plain field — show structure for complex types
-            if isinstance(base, type) and issubclass(base, BaseModel):
-                # Nested model — show inner fields
-                lines.append(f"  <{name}>")
-                for inner_name, inner_field in base.model_fields.items():
-                    inner_hint = get_type_hints(base).get(inner_name)
-                    inner_type = _get_type_name(inner_hint) if inner_hint else "string"
-                    lines.append(f"    <{inner_name}>{inner_type}</{inner_name}>")
-                lines.append(f"  </{name}>")
-            elif get_origin(base) is list:
-                # List field — show expected child element structure
-                item_args = get_args(base)
-                item_type = item_args[0] if item_args else str
-                if isinstance(item_type, type) and issubclass(item_type, BaseModel):
-                    lines.append(f"  <{name}>")
-                    lines.append(f"    <{item_type.__name__}>...")
-                    lines.append(f"    </{item_type.__name__}>")
-                    lines.append(f"  </{name}>")
-                else:
-                    item_type_name = _get_type_name(item_type)
-                    lines.append(f"  <{name}>")
-                    lines.append(f"    <item>{item_type_name}</item>")
-                    lines.append(f"  </{name}>")
-            else:
-                type_name = _get_type_name(base)
-                lines.append(f"  <{name}>{type_name}</{name}>")
-
-    lines.append("</schema>")
-    return "\n".join(lines)
-
-
-def _serialize_value(tag: str, value: Any, indent: int = 2) -> str:
-    """Serialize a value as XML elements.
-
-    Walks BaseModel fields directly (preserving types for nested models
-    in lists). Uses typed tags for BaseModel list items, <item> for scalars.
-    """
-    prefix = " " * indent
-
-    if isinstance(value, BaseModel):
-        # Walk fields directly — don't model_dump(), which loses class info
-        inner_lines = []
-        for field_name in value.__class__.model_fields:
-            field_val = getattr(value, field_name)
-            inner_lines.append(_serialize_value(field_name, field_val, indent + 2))
-        inner = "\n".join(inner_lines)
-        return f"{prefix}<{tag}>\n{inner}\n{prefix}</{tag}>"
-    elif isinstance(value, list):
-        lines = [f"{prefix}<{tag}>"]
-        for item in value:
-            if isinstance(item, BaseModel):
-                item_cls = item.__class__.__name__
-                inner_lines = []
-                for field_name in item.__class__.model_fields:
-                    field_val = getattr(item, field_name)
-                    inner_lines.append(
-                        _serialize_value(field_name, field_val, indent + 4)
-                    )
-                inner = "\n".join(inner_lines)
-                lines.append(f"{prefix}    <{item_cls}>")
-                lines.append(inner)
-                lines.append(f"{prefix}    </{item_cls}>")
-            elif isinstance(item, dict):
-                inner = _serialize_dict(item, indent + 4)
-                lines.append(f"{prefix}    <item>")
-                lines.append(inner)
-                lines.append(f"{prefix}    </item>")
-            else:
-                lines.append(f"{prefix}    <item>{item}</item>")
-        lines.append(f"{prefix}</{tag}>")
-        return "\n".join(lines)
-    elif isinstance(value, dict):
-        inner = _serialize_dict(value, indent + 2)
-        return f"{prefix}<{tag}>\n{inner}\n{prefix}</{tag}>"
-    else:
-        return f"{prefix}<{tag}>{value}</{tag}>"
-
-
-def _serialize_dict(data: dict, indent: int = 2) -> str:
-    """Serialize a dict as XML elements (fallback for raw dicts)."""
-    lines = []
-    for key, value in data.items():
-        lines.append(_serialize_value(key, value, indent))
-    return "\n".join(lines)
-
-
-def _build_partial_xml(
-    target_cls: type,
-    resolved: dict[str, Any],
-) -> str:
-    """Build partial XML of target with deps serialized, ending at first plain field.
-
-    Walks fields in declaration order. Dep/recall fields are serialized from
-    resolved dict. Stops at the first plain field, emitting only its open tag.
-    """
-    fields = classify_fields(target_cls)
-
-    lines = [f"<{target_cls.__name__}>"]
-
-    # Walk fields in declaration order
-    for name in target_cls.model_fields:
-        kind = fields.get(name, "plain")
-
-        if kind in ("dep", "recall"):
-            # Serialize resolved value
-            value = resolved.get(name)
-            if value is not None:
-                lines.append(_serialize_value(name, value))
-        else:
-            # First plain field — emit open tag and stop
-            lines.append(f"  <{name}>")
-            break
-
-    return "\n".join(lines)
-
-
-def _parse_xml_completion(
-    response: str,
-    target_cls: type,
-    from_field: str,
-) -> dict[str, Any]:
-    """Parse LLM XML continuation into a dict of field values.
-
-    The response is the LLM's continuation starting from inside the open tag
-    of from_field. Reconstructs the XML by prepending the open tags, then
-    parses with ElementTree.
-    """
-    fields = classify_fields(target_cls)
-    hints = get_type_hints(target_cls, include_extras=True)
-
-    # Find all plain fields from from_field onwards
-    plain_fields = []
-    found_start = False
-    for name in target_cls.model_fields:
-        if name == from_field:
-            found_start = True
-        if found_start and fields.get(name, "plain") == "plain":
-            plain_fields.append(name)
-
-    # Detect response shape:
-    # - Continuation: "value text</from_field>\n<next>..." (ideal)
-    # - Re-opened tags: possibly preamble + "<from_field>value</from_field>..."
-    root_tag = target_cls.__name__
-    close_root = f"</{root_tag}>"
-
-    if f"<{from_field}>" in response:
-        # LLM re-opened the tag — strip preamble, wrap in root only
-        tag_start = response.index(f"<{from_field}>")
-        xml_body = response[tag_start:]
-        # Truncate at closing root tag
-        close_idx = xml_body.find(close_root)
-        if close_idx != -1:
-            xml_body = xml_body[: close_idx]
-        full_xml = f"<{root_tag}>{xml_body}{close_root}"
-    else:
-        # True continuation — wrap in root + from_field open tag
-        full_xml = f"<{root_tag}><{from_field}>{response}"
-        close_idx = full_xml.find(close_root)
-        if close_idx != -1:
-            full_xml = full_xml[: close_idx + len(close_root)]
-        else:
-            full_xml += f"\n{close_root}"
-
-    # Clean up common XML issues
-    full_xml = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;)", "&amp;", full_xml)
-
-    # Parse the XML
-    root = ET.fromstring(full_xml)
-
-    result: dict[str, Any] = {}
-
-    for field_name in plain_fields:
-        elem = root.find(field_name)
-        if elem is None:
-            continue
-
-        base_type = _get_base_type(hints.get(field_name, str))
-
-        # Determine how to parse based on type
-        if isinstance(base_type, type) and issubclass(base_type, BaseModel):
-            result[field_name] = _element_to_dict(elem)
-        elif get_origin(base_type) is list:
-            result[field_name] = _element_to_list(elem)
-        else:
-            result[field_name] = (elem.text or "").strip()
-
-    return result
-
-
-def _element_to_dict(elem: ET.Element) -> dict[str, Any]:
-    """Convert an XML element to a dict (for nested models)."""
-    result: dict[str, Any] = {}
-    for child in elem:
-        if len(child) > 0:
-            # Has sub-elements — check if it's a list (has <item> children)
-            if child[0].tag == "item":
-                result[child.tag] = _element_to_list(child)
-            else:
-                result[child.tag] = _element_to_dict(child)
-        else:
-            result[child.tag] = (child.text or "").strip()
-    return result
-
-
-def _element_to_list(elem: ET.Element) -> list[Any]:
-    """Convert an XML element with child elements to a list.
-
-    Raises FillError if the element has text content but no child elements
-    (e.g. LLM wrote a JSON array instead of <item> tags).
-    """
-    if len(elem) == 0:
-        text = (elem.text or "").strip()
-        if text:
-            from bae.exceptions import FillError
-
-            raise FillError(
-                f"Expected <item> children in <{elem.tag}>, got text: {text!r}",
-                node_type=type(None),
-                validation_errors=f"<{elem.tag}> must contain child elements, not raw text",
-                attempts=0,
-            )
-        return []
-
-    items = []
-    for child in elem:
-        if len(child) > 0:
-            items.append(_element_to_dict(child))
-        else:
-            items.append((child.text or "").strip())
-    return items
-
-
 def _build_plain_model(target_cls: type) -> type[BaseModel]:
     """Create a dynamic Pydantic model with only plain fields from target.
 
-    Used by PydanticAIBackend to constrain LLM output to only the fields
-    it should generate (not dep/recall fields).
+    Used to constrain LLM output to only the fields it should generate
+    (not dep/recall fields). Works for both JSON schema generation and
+    pydantic-ai output_type.
     """
     fields = classify_fields(target_cls)
     hints = get_type_hints(target_cls, include_extras=True)
@@ -384,6 +103,31 @@ def validate_plain_fields(
             attempts=0,
             cause=e,
         ) from e
+
+
+def _build_fill_prompt(
+    target: type,
+    resolved: dict[str, object],
+    instruction: str,
+    source: "Node | None" = None,
+) -> str:
+    """Build the prompt for fill() — shared across backends.
+
+    Prompt structure:
+    1. Source node context (previous node, as XML for readability)
+    2. Resolved dep/recall values (so LLM knows what data is available)
+    3. Instruction (class name + optional docstring)
+    """
+    parts: list[str] = []
+    if source is not None:
+        parts.append(format_as_xml(
+            source.model_dump(), root_tag=source.__class__.__name__
+        ))
+    if resolved:
+        parts.append(format_as_xml(resolved, root_tag="context"))
+    parts.append(instruction)
+
+    return "\n\n".join(parts)
 
 
 @runtime_checkable
@@ -548,22 +292,11 @@ class PydanticAIBackend:
         instruction: str,
         source: Node | None = None,
     ) -> T:
-        """Populate target node fields using pydantic-ai."""
+        """Populate target node fields using pydantic-ai with JSON output."""
         plain_model = _build_plain_model(target)
         agent = self._get_agent((plain_model,), allow_none=False)
 
-        # Build prompt: source XML + schema + instruction
-        parts: list[str] = []
-        if source is not None:
-            parts.append(format_as_xml(
-                source.model_dump(), root_tag=source.__class__.__name__
-            ))
-        parts.append(_build_xml_schema(target))
-        if resolved:
-            parts.append(format_as_xml(resolved, root_tag="resolved"))
-        parts.append(instruction)
-
-        prompt = "\n\n".join(parts)
+        prompt = _build_fill_prompt(target, resolved, instruction, source)
 
         result = agent.run_sync(prompt)
         # Merge LLM output with resolved deps
@@ -648,38 +381,6 @@ class ClaudeCLIBackend:
             raise RuntimeError("No structured_output in Claude CLI response")
 
         return data
-
-    _FILL_SYSTEM_PROMPT = (
-        "You are an XML completion engine. "
-        "The user provides an incomplete XML document that ends at an open tag. "
-        "Continue the document from exactly where it left off. "
-        "Output ONLY the XML continuation — no commentary, no markdown, no explanation. "
-        "Be concise. Field values should be brief and information-dense."
-    )
-
-    def _run_cli_text(self, prompt: str) -> str:
-        """Run Claude CLI in text mode and return raw output."""
-        import subprocess
-
-        cmd = [
-            "claude",
-            "-p", prompt,
-            "--model", self.model,
-            "--output-format", "text",
-            "--no-session-persistence",
-            "--system-prompt", self._FILL_SYSTEM_PROMPT,
-            "--setting-sources", "",
-        ]
-
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout)
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f"Claude CLI timed out after {self.timeout}s")
-
-        if result.returncode != 0:
-            raise RuntimeError(f"Claude CLI failed: {result.stderr}")
-
-        return result.stdout
 
     def decide(self, node: Node) -> Node | None:
         """Let LLM pick successor type and produce it using Claude CLI.
@@ -766,39 +467,26 @@ class ClaudeCLIBackend:
         instruction: str,
         source: Node | None = None,
     ) -> T:
-        """Populate target node fields via XML next-token completion.
+        """Populate target node fields via JSON structured output.
 
-        Builds prompt: source XML + schema + partial XML ending at open tag
-        of first plain field. LLM continues the XML document.
+        Builds prompt with source context + resolved deps + instruction.
+        Output constrained by JSON schema from plain fields model.
         """
-        fields = classify_fields(target)
-        plain_fields = [n for n in target.model_fields if fields.get(n) == "plain"]
+        plain_model = _build_plain_model(target)
+        plain_fields = list(plain_model.model_fields.keys())
 
         if not plain_fields:
             # No plain fields — nothing to fill, construct from resolved
             return target.model_construct(**resolved)
 
-        first_plain = plain_fields[0]
+        prompt = _build_fill_prompt(target, resolved, instruction, source)
 
-        # Build prompt parts
-        parts: list[str] = []
-        if source is not None:
-            parts.append(
-                _serialize_value(source.__class__.__name__, source)
-            )
-        parts.append(_build_xml_schema(target))
-        parts.append(_build_partial_xml(target, resolved))
+        # Call CLI with JSON schema constraining output to plain fields only
+        schema = plain_model.model_json_schema()
+        data = self._run_cli_json(prompt, schema)
 
-        prompt = "\n\n".join(parts)
-
-        # Call CLI in text mode — LLM continues the XML document
-        response = self._run_cli_text(prompt)
-
-        # Parse the XML completion into raw dict
-        parsed = _parse_xml_completion(response, target, first_plain)
-
-        # Validate plain fields only (LLM boundary — FillError on failure)
-        validated = validate_plain_fields(parsed, target)
+        # Validate plain fields (LLM boundary — FillError on failure)
+        validated = validate_plain_fields(data, target)
 
         # Merge independently-validated halves via model_construct
         all_fields = dict(resolved)

@@ -1,10 +1,9 @@
-"""Tests for the fill() XML completion protocol.
+"""Tests for the fill() JSON structured output protocol.
 
 Verifies:
-- Prompt structure: source XML + schema + partial XML at open tag
+- ClaudeCLIBackend.fill() sends prompt and uses JSON schema
 - Graph.run() resolves target deps before fill()
 - fill() receives source node and resolved dict
-- End-to-end ootd.py graph with mocked LLM
 """
 
 from __future__ import annotations
@@ -16,11 +15,7 @@ import pytest
 from pydantic import BaseModel, HttpUrl
 
 from bae.graph import Graph, _build_instruction
-from bae.lm import (
-    ClaudeCLIBackend,
-    _build_partial_xml,
-    _build_xml_schema,
-)
+from bae.lm import ClaudeCLIBackend
 from bae.markers import Dep
 from bae.node import Node
 from bae.result import GraphResult
@@ -83,56 +78,10 @@ class EndNode(Node):
 
 
 class TestPromptStructure:
-    """fill() prompt has three sections: source XML, schema, partial XML."""
+    """fill() prompt includes source context, resolved deps, and instruction."""
 
-    def test_schema_shows_dep_annotations(self):
-        """Schema for MiddleNode marks weather/location as dep, vibe as plain."""
-        schema = _build_xml_schema(MiddleNode)
-
-        assert '<schema name="MiddleNode">' in schema
-        assert '<weather source="dep">' in schema
-        assert '<location source="dep">' in schema
-        # vibe is plain — no source attr
-        assert "<vibe>" in schema
-        assert 'source="dep">Vibe' not in schema
-
-    def test_schema_includes_docstring_as_description(self):
-        """EndNode's docstring becomes schema description."""
-        schema = _build_xml_schema(EndNode)
-
-        assert 'description="Final recommendation."' in schema
-
-    def test_partial_xml_serializes_deps_stops_at_plain(self):
-        """Partial XML has resolved deps, ends at first plain field open tag."""
-        resolved = {
-            "weather": Weather(temp=72.0, conditions="rainy"),
-            "location": Location(name="Seattle", lat=47.6),
-        }
-
-        xml = _build_partial_xml(MiddleNode, resolved)
-
-        # Starts with root tag
-        assert xml.startswith("<MiddleNode>")
-        # Has serialized deps
-        assert "<weather>" in xml
-        assert "<temp>72.0</temp>" in xml
-        assert "<location>" in xml
-        assert "<name>Seattle</name>" in xml
-        # Ends at first plain field open tag
-        assert xml.rstrip().endswith("<vibe>")
-        # No closing tags for partial content
-        assert "</vibe>" not in xml
-        assert "</MiddleNode>" not in xml
-
-    def test_all_plain_partial_xml(self):
-        """EndNode (all plain) partial XML ends at <top>."""
-        xml = _build_partial_xml(EndNode, {})
-
-        assert xml.startswith("<EndNode>")
-        assert xml.rstrip().endswith("<top>")
-
-    def test_cli_fill_sends_three_part_prompt(self):
-        """ClaudeCLIBackend.fill() sends source + schema + partial XML."""
+    def test_cli_fill_sends_prompt_with_source_and_context(self):
+        """ClaudeCLIBackend.fill() sends source + context + instruction in prompt."""
         backend = ClaudeCLIBackend()
         source = StartNode(user_message="ugh i just got up")
         resolved = {
@@ -140,35 +89,68 @@ class TestPromptStructure:
             "location": Location(name="Seattle", lat=47.6),
         }
 
-        captured_prompt = None
+        captured_args = {}
 
-        def capture_prompt(prompt):
-            nonlocal captured_prompt
-            captured_prompt = prompt
-            # Return valid XML continuation
-            return """
-    <mood>groggy</mood>
-    <cues>just woke up</cues>
-  </vibe>
-</MiddleNode>"""
+        def capture_cli(prompt, schema):
+            captured_args["prompt"] = prompt
+            captured_args["schema"] = schema
+            return {"vibe": {"mood": "groggy", "cues": "just woke up"}}
 
-        with patch.object(backend, "_run_cli_text", side_effect=capture_prompt):
+        with patch.object(backend, "_run_cli_json", side_effect=capture_cli):
             backend.fill(MiddleNode, resolved, "MiddleNode", source=source)
 
-        assert captured_prompt is not None
+        prompt = captured_args["prompt"]
 
-        # Part 1: Source node XML
-        assert "<StartNode>" in captured_prompt
-        assert "<user_message>ugh i just got up</user_message>" in captured_prompt
+        # Source node context
+        assert "StartNode" in prompt
+        assert "ugh i just got up" in prompt
 
-        # Part 2: Schema
-        assert '<schema name="MiddleNode">' in captured_prompt
-        assert 'source="dep"' in captured_prompt
+        # Resolved deps as context
+        assert "context" in prompt
 
-        # Part 3: Partial XML ending at <vibe>
-        assert "<MiddleNode>" in captured_prompt
-        assert "<temp>72.0</temp>" in captured_prompt
-        assert captured_prompt.rstrip().endswith("<vibe>")
+        # Instruction
+        assert "MiddleNode" in prompt
+
+    def test_cli_fill_uses_json_schema(self):
+        """ClaudeCLIBackend.fill() passes JSON schema from plain model."""
+        backend = ClaudeCLIBackend()
+        resolved: dict = {}
+
+        captured_args = {}
+
+        def capture_cli(prompt, schema):
+            captured_args["schema"] = schema
+            return {"top": "Navy sweater", "bottom": "Chinos"}
+
+        with patch.object(backend, "_run_cli_json", side_effect=capture_cli):
+            backend.fill(EndNode, resolved, "EndNode")
+
+        schema = captured_args["schema"]
+        assert "properties" in schema
+        assert "top" in schema["properties"]
+        assert "bottom" in schema["properties"]
+
+    def test_cli_fill_no_plain_fields_skips_llm(self):
+        """fill() with no plain fields returns model_construct without LLM call."""
+
+        class AllDepsNode(Node):
+            weather: WeatherDep
+            location: LocationDep
+
+            def __call__(self) -> None: ...
+
+        backend = ClaudeCLIBackend()
+        resolved = {
+            "weather": Weather(temp=72.0, conditions="rainy"),
+            "location": Location(name="Seattle", lat=47.6),
+        }
+
+        with patch.object(backend, "_run_cli_json") as mock_cli:
+            result = backend.fill(AllDepsNode, resolved, "AllDepsNode")
+
+            mock_cli.assert_not_called()
+            assert isinstance(result, AllDepsNode)
+            assert result.weather.temp == 72.0
 
 
 # ── Graph.run() integration ────────────────────────────────────────────
