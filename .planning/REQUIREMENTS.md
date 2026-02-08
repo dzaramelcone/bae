@@ -63,17 +63,17 @@
 
 ### Node Semantics
 
-- [ ] **NODE-01**: Node fields without Dep/Recall annotations are filled by the LLM
-- [ ] **NODE-02**: Start node fields (without Dep) are caller-provided via constructor
-- [ ] **NODE-03**: Terminal node (returns None) fields ARE the response schema
-- [ ] **NODE-04**: Class name is the LLM instruction (docstrings are optional hints)
+- [x] **NODE-01**: Node fields without Dep/Recall annotations are filled by the LLM
+- [x] **NODE-02**: Start node fields (without Dep) are caller-provided via constructor
+- [x] **NODE-03**: Terminal node (returns None) fields ARE the response schema
+- [x] **NODE-04**: Class name is the LLM instruction (docstrings are optional hints)
 
 ### LM Protocol
 
-- [ ] **LM-01**: LM is implicit — configured at graph level, removed from node `__call__` signature
-- [ ] **LM-02**: Per-node LM override via NodeConfig (optional, graph-level is default)
-- [ ] **LM-03**: New protocol: choose_type() picks successor type from union, fill() populates plain fields given resolved context
-- [ ] **LM-04**: Dep/Recall fields are passed to LLM as context (InputFields), plain fields are LLM output (OutputFields)
+- [x] **LM-01**: LM is implicit — configured at graph level, removed from node `__call__` signature
+- [x] **LM-02**: Per-node LM override via NodeConfig (optional, graph-level is default)
+- [x] **LM-03**: New protocol: choose_type() picks successor type from union, fill() populates plain fields given resolved context
+- [x] **LM-04**: Dep/Recall fields are passed to LLM as context (InputFields), plain fields are LLM output (OutputFields)
 
 ### Cleanup
 
@@ -136,14 +136,14 @@
 | RCL-01 | Phase 5 | Complete |
 | RCL-02 | Phase 5 | Complete |
 | RCL-03 | Phase 5 | Complete |
-| NODE-01 | Phase 6 | Pending |
-| NODE-02 | Phase 6 | Pending |
-| NODE-03 | Phase 6 | Pending |
-| NODE-04 | Phase 6 | Pending |
-| LM-01 | Phase 6 | Pending |
-| LM-02 | Phase 6 | Pending |
-| LM-03 | Phase 6 | Pending |
-| LM-04 | Phase 6 | Pending |
+| NODE-01 | Phase 6 | Complete |
+| NODE-02 | Phase 6 | Complete |
+| NODE-03 | Phase 6 | Complete |
+| NODE-04 | Phase 6 | Complete |
+| LM-01 | Phase 6 | Complete |
+| LM-02 | Phase 6 | Complete |
+| LM-03 | Phase 6 | Complete |
+| LM-04 | Phase 6 | Complete |
 | DEP2-06 | Phase 7 | Pending |
 | CLN-03 | Phase 7 | Pending |
 | CLN-01 | Phase 8 | Pending |
