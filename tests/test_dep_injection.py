@@ -124,9 +124,20 @@ class TestDepResolutionOnStartNode:
 
 
 class GatherInfo(Node):
-    """Start node that gathers info via dep."""
+    """Start node that gathers info via dep, passes to bridge via custom __call__."""
 
     info: Annotated[Info, Dep(fetch_info)]
+
+    def __call__(self) -> InfoBridge:
+        # Custom __call__ reads dep-resolved field and produces bridge node
+        # with Info as a plain field (recallable)
+        return InfoBridge(info=self.info)
+
+
+class InfoBridge(Node):
+    """Bridge node that holds Info as plain field (recallable by Analyze)."""
+
+    info: Info
 
     def __call__(self) -> Analyze:
         ...
@@ -145,11 +156,11 @@ class Analyze(Node):
 class TestMultiNodeWithDepsAndRecalls:
     """Feature 2: Multi-node graph with dep resolution and trace recall."""
 
-    def test_gather_then_analyze(self):
-        """GatherInfo gets dep resolved, Analyze gets recall from trace."""
+    def test_gather_dep_then_recall(self):
+        """GatherInfo dep resolved, InfoBridge holds plain field, Analyze recalls it."""
         graph = Graph(start=GatherInfo)
 
-        # MockV2LM needs to fill Analyze when GatherInfo (ellipsis body) routes
+        # MockV2LM fills Analyze when InfoBridge (ellipsis body) routes
         analyze_node = Analyze.model_construct(
             prev_info=None,
             analysis="deep analysis",
@@ -162,7 +173,7 @@ class TestMultiNodeWithDepsAndRecalls:
         )
 
         assert isinstance(result, GraphResult)
-        assert len(result.trace) == 2
+        assert len(result.trace) == 3
 
         # GatherInfo should have dep resolved
         gather = result.trace[0]
@@ -170,8 +181,14 @@ class TestMultiNodeWithDepsAndRecalls:
         assert isinstance(gather.info, Info)
         assert gather.info.content == "gathered-info"
 
-        # Analyze should have recall resolved from trace
-        analyze = result.trace[1]
+        # InfoBridge should have plain Info field from GatherInfo
+        bridge = result.trace[1]
+        assert isinstance(bridge, InfoBridge)
+        assert isinstance(bridge.info, Info)
+        assert bridge.info.content == "gathered-info"
+
+        # Analyze should have recall resolved from trace (finds InfoBridge.info)
+        analyze = result.trace[2]
         assert isinstance(analyze, Analyze)
         assert isinstance(analyze.prev_info, Info)
         assert analyze.prev_info.content == "gathered-info"
