@@ -222,3 +222,30 @@ def validate_node_deps(node_cls: type, *, is_start: bool) -> list[str]:
         errors.append(f"Circular dependency detected: {' -> '.join(names)}")
 
     return errors
+
+
+def resolve_dep(fn: object, cache: dict) -> object:
+    """Resolve a single dep function, recursively resolving transitive deps.
+
+    Args:
+        fn: The dep callable to invoke.
+        cache: Per-run cache dict keyed by callable identity.
+
+    Returns:
+        The result of calling fn with its resolved dep kwargs.
+    """
+    raise NotImplementedError("resolve_dep not yet implemented")
+
+
+def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[str, object]:
+    """Resolve all Dep and Recall fields on a Node subclass.
+
+    Args:
+        node_cls: A Node subclass whose annotated fields to resolve.
+        trace: Execution trace for Recall resolution.
+        dep_cache: Per-run dep cache shared across resolve_fields calls.
+
+    Returns:
+        Dict mapping field name to resolved value for Dep and Recall fields only.
+    """
+    raise NotImplementedError("resolve_fields not yet implemented")
