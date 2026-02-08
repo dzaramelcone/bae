@@ -204,13 +204,14 @@ Plans:
 #### Phase 10: Field Descriptions & Docstring Removal
 **Goal**: Make docstrings inert and use Field(description=...) for explicit per-field LLM context
 **Depends on**: Phase 9
-**Plans:** 2 plans
+**Plans:** 3 plans
 
 **Motivation**: LLMs compulsively generate docstrings on node classes. Making instruction context opt-in via Field(description=...) adds friction against unwanted docstring augmentation. Class name IS the instruction — additional context should be a deliberate choice. Uses Pydantic's built-in Field(description=...) instead of creating a new marker.
 
 Plans:
-- [ ] 10-01-PLAN.md — TDD: Drop docstrings from all instruction/prompt builders
-- [ ] 10-02-PLAN.md — TDD: Fix _build_plain_model to preserve Field descriptions + ootd.py update
+- [x] 10-01-PLAN.md — TDD: Drop docstrings from all instruction/prompt builders
+- [x] 10-02-PLAN.md — TDD: Fix _build_plain_model to preserve Field descriptions + ootd.py update
+- [ ] 10-03-PLAN.md — Gap closure: Remove __doc__ from DSPyBackend (compiler.py + dspy_backend.py)
 
 **Success Criteria** (what must be TRUE):
   1. `_build_instruction()` returns class name only — `__doc__` is NOT read
@@ -236,7 +237,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 7. Integration | v2.0 | 4/4 | Complete | 2026-02-08 |
 | 8. Cleanup & Migration | v2.0 | 4/4 | Complete | 2026-02-08 |
 | 9. JSON Structured Fill | v3.0 | 1/1 | Complete | 2026-02-08 |
-| 10. Field Descriptions | v3.0 | 0/2 | Planned | |
+| 10. Field Descriptions | v3.0 | 2/3 | Gap closure | |
 
 ---
 *Roadmap created: 2026-02-04*
