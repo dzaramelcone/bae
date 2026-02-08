@@ -527,8 +527,8 @@ class TestSaveLoadRoundTrip:
         loaded_predictor = loaded[StartNode]
         expected_sig = node_to_signature(StartNode)
 
-        # Both should have the same instruction (class name)
-        assert expected_sig.__doc__ == "StartNode"
+        # Both should have the same instruction (class name + docstring)
+        assert expected_sig.__doc__ == "StartNode: A starting node."
 
 
 # --- optimize_node Tests ---

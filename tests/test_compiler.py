@@ -25,70 +25,70 @@ class TestNodeToSignature:
         sig = node_to_signature(AnalyzeUserIntent)
         assert sig.instructions == "AnalyzeUserIntent"
 
-    def test_annotated_field_becomes_input_field(self):
-        """Case 2: Annotated field with Context becomes InputField."""
+    def test_annotated_field_becomes_output_field_on_non_start(self):
+        """Case 2: Context-annotated field is plain (v2) -> OutputField on non-start node."""
         from bae.compiler import node_to_signature
 
         class ProcessRequest(Node):
             request: Annotated[str, Context(description="The user's request")]
 
+        # In v2, Context is not a recognized marker for classify_fields.
+        # The field is "plain" and on a non-start node -> OutputField.
         sig = node_to_signature(ProcessRequest)
-        assert "request" in sig.input_fields
-        assert sig.input_fields["request"].json_schema_extra["desc"] == "The user's request"
+        assert "request" in sig.output_fields
 
-    def test_unannotated_field_excluded(self):
-        """Case 3: Unannotated fields are excluded from Signature."""
+    def test_all_fields_included_in_signature(self):
+        """Case 3: All fields are included in signature (v2 change)."""
         from bae.compiler import node_to_signature
 
         class ProcessRequest(Node):
             request: Annotated[str, Context(description="The user's request")]
-            internal_counter: int = 0  # No Annotated wrapper
+            internal_counter: int = 0
 
+        # In v2, both fields are "plain" -> OutputFields on non-start
         sig = node_to_signature(ProcessRequest)
-        assert "request" in sig.input_fields
-        assert "internal_counter" not in sig.input_fields
+        assert "request" in sig.output_fields
+        assert "internal_counter" in sig.output_fields
 
-    def test_multiple_annotated_fields(self):
-        """Case 4: Multiple annotated fields all become InputFields."""
+    def test_multiple_context_fields_are_plain(self):
+        """Case 4: Multiple Context-annotated fields are plain in v2."""
         from bae.compiler import node_to_signature
 
         class ChatNode(Node):
             history: Annotated[str, Context(description="Chat history")]
             user_input: Annotated[str, Context(description="Current user message")]
 
+        # In v2, Context-annotated fields are "plain" -> OutputFields on non-start
         sig = node_to_signature(ChatNode)
-        assert "history" in sig.input_fields
-        assert "user_input" in sig.input_fields
-        assert sig.input_fields["history"].json_schema_extra["desc"] == "Chat history"
-        assert sig.input_fields["user_input"].json_schema_extra["desc"] == "Current user message"
+        assert "history" in sig.output_fields
+        assert "user_input" in sig.output_fields
 
-    def test_return_type_becomes_output_field(self):
-        """Case 5: Return type hint creates an OutputField.
+    def test_no_generic_output_field(self):
+        """Case 5: v2 does not add a generic 'output' OutputField.
 
-        For Phase 1, output type is always str (union handling deferred to Phase 2).
+        The old behavior added output=(str, OutputField()). The new behavior
+        creates OutputFields from the node's actual plain fields.
         """
         from bae.compiler import node_to_signature
 
-        class Response(Node):
-            pass
-
         class Decider(Node):
-            def __call__(self, lm) -> Response | None:
-                return None
+            choice: str
 
         sig = node_to_signature(Decider)
-        assert "output" in sig.output_fields
+        # No generic "output" field, just the actual field
+        assert "output" not in sig.output_fields
+        assert "choice" in sig.output_fields
 
-    def test_node_with_no_annotated_fields(self):
-        """Case 6: Node with only internal fields produces valid Signature with no inputs."""
+    def test_node_with_internal_field_becomes_output(self):
+        """Case 6: Node with internal fields -> they become OutputFields on non-start."""
         from bae.compiler import node_to_signature
 
         class EmptyNode(Node):
             internal: int = 0
 
         sig = node_to_signature(EmptyNode)
-        assert len(sig.input_fields) == 0  # Valid - no inputs
-        assert "output" in sig.output_fields
+        assert len(sig.input_fields) == 0
+        assert "internal" in sig.output_fields
 
     def test_result_is_dspy_signature_subclass(self):
         """Case 7: Result is a valid dspy.Signature subclass."""
