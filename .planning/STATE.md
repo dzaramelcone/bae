@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 ## Current Position
 
 Phase: 7 of 8 (Integration)
-Plan: 02 of 04 complete
+Plan: 03 of 04 complete
 Status: In progress
-Last activity: 2026-02-08 — Completed 07-02-PLAN.md
+Last activity: 2026-02-08 — Completed 07-03-PLAN.md
 
-Progress: [####################....] 92% (24/26 plans complete)
+Progress: [########################.] 96% (25/26 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 24 (13 v1.0 + 11 v2.0)
+- Total plans completed: 25 (13 v1.0 + 12 v2.0)
 - Average duration: —
 - Total execution time: —
 
@@ -34,7 +34,7 @@ Progress: [####################....] 92% (24/26 plans complete)
 | 4. Production Runtime | 2 | — | — |
 | 5. Markers & Resolver | 4/4 | ~25min | ~6min |
 | 6. Node & LM Protocol | 5/5 | ~40min | ~8min |
-| 7. Integration | 2/4 | ~12min | ~6min |
+| 7. Integration | 3/4 | ~17min | ~6min |
 
 *Updated after each plan completion*
 
@@ -76,7 +76,9 @@ Key v2 decisions from Phase 7:
 - max_iters=0 means infinite (falsy check skips iteration guard)
 - Terminal nodes appended to trace before loop exit
 - Graph.run() no longer accepts **kwargs (external dep injection removed)
-- 13 v1 tests expected to fail until Plan 03 migrates them
+- MockLMs keep v1 make/decide as stubs for custom __call__ nodes that invoke them
+- v1 incant tests deleted (not ported) — v2 dep resolution covered by test_dep_injection.py
+- incant removed from pyproject.toml dependencies
 
 ### Pending Todos
 
@@ -84,12 +86,11 @@ None.
 
 ### Blockers/Concerns
 
-- **13 v1 test failures**: test_graph.py, test_auto_routing.py, test_integration.py, test_integration_dspy.py use v1 API (make/decide, max_steps, **kwargs). Plan 03 will fix these.
-- **compiler.py CompiledGraph.run()**: Passes **deps to graph.run() which no longer accepts **kwargs. Will need update in Plan 03 or 04.
+- **compiler.py CompiledGraph.run()**: Passes **deps to graph.run() which no longer accepts **kwargs. Will need update in Plan 04.
 - **Claude CLI session noise**: Optimizer runs create many boring test sessions that drown out real sessions in Claude CLI history. When using ClaudeCLIBackend for optimization, set the "don't save session to disk" flag to avoid polluting session history.
 
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 07-02-PLAN.md
+Stopped at: Completed 07-03-PLAN.md
 Resume file: None
