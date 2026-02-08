@@ -201,17 +201,23 @@ Plans:
   5. ~~All `format_as_xml` removed — JSON everywhere~~ ✅
   6. ~~ootd.py E2E works~~ ✅ (~17s haiku, 3-node trace)
 
-#### Phase 10: AdditionalContext Annotation
-**Goal**: Replace implicit docstring extraction with explicit AdditionalContext annotation for LLM instruction context
+#### Phase 10: Field Descriptions & Docstring Removal
+**Goal**: Make docstrings inert and use Field(description=...) for explicit per-field LLM context
 **Depends on**: Phase 9
+**Plans:** 2 plans
 
-**Motivation**: LLMs compulsively generate docstrings on node classes. Making instruction context opt-in via annotation adds friction against unwanted docstring augmentation. Class name IS the instruction — additional context should be a deliberate choice.
+**Motivation**: LLMs compulsively generate docstrings on node classes. Making instruction context opt-in via Field(description=...) adds friction against unwanted docstring augmentation. Class name IS the instruction — additional context should be a deliberate choice. Uses Pydantic's built-in Field(description=...) instead of creating a new marker.
+
+Plans:
+- [ ] 10-01-PLAN.md — TDD: Drop docstrings from all instruction/prompt builders
+- [ ] 10-02-PLAN.md — TDD: Fix _build_plain_model to preserve Field descriptions + ootd.py update
 
 **Success Criteria** (what must be TRUE):
-  1. `AdditionalContext(str)` annotation marker exists in bae/markers.py
-  2. `_build_instruction()` uses AdditionalContext instead of `__doc__`
-  3. Docstrings on Node subclasses are NOT automatically included in LLM prompts
-  4. Nodes without AdditionalContext annotation use only class name as instruction
+  1. `_build_instruction()` returns class name only — `__doc__` is NOT read
+  2. `_node_to_prompt()` on both backends does NOT read `__doc__`
+  3. `_build_plain_model()` preserves `Field(description=...)` in the dynamic model — descriptions appear in `transform_schema()` output
+  4. Docstrings on Node subclasses are NOT automatically included in LLM prompts
+  5. `examples/ootd.py` fields use `Field(description=...)` where helpful
 
 ## Progress
 
@@ -230,6 +236,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 7. Integration | v2.0 | 4/4 | Complete | 2026-02-08 |
 | 8. Cleanup & Migration | v2.0 | 4/4 | Complete | 2026-02-08 |
 | 9. JSON Structured Fill | v3.0 | 1/1 | Complete | 2026-02-08 |
+| 10. Field Descriptions | v3.0 | 0/2 | Planned | |
 
 ---
 *Roadmap created: 2026-02-04*
