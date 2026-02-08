@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 ## Current Position
 
 Phase: 5 of 8 (Markers & Resolver)
-Plan: 2 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: In progress
-Last activity: 2026-02-07 — Completed 05-02-PLAN.md
+Last activity: 2026-02-08 — Completed 05-03-PLAN.md
 
-Progress: [############........] 58% (15/26 plans complete)
+Progress: [############........] 62% (16/26 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 15 (13 v1.0 + 2 v2.0)
+- Total plans completed: 16 (13 v1.0 + 3 v2.0)
 - Average duration: —
 - Total execution time: —
 
@@ -32,7 +32,7 @@ Progress: [############........] 58% (15/26 plans complete)
 | 2. DSPy Integration | 5 | — | — |
 | 3. Optimization | 4 | — | — |
 | 4. Production Runtime | 2 | — | — |
-| 5. Markers & Resolver | 2/4 | ~14min | ~7min |
+| 5. Markers & Resolver | 3/4 | ~20min | ~7min |
 
 *Updated after each plan completion*
 
@@ -53,6 +53,8 @@ Key v2 decisions affecting Phase 5:
 - build_dep_dag uses id(fn) for visited set deduplication
 - validate_node_deps calls build_dep_dag internally for cycle detection
 - Only first marker per field processed in validation (consistent with classify_fields)
+- recall_from_trace uses issubclass(field_type, target_type) direction for MRO matching
+- recall_from_trace skips Dep and Recall annotated fields (infrastructure, not LLM-filled)
 
 ### Pending Todos
 
@@ -64,6 +66,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-07
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-02-08
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None
