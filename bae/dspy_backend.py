@@ -318,11 +318,6 @@ class DSPyBackend:
             for k, v in context.items()
         }}, indent=2)
 
-        # Add type docstrings to context
-        for t in types:
-            if t.__doc__:
-                context_str += f"\n- {t.__name__}: {t.__doc__}"
-
         result = predictor(context=context_str)
         chosen = result.choice.strip()
 
@@ -354,7 +349,7 @@ class DSPyBackend:
         Args:
             target: The Node type to instantiate.
             resolved: Only the target's resolved dep/recall values.
-            instruction: Class name + optional docstring for the LLM.
+            instruction: Class name for the LLM.
             source: The previous node (context frame). Not yet used by DSPy.
 
         Returns:
