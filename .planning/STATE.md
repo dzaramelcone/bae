@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 ## Current Position
 
 Phase: 5 of 8 (Markers & Resolver)
-Plan: 1 of 4 in current phase
+Plan: 2 of 4 in current phase
 Status: In progress
-Last activity: 2026-02-07 — Completed 05-01-PLAN.md
+Last activity: 2026-02-07 — Completed 05-02-PLAN.md
 
-Progress: [###########.........] 54% (14/26 plans complete)
+Progress: [############........] 58% (15/26 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 14 (13 v1.0 + 1 v2.0)
+- Total plans completed: 15 (13 v1.0 + 2 v2.0)
 - Average duration: —
 - Total execution time: —
 
@@ -32,7 +32,7 @@ Progress: [###########.........] 54% (14/26 plans complete)
 | 2. DSPy Integration | 5 | — | — |
 | 3. Optimization | 4 | — | — |
 | 4. Production Runtime | 2 | — | — |
-| 5. Markers & Resolver | 1/4 | ~8min | ~8min |
+| 5. Markers & Resolver | 2/4 | ~14min | ~7min |
 
 *Updated after each plan completion*
 
@@ -50,6 +50,9 @@ Key v2 decisions affecting Phase 5:
 - Per-run dep caching (same dep function + args = cached result within one graph run)
 - Dep.fn is first positional field so `Dep(callable)` works without keyword; v1 compat preserved via `description` kwarg
 - classify_fields() skips "return" key from get_type_hints
+- build_dep_dag uses id(fn) for visited set deduplication
+- validate_node_deps calls build_dep_dag internally for cycle detection
+- Only first marker per field processed in validation (consistent with classify_fields)
 
 ### Pending Todos
 
@@ -62,5 +65,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-07
-Stopped at: Completed 05-01-PLAN.md
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
