@@ -4,7 +4,6 @@ Tests the DSPy-based LM backend that uses dspy.Predict with generated Signatures
 """
 
 import time
-from typing import Annotated
 from unittest.mock import MagicMock, patch
 
 import dspy
@@ -13,7 +12,6 @@ from pydantic import BaseModel, ValidationError
 
 from bae.dspy_backend import DSPyBackend
 from bae.exceptions import BaeLMError, BaeParseError
-from bae.markers import Context, Dep
 from bae.node import Node
 
 
@@ -21,7 +19,7 @@ from bae.node import Node
 class SimpleNode(Node):
     """A simple test node."""
 
-    content: Annotated[str, Context(description="The content to process")]
+    content: str
 
 
 class TargetNode(Node):
@@ -38,14 +36,14 @@ class AlternativeNode(Node):
 
 
 class NodeWithDep(Node):
-    """Node with Dep-annotated call param."""
+    """Node with dependency call param."""
 
-    query: Annotated[str, Context(description="The query")]
+    query: str
 
     def __call__(
         self,
         lm,
-        db: Annotated[str, Dep(description="Database connection")],
+        db: str,
     ) -> TargetNode | None:
         ...
 
@@ -53,7 +51,7 @@ class NodeWithDep(Node):
 class UnionReturnNode(Node):
     """Node with union return type."""
 
-    content: Annotated[str, Context(description="Content to analyze")]
+    content: str
 
     def __call__(self, lm) -> TargetNode | AlternativeNode | None:
         ...
@@ -62,7 +60,7 @@ class UnionReturnNode(Node):
 class SingleReturnNode(Node):
     """Node with single return type (no union)."""
 
-    data: Annotated[str, Context(description="Data to process")]
+    data: str
 
     def __call__(self, lm) -> TargetNode:
         ...
@@ -114,8 +112,8 @@ class TestDSPyBackendMake:
 
                 mock_predict.assert_called_with(mock_sig_class)
 
-    def test_make_passes_context_fields_as_inputs(self):
-        """make() passes Context-annotated fields to predict."""
+    def test_make_passes_node_fields_as_inputs(self):
+        """make() passes node fields to predict."""
         backend = DSPyBackend()
         node = SimpleNode(content="my content")
 

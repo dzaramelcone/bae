@@ -207,20 +207,3 @@ class TestBackwardCompat:
         assert "result" not in sig.input_fields
 
 
-class TestExistingTestsStillPass:
-    """Verify the old Context-marker path still works.
-
-    The old _extract_context_fields function is kept for v1 callers.
-    The old tests in test_compiler.py exercise that path.
-    This test just verifies the old function is still importable and works.
-    """
-
-    def test_extract_context_fields_still_exists(self):
-        from bae.compiler import _extract_context_fields
-        from bae.markers import Context
-
-        class OldStyleNode(Node):
-            data: Annotated[str, Context(description="Some data")]
-
-        fields = _extract_context_fields(OldStyleNode)
-        assert "data" in fields
