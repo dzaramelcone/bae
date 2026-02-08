@@ -103,12 +103,6 @@ class TestDepMarker:
         except FrozenInstanceError:
             pass
 
-    def test_dep_backward_compat(self):
-        """v1 Dep(description='...') still works."""
-        dep = Dep(description="old style")
-        assert dep.description == "old style"
-        assert dep.fn is None
-
 
 class TestRecallMarker:
     def test_recall_creates_marker(self):

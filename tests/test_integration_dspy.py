@@ -13,13 +13,11 @@ Uses mocks for dspy.Predict to avoid real LLM calls.
 from __future__ import annotations
 
 import json
-from typing import Annotated
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bae import (
-    Context,
     DSPyBackend,
     Graph,
     GraphResult,
@@ -36,7 +34,7 @@ from bae import (
 class AnalyzeQuery(Node):
     """Analyze an incoming query to determine processing path."""
 
-    query: Annotated[str, Context(description="The query to analyze")]
+    query: str
 
     def __call__(self) -> ProcessSimple | ProcessComplex:
         """Auto-routing: LLM decides between simple and complex processing."""
@@ -46,7 +44,7 @@ class AnalyzeQuery(Node):
 class ProcessSimple(Node):
     """Simple query processing - direct answer."""
 
-    answer: Annotated[str, Context(description="The answer to provide")]
+    answer: str
 
     def __call__(self) -> Done | None:
         """Auto-routing: LLM decides to produce Done or terminate."""
@@ -56,7 +54,7 @@ class ProcessSimple(Node):
 class ProcessComplex(Node):
     """Complex query processing - requires multiple steps."""
 
-    steps: Annotated[list[str], Context(description="Processing steps to execute")]
+    steps: list[str]
 
     def __call__(self) -> Review:
         """Auto-routing: single return type -> make."""
@@ -66,7 +64,7 @@ class ProcessComplex(Node):
 class Review(Node):
     """Review processing results before finalizing."""
 
-    summary: Annotated[str, Context(description="Summary of processing")]
+    summary: str
 
     def __call__(self) -> Done:
         """Auto-routing: single return type -> make."""
