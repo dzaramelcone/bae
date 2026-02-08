@@ -98,6 +98,20 @@ def _build_xml_schema(target_cls: type) -> str:
                     inner_type = _get_type_name(inner_hint) if inner_hint else "string"
                     lines.append(f"    <{inner_name}>{inner_type}</{inner_name}>")
                 lines.append(f"  </{name}>")
+            elif get_origin(base) is list:
+                # List field — show expected child element structure
+                item_args = get_args(base)
+                item_type = item_args[0] if item_args else str
+                if isinstance(item_type, type) and issubclass(item_type, BaseModel):
+                    lines.append(f"  <{name}>")
+                    lines.append(f"    <{item_type.__name__}>...")
+                    lines.append(f"    </{item_type.__name__}>")
+                    lines.append(f"  </{name}>")
+                else:
+                    item_type_name = _get_type_name(item_type)
+                    lines.append(f"  <{name}>")
+                    lines.append(f"    <item>{item_type_name}</item>")
+                    lines.append(f"  </{name}>")
             else:
                 type_name = _get_type_name(base)
                 lines.append(f"  <{name}>{type_name}</{name}>")
@@ -282,19 +296,20 @@ def _element_to_dict(elem: ET.Element) -> dict[str, Any]:
 def _element_to_list(elem: ET.Element) -> list[Any]:
     """Convert an XML element with child elements to a list.
 
-    Falls back to JSON parse if text content looks like a JSON array
-    (LLM sometimes writes ["a", "b"] instead of <item> tags).
+    Raises FillError if the element has text content but no child elements
+    (e.g. LLM wrote a JSON array instead of <item> tags).
     """
-    import json
-
     if len(elem) == 0:
-        # No child elements — check for JSON array in text content
         text = (elem.text or "").strip()
-        if text.startswith("["):
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                pass
+        if text:
+            from bae.exceptions import FillError
+
+            raise FillError(
+                f"Expected <item> children in <{elem.tag}>, got text: {text!r}",
+                node_type=type(None),
+                validation_errors=f"<{elem.tag}> must contain child elements, not raw text",
+                attempts=0,
+            )
         return []
 
     items = []

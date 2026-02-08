@@ -113,6 +113,17 @@ class TestBuildXmlSchema:
         assert "<top>" in schema
         assert "<bottom>" in schema
 
+    def test_list_fields_show_item_structure(self):
+        """List fields show expected <item> child structure."""
+        from bae.lm import _build_xml_schema
+
+        schema = _build_xml_schema(AllPlainNode)
+
+        assert "<accessories>" in schema
+        assert "<item>str</item>" in schema
+        assert "<inspo>" in schema
+        assert "<item>HttpUrl</item>" in schema
+
     def test_includes_docstring_as_description(self):
         """Class docstring becomes description attribute on schema tag."""
         from bae.lm import _build_xml_schema
@@ -246,12 +257,13 @@ class TestParseXmlCompletion:
         assert result["footwear"] == "Cool sneakers"
         assert result["accessories"] == ["Watch", "Scarf"]
 
-    def test_handles_json_array_in_list_field(self):
-        """Parses list fields when LLM writes JSON array instead of <item> tags."""
+    def test_json_array_in_list_field_raises_fill_error(self):
+        """JSON array text in a list field raises FillError, not silent empty list."""
+        from bae.exceptions import FillError
         from bae.lm import _parse_xml_completion
 
         response = """Cool sneakers</footwear>
-  <accessories>["Watch", "Scarf", "Hat"]</accessories>
+  <accessories>["Watch", "Scarf"]</accessories>
 </SomeNode>"""
 
         class SomeNode(Node):
@@ -260,10 +272,10 @@ class TestParseXmlCompletion:
 
             def __call__(self) -> None: ...
 
-        result = _parse_xml_completion(response, SomeNode, "footwear")
+        with pytest.raises(FillError) as exc_info:
+            _parse_xml_completion(response, SomeNode, "footwear")
 
-        assert result["footwear"] == "Cool sneakers"
-        assert result["accessories"] == ["Watch", "Scarf", "Hat"]
+        assert "accessories" in str(exc_info.value)
 
 
 # ── _build_plain_model ─────────────────────────────────────────────────
