@@ -138,10 +138,10 @@ Plans:
 
 **Success Criteria** (what must be TRUE):
   1. Node fields without Dep/Recall annotations are identified as LLM-filled; fields with Dep/Recall are identified as context
-  2. Start node fields (without Dep) are treated as caller-provided input, not LLM-generated
-  3. Terminal node (returns None) fields ARE the graph's response schema
-  4. LM is configured once at graph level and not passed to node `__call__`; per-node override via NodeConfig works
-  5. LM protocol exposes `choose_type()` (pick successor from union) and `fill()` (populate plain fields given resolved context)
+  2. Start node fields (without Dep) are identifiable as caller-provided input via `is_start` parameter in signature generation
+  3. Terminal node (returns None) fields are accessible as the graph's response schema via `GraphResult.result`
+  4. NodeConfig provides per-node LM override infrastructure; `_wants_lm` detects opt-in `lm` injection in `__call__`; graph-level LM integration wired in Phase 7
+  5. LM protocol exposes `choose_type()` (pick successor from union) and `fill()` (populate plain fields given resolved context) on all backends
 
 #### Phase 7: Integration
 **Goal**: Graph.run() assembles context frames from all sources and executes the full node lifecycle
