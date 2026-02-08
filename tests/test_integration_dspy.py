@@ -1,12 +1,11 @@
-"""Integration tests for DSPy-based graph execution.
+"""Integration tests for DSPy-based graph execution (v2).
 
-Tests Phase 2 capabilities:
-1. Auto-routing with union return type (decide path)
-2. Auto-routing with single return type (make path)
+Tests:
+1. Auto-routing with union return type (choose_type + fill)
+2. Auto-routing with single return type (fill only)
 3. Custom __call__ logic (escape hatch)
-4. Bind/Dep value flow between nodes
-5. External deps from run() kwargs
-6. DSPyBackend as default (no lm parameter)
+4. DSPyBackend as default (no lm parameter)
+5. GraphResult trace verification
 
 Uses mocks for dspy.Predict to avoid real LLM calls.
 """
@@ -20,9 +19,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bae import (
-    Bind,
     Context,
-    Dep,
     DSPyBackend,
     Graph,
     GraphResult,
@@ -111,111 +108,39 @@ class EndCustom(Node):
 
 
 # =============================================================================
-# Test Nodes - With Bind/Dep for value flow
-# =============================================================================
-
-
-class DatabaseConn:
-    """Simulated database connection."""
-
-    def __init__(self, conn_string: str):
-        self.conn_string = conn_string
-
-
-class Initialize(Node):
-    """Initialize processing and create connection."""
-
-    conn_string: Annotated[str, Context(description="Connection string")]
-    conn: Annotated[DatabaseConn | None, Bind()] = None
-
-    def __call__(self, lm: LM) -> UseConnection:
-        """Create connection and pass to downstream."""
-        # Bind field gets captured after this node executes
-        self.conn = DatabaseConn(self.conn_string)
-        return lm.make(self, UseConnection)
-
-
-class UseConnection(Node):
-    """Use the bound connection from upstream."""
-
-    query: str
-
-    def __call__(
-        self,
-        lm: LM,
-        conn: Annotated[DatabaseConn, Dep(description="Database connection")],
-    ) -> FinalResult:
-        """Dep-annotated param injected from Initialize's Bind field."""
-        # Access the injected connection
-        result = f"Executed {self.query} on {conn.conn_string}"
-        return FinalResult(output=result)
-
-
-class FinalResult(Node):
-    """Final result of connection-based processing."""
-
-    output: str
-
-    def __call__(self) -> None:
-        ...
-
-
-# =============================================================================
-# Test Nodes - External dep injection
-# =============================================================================
-
-
-class Config:
-    """External configuration object."""
-
-    def __init__(self, env: str):
-        self.env = env
-
-
-class NeedsConfig(Node):
-    """Node that requires external config."""
-
-    action: str
-
-    def __call__(
-        self,
-        lm: LM,
-        config: Annotated[Config, Dep(description="Environment config")],
-    ) -> ConfigResult:
-        """Dep injected from run() kwargs."""
-        return ConfigResult(output=f"{self.action} in {config.env}")
-
-
-class ConfigResult(Node):
-    """Result of config-based processing."""
-
-    output: str
-
-    def __call__(self) -> None:
-        ...
-
-
-# =============================================================================
 # Mock LM for testing
 # =============================================================================
 
 
 class MockLM:
-    """Mock LM that returns pre-configured responses."""
+    """Mock LM implementing v2 API (choose_type/fill) for ellipsis-body nodes,
+    plus v1 stubs (make/decide) for custom __call__ nodes.
+    """
 
     def __init__(self, responses: dict[type, Node | None]):
         """Initialize with type -> response mapping."""
         self.responses = responses
+        self.fill_calls: list[tuple[type, dict, str]] = []
+        self.choose_type_calls: list[tuple[list, dict]] = []
         self.make_calls: list[tuple[Node, type]] = []
-        self.decide_calls: list[Node] = []
 
+    def choose_type(self, types, context):
+        self.choose_type_calls.append((types, context))
+        for t in types:
+            if t in self.responses:
+                return t
+        return types[0]
+
+    def fill(self, target, context, instruction):
+        self.fill_calls.append((target, context, instruction))
+        return self.responses[target]
+
+    # v1 stubs for custom __call__ nodes that call lm.make/decide directly
     def make(self, node: Node, target: type) -> Node:
         self.make_calls.append((node, target))
         return self.responses[target]
 
     def decide(self, node: Node) -> Node | None:
-        self.decide_calls.append(node)
-        # Return first response that matches a successor type
         for target in node.successors():
             if target in self.responses:
                 return self.responses[target]
@@ -228,37 +153,36 @@ class MockLM:
 
 
 class TestAutoRoutingUnionType:
-    """Test auto-routing with union return type (decide path)."""
+    """Test auto-routing with union return type (choose_type + fill)."""
 
-    def test_union_return_type_calls_lm_decide(self):
-        """When __call__ has ... body and union return, Graph.run() calls lm.decide()."""
+    def test_union_return_type_calls_choose_type_and_fill(self):
+        """Ellipsis body with union return calls choose_type then fill."""
         graph = Graph(start=AnalyzeQuery)
 
         lm = MockLM(
             {
                 ProcessSimple: ProcessSimple(answer="42"),
-                Done: None,  # ProcessSimple returns Done | None
+                Done: None,  # ProcessSimple returns Done | None -> fill returns None
             }
         )
 
         result = graph.run(AnalyzeQuery(query="What is 6*7?"), lm=lm)
 
-        # Should have called decide on both AnalyzeQuery and ProcessSimple
-        # (both have union/optional return types)
-        assert len(lm.decide_calls) == 2
-        assert isinstance(lm.decide_calls[0], AnalyzeQuery)
-        assert isinstance(lm.decide_calls[1], ProcessSimple)
+        # v2: decide strategy calls choose_type then fill for each ellipsis node
+        # AnalyzeQuery (decide: ProcessSimple|ProcessComplex) + ProcessSimple (decide: Done|None)
+        assert len(lm.choose_type_calls) == 2
+        assert len(lm.fill_calls) == 2
 
         # Result is GraphResult
         assert isinstance(result, GraphResult)
-        assert result.node is None  # Terminated (ProcessSimple chose None)
+        assert result.node is None
 
 
 class TestAutoRoutingSingleType:
-    """Test auto-routing with single return type (make path)."""
+    """Test auto-routing with single return type (fill only)."""
 
-    def test_single_return_type_calls_lm_make(self):
-        """When __call__ has ... body and single return, Graph.run() calls lm.make()."""
+    def test_single_return_type_calls_lm_fill(self):
+        """Ellipsis body with single return calls fill directly (no choose_type)."""
         graph = Graph(start=ProcessComplex)
 
         lm = MockLM(
@@ -273,18 +197,18 @@ class TestAutoRoutingSingleType:
             lm=lm,
         )
 
-        # Should have called make on ProcessComplex (single return)
-        assert len(lm.make_calls) >= 1
-        # First make should be ProcessComplex -> Review
-        assert isinstance(lm.make_calls[0][0], ProcessComplex)
-        assert lm.make_calls[0][1] == Review
+        # v2: make strategy calls fill directly, no choose_type
+        # ProcessComplex -> fill(Review) + Review -> fill(Done) = 2 fill calls
+        assert len(lm.fill_calls) >= 1
+        assert lm.fill_calls[0][0] is Review  # First fill target is Review
+        assert len(lm.choose_type_calls) == 0  # No choose_type for single-return
 
 
 class TestCustomCallEscapeHatch:
     """Test custom __call__ logic is called directly."""
 
     def test_custom_call_not_auto_routed(self):
-        """When __call__ has real body, it's called directly (not lm.decide/make)."""
+        """Custom __call__ is invoked directly, not via choose_type/fill."""
         graph = Graph(start=StartCustom)
 
         lm = MockLM(
@@ -295,68 +219,15 @@ class TestCustomCallEscapeHatch:
 
         result = graph.run(StartCustom(value=50), lm=lm)
 
-        # Custom call should have invoked lm.make directly
+        # Custom call invoked lm.make directly (v1 method)
         assert len(lm.make_calls) == 1
         assert isinstance(lm.make_calls[0][0], StartCustom)
 
-        # No decide calls (not auto-routed)
-        assert len(lm.decide_calls) == 0
+        # No v2 auto-routing calls
+        assert len(lm.choose_type_calls) == 0
+        assert len(lm.fill_calls) == 0
 
         assert isinstance(result, GraphResult)
-
-
-class TestBindDepValueFlow:
-    """Test Bind/Dep value flow between nodes."""
-
-    def test_bind_field_passed_to_downstream_dep(self):
-        """Bind-annotated field captured and injected into Dep-annotated param."""
-        graph = Graph(start=Initialize)
-
-        lm = MockLM(
-            {
-                UseConnection: UseConnection(query="SELECT * FROM users"),
-                FinalResult: FinalResult(output="mock"),
-            }
-        )
-
-        result = graph.run(Initialize(conn_string="postgresql://localhost/db"), lm=lm)
-
-        assert isinstance(result, GraphResult)
-        # Trace should include all nodes
-        assert len(result.trace) >= 2
-        assert isinstance(result.trace[0], Initialize)
-
-        # The Initialize node should have conn populated after execution
-        init_node = result.trace[0]
-        assert init_node.conn is not None
-        assert init_node.conn.conn_string == "postgresql://localhost/db"
-
-
-class TestExternalDepInjection:
-    """Test external deps from run() kwargs."""
-
-    def test_external_dep_injected_from_kwargs(self):
-        """Dep-annotated param receives value from run() kwargs."""
-        graph = Graph(start=NeedsConfig)
-
-        lm = MockLM(
-            {
-                ConfigResult: ConfigResult(output="mock"),
-            }
-        )
-
-        config = Config(env="production")
-        result = graph.run(
-            NeedsConfig(action="deploy"),
-            lm=lm,
-            config=config,  # External dep passed as kwarg
-        )
-
-        assert isinstance(result, GraphResult)
-        # Result should show the config was used
-        final = result.trace[-1]
-        assert isinstance(final, ConfigResult)
-        assert "production" in final.output
 
 
 class TestDSPyBackendDefault:
@@ -378,26 +249,20 @@ class TestDSPyBackendDefault:
     @patch("bae.dspy_backend.dspy.Predict")
     def test_dspy_backend_used_for_auto_routing(self, mock_predict_cls):
         """DSPyBackend is actually invoked for auto-routing when no lm provided."""
-        # Mock both the choice prediction and the make prediction
-        call_count = [0]
+        # v2: ProcessSimple (Done | None) → decide strategy → choose_type([Done])
+        # choose_type skips LLM for single type, then fill(Done) calls dspy.Predict
 
-        def side_effect(sig):
-            mock = MagicMock()
-            if call_count[0] == 0:
-                # First call: choice prediction (Done vs None)
-                mock.return_value.choice = "None"  # Choose to terminate
-            call_count[0] += 1
-            return mock
+        mock_prediction = MagicMock()
+        mock_prediction.keys.return_value = ["result"]
+        mock_prediction.result = "done"
 
-        mock_predict_cls.side_effect = side_effect
+        mock_predictor = MagicMock(return_value=mock_prediction)
+        mock_predict_cls.return_value = mock_predictor
 
         graph = Graph(start=ProcessSimple)
-
-        # Run without explicit lm - ProcessSimple has ... body and union return
-        # This should use DSPyBackend for decide
         result = graph.run(ProcessSimple(answer="test"))
 
-        # DSPyBackend was used (dspy.Predict was called)
+        # DSPyBackend.fill() called dspy.Predict for the fill step
         assert mock_predict_cls.called
 
 
@@ -418,15 +283,15 @@ class TestGraphResultTrace:
 
         result = graph.run(AnalyzeQuery(query="complex task"), lm=lm)
 
-        # Trace should show: AnalyzeQuery -> ProcessComplex -> Review -> Done
+        # v2 trace: AnalyzeQuery -> ProcessComplex -> Review -> Done
         assert len(result.trace) == 4
         assert isinstance(result.trace[0], AnalyzeQuery)
         assert isinstance(result.trace[1], ProcessComplex)
         assert isinstance(result.trace[2], Review)
         assert isinstance(result.trace[3], Done)
 
-    def test_trace_includes_decide_step(self):
-        """Trace shows nodes where LLM decided the path."""
+    def test_trace_includes_choose_type_step(self):
+        """Trace shows nodes where LLM chose the path via choose_type."""
         graph = Graph(start=AnalyzeQuery)
 
         lm = MockLM(
@@ -438,7 +303,7 @@ class TestGraphResultTrace:
 
         result = graph.run(AnalyzeQuery(query="simple question"), lm=lm)
 
-        # Trace: AnalyzeQuery (decide) -> ProcessSimple (decide) -> Done (terminal)
+        # v2 trace: AnalyzeQuery (choose_type+fill) -> ProcessSimple (choose_type+fill) -> Done (terminal)
         assert len(result.trace) == 3
         assert isinstance(result.trace[0], AnalyzeQuery)
         assert isinstance(result.trace[1], ProcessSimple)
@@ -461,11 +326,6 @@ class TestPhase2SuccessCriteria:
     def test_custom_call_is_escape_hatch(self):
         """Custom __call__ logic still works as escape hatch."""
         # Already tested in TestCustomCallEscapeHatch
-        pass
-
-    def test_dep_params_injected_via_incant(self):
-        """Dep-annotated params are injected via incant."""
-        # Already tested in TestExternalDepInjection
         pass
 
     def test_dspy_predict_for_lm_calls(self):
