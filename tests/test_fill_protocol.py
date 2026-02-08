@@ -235,8 +235,8 @@ class TestGraphFillIntegration:
         assert len(lm.fill_calls) == 0
         assert len(result.trace) == 1
 
-    def test_instruction_is_class_name_plus_docstring(self):
-        """fill() instruction includes class name and docstring."""
+    def test_instruction_is_class_name_only(self):
+        """fill() instruction is class name only — docstrings are inert."""
         graph = Graph(start=StartNode)
 
         middle = MiddleNode.model_construct(
@@ -249,9 +249,19 @@ class TestGraphFillIntegration:
         lm = CapturingLM(responses={MiddleNode: middle, EndNode: end})
         graph.run(StartNode(user_message="test"), lm=lm)
 
-        # MiddleNode has no docstring
+        # MiddleNode has no docstring — class name only
         assert lm.fill_calls[0]["instruction"] == "MiddleNode"
 
-        # EndNode has docstring
-        assert "EndNode" in lm.fill_calls[1]["instruction"]
-        assert "Final recommendation." in lm.fill_calls[1]["instruction"]
+        # EndNode has docstring but instruction is class name only
+        assert lm.fill_calls[1]["instruction"] == "EndNode"
+
+
+class TestBuildInstruction:
+    """Direct unit tests for _build_instruction."""
+
+    def test_returns_class_name_only(self):
+        """_build_instruction returns class name, ignoring __doc__."""
+        assert _build_instruction(EndNode) == "EndNode"
+
+    def test_returns_class_name_when_no_docstring(self):
+        assert _build_instruction(MiddleNode) == "MiddleNode"
