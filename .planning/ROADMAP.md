@@ -184,19 +184,22 @@ Plans:
 #### Phase 9: JSON Structured Fill
 **Goal**: fill() uses JSON structured output with constrained decoding — source JSON + instruction prompt, schema-validated response
 **Depends on**: Phase 8 (v2.0 complete)
-**Status**: In progress on spike/e2e-cli branch
+**Status**: Complete
 
-**Design**: Claude CLI's `--json-schema` flag enables constrained decoding (Anthropic structured outputs). `transform_schema()` from the Anthropic SDK prepares Pydantic models for both input and output schemas — strips unsupported constraints, adds `additionalProperties: false`. Prompt includes input schema + input data + output schema + instruction, all JSON. Response guaranteed schema-conformant by constrained decoding. XML in prompts causes CLI to hang (enters agent mode); JSON works reliably.
+**Design**: Claude CLI's `--json-schema` flag enables constrained decoding (Anthropic structured outputs). `transform_schema()` from the Anthropic SDK prepares Pydantic models for input schemas (in prompt for comprehension) and output schemas (via `--json-schema` for constrained decoding). CLI isolated with `--tools "" --strict-mcp-config --setting-sources ""` — leaves only the structured output tool. `_strip_format()` moves `format` constraints to description (CLI silently rejects schemas containing `format`).
 
 **Reference**: `tests/traces/json_structured_fill_reference.py` — working E2E pattern
 
+Plans:
+- [x] spike/e2e-cli — JSON structured fill implementation (102 commits)
+
 **Success Criteria** (what must be TRUE):
-  1. fill() prompt includes: input schema (transform_schema of source), source data JSON, resolved deps JSON, output schema (transform_schema of plain model), instruction text
-  2. Output JSON schema generated via `_build_plain_model()` + `transform_schema()`; LLM response guaranteed conformant by constrained decoding
-  3. Dep/recall fields validated at resolve time (DepError); plain fields validated separately (FillError) — clear boundary
-  4. ClaudeCLIBackend uses JSON mode (`--json-schema` + `--output-format json`) for both fill and choose_type
-  5. All `format_as_xml` usage removed from lm.py and dspy_backend.py — JSON everywhere
-  6. `examples/ootd.py` runs end-to-end producing valid OOTD recommendation
+  1. ~~fill() prompt includes input schema + source data + resolved deps + instruction~~ ✅
+  2. ~~Output JSON schema via `_build_plain_model()` + `transform_schema()` + constrained decoding~~ ✅
+  3. ~~Two-stage validation: DepError for deps, FillError for plain fields~~ ✅
+  4. ~~ClaudeCLIBackend uses JSON mode for fill and choose_type~~ ✅
+  5. ~~All `format_as_xml` removed — JSON everywhere~~ ✅
+  6. ~~ootd.py E2E works~~ ✅ (~17s haiku, 3-node trace)
 
 #### Phase 10: AdditionalContext Annotation
 **Goal**: Replace implicit docstring extraction with explicit AdditionalContext annotation for LLM instruction context
@@ -226,7 +229,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 6. Node & LM Protocol | v2.0 | 5/5 | Complete | 2026-02-08 |
 | 7. Integration | v2.0 | 4/4 | Complete | 2026-02-08 |
 | 8. Cleanup & Migration | v2.0 | 4/4 | Complete | 2026-02-08 |
-| 9. JSON Structured Fill | v3.0 | —/— | In Progress | — |
+| 9. JSON Structured Fill | v3.0 | 1/1 | Complete | 2026-02-08 |
 
 ---
 *Roadmap created: 2026-02-04*
