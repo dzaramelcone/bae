@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 
 ## Current Position
 
-Phase: 9 (JSON Structured Fill) — IN PROGRESS
-Plan: spike/e2e-cli branch (pre-plan exploration)
-Status: In Progress — pivoted from XML to JSON, updating planning docs
-Last activity: 2026-02-08 — JSON pivot complete in code, planning docs catching up
+Phase: 9 (JSON Structured Fill) — COMPLETE
+Plan: spike/e2e-cli branch
+Status: Complete — JSON structured fill working E2E, all XML removed
+Last activity: 2026-02-08 — Real CLI E2E verified (3-node ootd graph, ~25s haiku)
 
 Progress: [##############################] 100% v2.0 (30/30 plans) | Phase 9 in progress
 
@@ -95,19 +95,18 @@ Key decisions from Phase 9 (JSON Structured Fill):
 - `_build_plain_model()` creates dynamic Pydantic model with only plain fields for LLM output schema
 - `_build_choice_schema()` uses dynamic Pydantic enum + transform_schema for choose_type constrained decoding
 - `_build_fill_prompt()` uses JSON: input schema + source data + context + output schema + instruction
-- ALL format_as_xml usage to be removed from lm.py and dspy_backend.py
+- ALL format_as_xml removed from lm.py, dspy_backend.py, and tests
+- `_strip_format()` removes `format` from CLI schemas — CLI silently rejects schemas with format:uri (API supports it, CLI doesn't)
+- Two-stage validation: CLI constrained decoding ensures structure, `validate_plain_fields` validates types (HttpUrl etc.)
 - `--setting-sources ""` correlates with broken structured output — root cause unknown, needs investigation
-- `validate_plain_fields()` validates LLM-generated plain fields through Pydantic (FillError on failure)
 - Working reference: tests/traces/json_structured_fill_reference.py
+- Real CLI E2E verified: 3-node ootd graph completes in ~25s with haiku
 
 ### Pending Todos
 
-- Implement JSON fill prompt in `_build_fill_prompt()` with input/output schemas via transform_schema
-- Remove all `format_as_xml` from lm.py (all methods, both backends) and dspy_backend.py
-- JSON serialization for choose_type context on all backends
 - Root-cause `--setting-sources ""` breaking structured output (vague correlation, not understood)
-- Run real CLI E2E after implementation
 - Nice-to-have: use inflect library to singularize field names for list item tags
+- Consider Dzara's question about partially-completed JSON prompts (DSPy InputField/OutputField pattern)
 
 ### Blockers/Concerns
 
@@ -116,6 +115,6 @@ Key decisions from Phase 9 (JSON Structured Fill):
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Phase 9 — JSON prompt pattern validated (reference saved), need to implement in _build_fill_prompt and remove all XML
+Stopped at: Phase 9 complete. E2E verified. Remaining: --setting-sources root cause, partially-completed JSON question
 Branch: spike/e2e-cli
 Resume file: None
