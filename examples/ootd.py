@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 
 from bae import Dep, Graph, Node, Recall
 
@@ -185,12 +185,12 @@ class AnticipateUsersDay(Node):
 
 
 class RecommendOOTD(Node):
-    top: str
-    bottom: str
-    footwear: str
-    accessories: list[str]
-    final_response: str
-    inspo: list[HttpUrl]
+    top: str = Field(description="a specific garment for the upper body")
+    bottom: str = Field(description="a specific garment for the lower body")
+    footwear: str = Field(description="specific shoes or boots")
+    accessories: list[str] = Field(description="jewelry, bags, hats, scarves, etc.")
+    final_response: str = Field(description="casual message to the user with the recommendation")
+    inspo: list[HttpUrl] = Field(description="outfit inspiration image URLs")
 
     def __call__(self) -> None: ...
 
