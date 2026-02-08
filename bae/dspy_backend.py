@@ -64,7 +64,7 @@ class DSPyBackend:
 
     def _build_inputs(self, node: Node, **deps: Any) -> dict[str, Any]:
         """Build input dict from node fields and deps."""
-        inputs = {name: getattr(node, name) for name in node.model_fields}
+        inputs = {name: getattr(node, name) for name in node.__class__.model_fields}
         inputs.update(deps)
         return inputs
 
