@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Phase 7 complete, verified — ready for Phase 8 (Cleanup & Migration)
+**Current focus:** Phase 8 in progress — Cleanup & Migration
 
 ## Current Position
 
-Phase: 7 of 8 (Integration) — COMPLETE
-Plan: 04 of 04 complete
-Status: Phase complete and verified (300 tests pass, 0 failures)
-Last activity: 2026-02-08 — Completed 07-04-PLAN.md (Phase 7 gate)
+Phase: 8 of 8 (Cleanup & Migration) — IN PROGRESS
+Plan: 01 of 04 complete
+Status: In progress (tests temporarily broken -- Plans 02-03 fix them)
+Last activity: 2026-02-08 — Completed 08-01-PLAN.md (source-side v1 marker removal)
 
-Progress: [##########################..] 87% (26/30 plans complete, Phase 8 TBD)
+Progress: [###########################.] 90% (27/30 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 26 (13 v1.0 + 13 v2.0)
+- Total plans completed: 27 (13 v1.0 + 14 v2.0)
 - Average duration: —
 - Total execution time: —
 
@@ -35,6 +35,7 @@ Progress: [##########################..] 87% (26/30 plans complete, Phase 8 TBD)
 | 5. Markers & Resolver | 4/4 | ~25min | ~6min |
 | 6. Node & LM Protocol | 5/5 | ~40min | ~8min |
 | 7. Integration | 4/4 | ~20min | ~5min |
+| 8. Cleanup & Migration | 1/4 | ~3min | ~3min |
 
 *Updated after each plan completion*
 
@@ -50,7 +51,7 @@ Key v2 decisions affecting Phase 5:
 - `graphlib.TopologicalSorter` for dep chain resolution and cycle detection
 - Dep on start node is allowed (auto-resolved); Recall on start node is an error
 - Per-run dep caching (same dep function + args = cached result within one graph run)
-- Dep.fn is first positional field so `Dep(callable)` works without keyword; v1 compat preserved via `description` kwarg
+- Dep.fn is first positional field so `Dep(callable)` works without keyword (description kwarg removed in Phase 8)
 - classify_fields() skips "return" key from get_type_hints
 - build_dep_dag uses id(fn) for visited set deduplication
 - validate_node_deps calls build_dep_dag internally for cycle detection
@@ -80,6 +81,11 @@ Key v2 decisions from Phase 7:
 - v1 incant tests deleted (not ported) — v2 dep resolution covered by test_dep_injection.py
 - incant removed from pyproject.toml dependencies
 
+Key decisions from Phase 8:
+- _build_inputs collects all node model_fields (not just Context-annotated) — correct v2 behavior
+- v1 make/decide kept on LM Protocol for custom __call__ escape-hatch nodes (docstring updated)
+- Dep.description removed — Dep(callable) is the only constructor form
+
 ### Pending Todos
 
 None.
@@ -92,5 +98,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 07-04-PLAN.md (Phase 7 gate verified)
+Stopped at: Completed 08-01-PLAN.md (source-side v1 marker removal)
 Resume file: None
