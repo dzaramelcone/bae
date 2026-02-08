@@ -106,7 +106,7 @@ class TestPromptStructure:
         assert "ugh i just got up" in prompt
 
         # Resolved deps as context
-        assert "context" in prompt
+        assert "Context:" in prompt
 
         # Instruction
         assert "MiddleNode" in prompt

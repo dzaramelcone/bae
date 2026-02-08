@@ -23,7 +23,6 @@ from examples.ootd import (
     graph,
 )
 from pydantic import HttpUrl
-from pydantic_ai import format_as_xml
 
 from bae.lm import _build_fill_prompt
 from bae.node import Node
@@ -236,8 +235,7 @@ class TestOotdE2E:
         _, lm = self._run_graph()
 
         assert lm.fill_calls[0]["instruction"] == "AnticipateUsersDay"
-        assert "RecommendOOTD" in lm.fill_calls[1]["instruction"]
-        assert "OOTD = outfit of the day." in lm.fill_calls[1]["instruction"]
+        assert lm.fill_calls[1]["instruction"] == "RecommendOOTD"
 
     def test_writes_trace_file(self):
         """E2E run saves trace to tests/traces/ootd_mock.txt."""

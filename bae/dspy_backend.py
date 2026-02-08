@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, get_args, get_type_hints
 
 import dspy
 from pydantic import ValidationError
-from pydantic_ai import format_as_xml
+import json
 
 from bae.compiler import node_to_signature
 from bae.exceptions import BaeLMError, BaeParseError
@@ -219,8 +219,8 @@ class DSPyBackend:
         choice_signature = dspy.make_signature(fields, "DecideNextStep")
         predictor = dspy.Predict(choice_signature)
 
-        # Build context from node as XML
-        context = format_as_xml(node.model_dump(), root_tag=node.__class__.__name__)
+        # Build context from node as JSON
+        context = json.dumps({node.__class__.__name__: node.model_dump(mode="json")}, indent=2)
 
         result = predictor(context=context)
         chosen = result.choice.strip()
@@ -312,7 +312,11 @@ class DSPyBackend:
         predictor = dspy.Predict(choice_signature)
 
         # Format context for the LLM
-        context_str = format_as_xml(context, root_tag="context")
+        from pydantic import BaseModel
+        context_str = json.dumps({"context": {
+            k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+            for k, v in context.items()
+        }}, indent=2)
 
         # Add type docstrings to context
         for t in types:

@@ -20,7 +20,7 @@ from typing import (
 
 from anthropic import transform_schema
 from pydantic import BaseModel, create_model
-from pydantic_ai import Agent, format_as_xml
+from pydantic_ai import Agent
 
 from bae.resolver import classify_fields
 
@@ -114,23 +114,36 @@ def _build_fill_prompt(
 ) -> str:
     """Build the prompt for fill() — shared across backends.
 
-    Prompt structure:
-    1. Source node context (previous node, as JSON)
-    2. Resolved dep/recall values (so LLM knows what data is available)
-    3. Instruction (class name + optional docstring)
+    Prompt structure (all JSON):
+    1. Input schema (transform_schema of source class, so LLM understands structure)
+    2. Source node data (previous node as JSON)
+    3. Resolved dep/recall values (as JSON under "context" key)
+    4. Output schema (transform_schema of target's plain model)
+    5. Instruction (class name + optional docstring)
+
+    JSON input avoids CLI agent mode (XML triggers it).
+    Output constrained by --json-schema via constrained decoding.
     """
     import json
 
     parts: list[str] = []
+
     if source is not None:
-        source_data = {source.__class__.__name__: source.model_dump(mode="json")}
-        parts.append(json.dumps(source_data, indent=2))
+        source_schema = transform_schema(type(source))
+        parts.append(f"Input schema:\n{json.dumps(source_schema, indent=2)}")
+
+        source_data = source.model_dump(mode="json")
+        parts.append(f"Input data:\n{json.dumps(source_data, indent=2)}")
+
     if resolved:
-        # Serialize resolved values — Pydantic models need model_dump
         context: dict[str, object] = {}
         for k, v in resolved.items():
             context[k] = v.model_dump(mode="json") if isinstance(v, BaseModel) else v
-        parts.append(json.dumps({"context": context}, indent=2))
+        parts.append(f"Context:\n{json.dumps(context, indent=2)}")
+
+    output_schema = transform_schema(_build_plain_model(target))
+    parts.append(f"Output schema:\n{json.dumps(output_schema, indent=2)}")
+
     parts.append(instruction)
 
     return "\n\n".join(parts)
@@ -215,14 +228,16 @@ class PydanticAIBackend:
         return self._agents[cache_key]
 
     def _node_to_prompt(self, node: Node) -> str:
-        """Convert node state to XML prompt string."""
-        xml = format_as_xml(node.model_dump(), root_tag=node.__class__.__name__)
+        """Convert node state to JSON prompt string."""
+        import json
 
-        # Add docstring as context
+        data = {node.__class__.__name__: node.model_dump(mode="json")}
+        prompt = json.dumps(data, indent=2)
+
         if node.__class__.__doc__:
-            return f"{xml}\n\nContext: {node.__class__.__doc__}"
+            return f"{prompt}\n\nContext: {node.__class__.__doc__}"
 
-        return xml
+        return prompt
 
     def make(self, node: Node, target: type[T]) -> T:
         """Produce an instance of target type using pydantic-ai."""
@@ -279,8 +294,13 @@ class PydanticAIBackend:
         agent = self._get_agent((str,), allow_none=False)
         type_names = [t.__name__ for t in types]
 
-        context_xml = format_as_xml(context, root_tag="context")
-        prompt = f"{context_xml}\n\nPick one type: {', '.join(type_names)}"
+        import json
+
+        context_json = json.dumps({"context": {
+            k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+            for k, v in context.items()
+        }}, indent=2)
+        prompt = f"{context_json}\n\nPick one type: {', '.join(type_names)}"
 
         for t in types:
             if t.__doc__:
@@ -331,13 +351,16 @@ class ClaudeCLIBackend:
         self.timeout = timeout
 
     def _node_to_prompt(self, node: Node) -> str:
-        """Convert node state to XML prompt string."""
-        xml = format_as_xml(node.model_dump(), root_tag=node.__class__.__name__)
+        """Convert node state to JSON prompt string."""
+        import json
+
+        data = {node.__class__.__name__: node.model_dump(mode="json")}
+        prompt = json.dumps(data, indent=2)
 
         if node.__class__.__doc__:
-            return f"{xml}\n\nContext: {node.__class__.__doc__}"
+            return f"{prompt}\n\nContext: {node.__class__.__doc__}"
 
-        return xml
+        return prompt
 
     def make(self, node: Node, target: type[T]) -> T:
         """Produce an instance of target type using Claude CLI."""
@@ -436,8 +459,13 @@ class ClaudeCLIBackend:
 
         type_names = [t.__name__ for t in types]
 
-        context_xml = format_as_xml(context, root_tag="context")
-        prompt = f"{context_xml}\n\nPick one type: {', '.join(type_names)}"
+        import json
+
+        context_json = json.dumps({"context": {
+            k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+            for k, v in context.items()
+        }}, indent=2)
+        prompt = f"{context_json}\n\nPick one type: {', '.join(type_names)}"
 
         for t in types:
             if t.__doc__:
