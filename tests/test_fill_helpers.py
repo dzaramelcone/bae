@@ -201,3 +201,59 @@ class TestValidatePlainFields:
             validate_plain_fields(raw, MixedNode)
 
         assert "vibe" in exc_info.value.validation_errors
+
+
+# ── _strip_format ────────────────────────────────────────────────────
+
+
+class TestStripFormat:
+    """_strip_format removes 'format' fields that break Claude CLI --json-schema."""
+
+    def test_strips_top_level_format(self):
+        from bae.lm import _strip_format
+
+        schema = {"type": "string", "format": "uri"}
+        assert _strip_format(schema) == {"type": "string"}
+
+    def test_strips_nested_format(self):
+        from bae.lm import _strip_format
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "link": {"type": "string", "format": "uri"},
+                "name": {"type": "string"},
+            },
+        }
+        result = _strip_format(schema)
+        assert "format" not in result["properties"]["link"]
+        assert result["properties"]["name"] == {"type": "string"}
+
+    def test_strips_format_in_array_items(self):
+        from bae.lm import _strip_format
+
+        schema = {
+            "type": "array",
+            "items": {"type": "string", "format": "uri", "description": "a url"},
+        }
+        result = _strip_format(schema)
+        assert result["items"] == {"type": "string", "description": "a url"}
+
+    def test_preserves_non_format_fields(self):
+        from bae.lm import _strip_format
+
+        schema = {
+            "type": "object",
+            "title": "Foo",
+            "properties": {"x": {"type": "integer"}},
+            "required": ["x"],
+            "additionalProperties": False,
+        }
+        assert _strip_format(schema) == schema
+
+    def test_no_mutation(self):
+        from bae.lm import _strip_format
+
+        original = {"type": "string", "format": "uri"}
+        _strip_format(original)
+        assert "format" in original  # original unchanged

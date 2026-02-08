@@ -149,6 +149,26 @@ def _build_fill_prompt(
     return "\n\n".join(parts)
 
 
+def _strip_format(schema: dict) -> dict:
+    """Recursively strip 'format' from a JSON schema.
+
+    Claude CLI silently rejects --json-schema when the schema contains
+    'format' constraints (e.g. 'format': 'uri' from HttpUrl). The API
+    supports it, but the CLI doesn't create the structured output tool.
+    """
+    out: dict = {}
+    for k, v in schema.items():
+        if k == "format":
+            continue
+        if isinstance(v, dict):
+            out[k] = _strip_format(v)
+        elif isinstance(v, list):
+            out[k] = [_strip_format(i) if isinstance(i, dict) else i for i in v]
+        else:
+            out[k] = v
+    return out
+
+
 def _build_choice_schema(type_names: list[str]) -> dict:
     """Build a JSON schema for picking one of N type names.
 
@@ -378,12 +398,15 @@ class ClaudeCLIBackend:
         import json
         import subprocess
 
+        # Strip 'format' fields — CLI rejects schemas containing them
+        clean_schema = _strip_format(schema)
+
         cmd = [
             "claude",
             "-p", prompt,
             "--model", self.model,
             "--output-format", "json",
-            "--json-schema", json.dumps(schema),
+            "--json-schema", json.dumps(clean_schema),
             "--no-session-persistence",
         ]
 

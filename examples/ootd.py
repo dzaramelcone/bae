@@ -185,8 +185,6 @@ class AnticipateUsersDay(Node):
 
 
 class RecommendOOTD(Node):
-    """OOTD = outfit of the day."""
-
     top: str
     bottom: str
     footwear: str
