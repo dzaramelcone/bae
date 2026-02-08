@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Phase 8 in progress — Cleanup & Migration
+**Current focus:** ALL PHASES COMPLETE
 
 ## Current Position
 
-Phase: 8 of 8 (Cleanup & Migration) — IN PROGRESS
-Plan: 03 of 04 complete
-Status: In progress
-Last activity: 2026-02-08 — Completed 08-02-PLAN.md (compiler-adjacent test migration)
+Phase: 8 of 8 (Cleanup & Migration) — COMPLETE
+Plan: 04 of 04 complete
+Status: Complete
+Last activity: 2026-02-08 — Completed 08-04-PLAN.md (phase gate: fix CompiledGraph.run(), full suite, E2E validation)
 
-Progress: [############################.] 96% (29/30 plans complete)
+Progress: [##############################] 100% (30/30 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 29 (13 v1.0 + 16 v2.0)
+- Total plans completed: 30 (13 v1.0 + 17 v2.0)
 - Average duration: —
 - Total execution time: —
 
@@ -35,9 +35,9 @@ Progress: [############################.] 96% (29/30 plans complete)
 | 5. Markers & Resolver | 4/4 | ~25min | ~6min |
 | 6. Node & LM Protocol | 5/5 | ~40min | ~8min |
 | 7. Integration | 4/4 | ~20min | ~5min |
-| 8. Cleanup & Migration | 3/4 | ~6min | ~2min |
+| 8. Cleanup & Migration | 4/4 | ~11min | ~3min |
 
-*Updated after each plan completion*
+*All phases complete*
 
 ## Accumulated Context
 
@@ -85,6 +85,8 @@ Key decisions from Phase 8:
 - _build_inputs collects all node model_fields (not just Context-annotated) — correct v2 behavior
 - v1 make/decide kept on LM Protocol for custom __call__ escape-hatch nodes (docstring updated)
 - Dep.description removed — Dep(callable) is the only constructor form
+- E2E tests gated behind --run-e2e flag to avoid CI failures without API keys
+- Structural validation sufficient for phase gate when no LLM key available
 
 ### Pending Todos
 
@@ -92,11 +94,10 @@ None.
 
 ### Blockers/Concerns
 
-- **compiler.py CompiledGraph.run()**: Passes **deps to graph.run() which no longer accepts **kwargs. Latent bug -- works because no callers pass deps. Phase 8 cleanup.
 - **Claude CLI session noise**: Optimizer runs create many boring test sessions that drown out real sessions in Claude CLI history. When using ClaudeCLIBackend for optimization, set the "don't save session to disk" flag to avoid polluting session history.
 
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 08-02-PLAN.md (compiler-adjacent test migration)
+Stopped at: Completed 08-04-PLAN.md — ALL PHASES COMPLETE (30/30 plans)
 Resume file: None
