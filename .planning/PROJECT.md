@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A framework for building agent graphs where nodes are Pydantic models and topology comes from type hints. DSPy compiles optimized prompts from class names, so users just name their nodes descriptively and the framework handles prompt engineering.
+A framework for building agent graphs where nodes are Pydantic models and topology comes from type hints. Nodes are "context frames" — their fields assemble the information the LLM needs to produce the next node. Class names are instructions, return types are output schemas, and Field(description=...) provides explicit per-field hints. Three field sources: Dep(callable) for external data, Recall() for graph state, and plain fields for LLM generation. JSON structured output with constrained decoding for reliable fills.
 
 ## Core Value
 
@@ -12,75 +12,71 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 
 ### Validated
 
-- ✓ Node base class (Pydantic BaseModel with `__call__(lm: LM)`) — existing
-- ✓ Graph discovery from return type hints — existing
-- ✓ Graph execution loop — existing
-- ✓ LM protocol (`make`, `decide`) — existing
-- ✓ PydanticAIBackend — existing
-- ✓ ClaudeCLIBackend — existing
-- ✓ Terminal node detection (returns None) — existing
+- ✓ Node base class (Pydantic BaseModel) — v1.0
+- ✓ Graph discovery from return type hints — v1.0
+- ✓ Graph execution loop — v1.0
+- ✓ LM protocol (make, decide) — v1.0
+- ✓ PydanticAIBackend — v1.0
+- ✓ ClaudeCLIBackend — v1.0
+- ✓ Terminal node detection (returns None) — v1.0
+- ✓ node_to_signature() with DSPy Signature generation — v1.0
+- ✓ BootstrapFewShot optimization with trace collection — v1.0
+- ✓ OptimizedLM with compiled prompt loading — v1.0
+- ✓ Dep(callable) with DAG resolution and dep chaining — v2.0
+- ✓ Recall() for graph state via backward trace search — v2.0
+- ✓ Context marker removed — v2.0
+- ✓ Bind marker removed — v2.0
+- ✓ Implicit LM (graph-level config) — v2.0
+- ✓ Start node fields = caller-provided input — v2.0
+- ✓ Terminal node fields = response schema — v2.0
+- ✓ JSON structured fill with constrained decoding — v2.0
+- ✓ Field(description=...) for explicit LLM hints, docstrings inert — v2.0
 
-### Active (v2.0)
+### Active
 
-- [ ] Dep(callable) with dep chaining — `Annotated[T, Dep(fn)]`, DAG resolution
-- [ ] Recall() for graph state — `Annotated[T, Recall()]`, trace search
-- [ ] Remove Context marker — fields with/without values replaces it
-- [ ] Remove Bind marker — replaced by Recall (read) + implicit trace (write)
-- [ ] Implicit LM — graph-level config, removed from `__call__` signature
-- [ ] Start node semantics — fields are caller-provided input
-- [ ] Terminal node = response schema — fields ARE the output
+(None — next milestone will define new requirements)
 
 ### Out of Scope
 
 - BindFor explicit writes — implicit trace search is clean enough (YAGNI)
-- Parallel fan-out (`tuple[A, B]`) — not needed for v2 (YAGNI)
+- Parallel fan-out (`tuple[A, B]`) — not needed yet (YAGNI)
 - Validation error retry loops — DSPy optimization may solve this
 - Async interface — sync is simpler, revisit if needed
 
 ## Context
 
-Brownfield project with working scaffolding:
-- `bae/node.py` - Node base class, type hint extraction
-- `bae/graph.py` - Graph discovery, validation, run()
-- `bae/lm.py` - LM protocol + backends
-- `bae/compiler.py` - DSPy stubs (not wired up)
-- Tests passing (unit + integration with real LLM)
+Shipped v2.0 with 9,297 lines of Python (2,718 source + 6,298 test).
 
-Python 3.14+ required for PEP 649 (deferred annotation evaluation).
+Tech stack: Python 3.14+, Pydantic, pydantic-ai, dspy, Anthropic SDK.
 
-Current prompts are naive ("Produce a {ClassName}"). DSPy compilation will replace these with optimized versions based on traced executions.
+Three LM backends: PydanticAIBackend, ClaudeCLIBackend, DSPyBackend — each with v1 (make/decide) and v2 (choose_type/fill) methods.
+
+Reference implementation: `examples/ootd.py` — 3-node outfit recommendation graph with deps, recalls, and LLM-filled fields.
+
+323 tests passing (313 unit + 5 e2e gated behind --run-e2e + 5 PydanticAI integration skipped without API key).
 
 ## Constraints
 
 - **Python**: 3.14+ — PEP 649 eliminates forward ref issues
-- **Dependencies**: pydantic, pydantic-ai, dspy
+- **Dependencies**: pydantic, pydantic-ai, dspy, anthropic (SDK for transform_schema)
 - **Interface**: Sync only — simpler than async for now
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Class name as primary prompt source | Cleaner than docstring-heavy approach | ✓ Good |
-| Two-step decide (pick type, then fill) | Avoids slow oneOf schemas | ✓ Good |
+| Class name as primary prompt source | Cleaner than docstring-heavy approach | ✓ Good — enforced in v2.0, docstrings made inert |
+| Two-step decide (pick type, then fill) | Avoids slow oneOf schemas | ✓ Good — became choose_type/fill in v2.0 |
 | No prev parameter | self has all needed state | ✓ Good |
-| LM as tool, not executor | User calls lm.make/decide from __call__ | ⚠️ Revisit (v2 removes LM from __call__) |
-| make/decide abstraction | May be redundant - revisit after DSPy | ⚠️ Revisit |
-
-### v2 Design Decisions (2026-02-07)
-
-Discussed and agreed before v2 milestone planning.
-
-| Decision | Rationale | Status |
-|----------|-----------|--------|
-| **Nodes are context frames** | A node's fields assemble the information the LLM needs to construct the next node. Fields ARE the prompt context. Class name IS the instruction. Return type IS the output schema. | Agreed |
-| **Dep(callable) for external data** | `Annotated[WeatherResult, Dep(my_fn)]` — bae calls the function to populate the field. Replaces v1's service injection via __call__ params. | Agreed |
-| **Dep chaining** | Dep functions can themselves declare dep-typed params. Bae resolves the DAG in topological order. | Agreed |
-| **Recall() for graph state** | `Annotated[WeatherResult, Recall()]` — bae searches the trace backward for the nearest prior node with a matching field type. Replaces Bind. | Agreed |
-| **Kill Context marker** | Fields with values (from deps, recall, constructor) = LLM inputs. Fields without values = LLM fills them. Pydantic already models this. Context is redundant. | Agreed |
-| **Kill Bind marker** | Replaced by Recall (read side). Write side is implicit — all executed node fields are in the trace and available for Recall. | Agreed |
-| **Explicit Bind (BindFor) — YAGNI** | Considered explicit write annotation (e.g., `BindFor[MyRecaller]`) for targeted publishing. Deferred — implicit writes via trace search are clean enough for now. Revisit if type collisions become a real problem. | YAGNI |
-| **LM is implicit** | LM removed from __call__ signature. Set once on the graph, or per-node via NodeConfig. Nodes don't know or care about the LM — bae owns it. | Agreed |
-| **Parallel fan-out (A & B) — YAGNI** | Discussed `tuple[A, B]` for parallel node production. Deferred — not needed for v2. | YAGNI |
+| LM as tool, not executor | User calls lm.make/decide from __call__ | ✓ Resolved — v2.0 made LM implicit, graph-level |
+| make/decide abstraction | May be redundant - revisit after DSPy | ✓ Resolved — kept as v1 escape hatch for custom __call__, v2 uses choose_type/fill |
+| Nodes are context frames | Fields ARE prompt context, class name IS instruction, return type IS output schema | ✓ Good — core v2.0 paradigm |
+| Dep(callable) for external data | Replaces v1 service injection via __call__ params | ✓ Good — DAG resolution with topo sort |
+| Recall() for graph state | Backward trace search with MRO type matching | ✓ Good — replaced Bind |
+| Kill Context and Bind markers | Pydantic field presence is sufficient | ✓ Good — both removed, ImportError on import |
+| LM is implicit | Set once on graph, per-node via NodeConfig | ✓ Good |
+| JSON structured fill | Claude CLI --json-schema for constrained decoding | ✓ Good — replaced XML, ~10-15s per fill |
+| Field(description=...) for LLM hints | Explicit opt-in, docstrings are developer docs | ✓ Good — _build_plain_model preserves FieldInfo |
 
 **v2 field annotation summary:**
 
@@ -90,18 +86,12 @@ Discussed and agreed before v2 milestone planning.
 | `Recall()` | Bae searches the trace to fill this field | Prior node in graph execution |
 | *(none)* | LLM fills this field | Previous node's context → LLM generation |
 
-## Current Milestone: v2.0 Context Frames
+## Known Issues
 
-**Goal:** Redesign the node API around the "nodes as context frames" paradigm — Dep/Recall field annotations, implicit LM, clean start/terminal semantics.
-
-**Target features:**
-- Dep(callable) with automatic dep chaining
-- Recall() for graph state lookup from trace
-- Remove Context and Bind markers (redundant in new model)
-- Implicit LM (graph-level, not per-node)
-- Start node fields = caller input, terminal node fields = response schema
-
-**Reference implementation:** `examples/ootd.py`
+- No system prompt in any LLM backend — LLM has no framing for the fill task
+- PydanticAIBackend.choose_type uses free-text string + fuzzy matching (should constrain like ClaudeCLI)
+- tests/traces/json_structured_fill_reference.py drifted from real backend
+- `--setting-sources ""` correlation with broken structured output (root cause unknown)
 
 ---
-*Last updated: 2026-02-07 — v2.0 milestone started*
+*Last updated: 2026-02-08 after v2.0 milestone*
