@@ -257,12 +257,7 @@ class PydanticAIBackend:
         import json
 
         data = {node.__class__.__name__: node.model_dump(mode="json")}
-        prompt = json.dumps(data, indent=2)
-
-        if node.__class__.__doc__:
-            return f"{prompt}\n\nContext: {node.__class__.__doc__}"
-
-        return prompt
+        return json.dumps(data, indent=2)
 
     def make(self, node: Node, target: type[T]) -> T:
         """Produce an instance of target type using pydantic-ai."""
@@ -271,8 +266,6 @@ class PydanticAIBackend:
 
         # Add instruction about what to produce
         full_prompt = f"{prompt}\n\nProduce a {target.__name__}."
-        if target.__doc__:
-            full_prompt += f"\n{target.__name__}: {target.__doc__}"
 
         result = agent.run_sync(full_prompt)
         return result.output
@@ -298,11 +291,6 @@ class PydanticAIBackend:
 
         full_prompt = f"{prompt}\n\nDecide the next step. Options: {', '.join(type_names)}"
 
-        # Add docstrings for each option
-        for t in successors:
-            if t.__doc__:
-                full_prompt += f"\n- {t.__name__}: {t.__doc__}"
-
         result = agent.run_sync(full_prompt)
         return result.output
 
@@ -326,10 +314,6 @@ class PydanticAIBackend:
             for k, v in context.items()
         }}, indent=2)
         prompt = f"{context_json}\n\nPick one type: {', '.join(type_names)}"
-
-        for t in types:
-            if t.__doc__:
-                prompt += f"\n- {t.__name__}: {t.__doc__}"
 
         result = agent.run_sync(prompt)
         chosen = result.output.strip()
@@ -380,19 +364,12 @@ class ClaudeCLIBackend:
         import json
 
         data = {node.__class__.__name__: node.model_dump(mode="json")}
-        prompt = json.dumps(data, indent=2)
-
-        if node.__class__.__doc__:
-            return f"{prompt}\n\nContext: {node.__class__.__doc__}"
-
-        return prompt
+        return json.dumps(data, indent=2)
 
     def make(self, node: Node, target: type[T]) -> T:
         """Produce an instance of target type using Claude CLI."""
         prompt = self._node_to_prompt(node)
         full_prompt = f"{prompt}\n\nProduce a {target.__name__}."
-        if target.__doc__:
-            full_prompt += f"\n{target.__name__}: {target.__doc__}"
 
         schema = transform_schema(target)
         data = self._run_cli_json(full_prompt, schema)
@@ -463,9 +440,6 @@ class ClaudeCLIBackend:
 
         # Step 1: Pick the type
         choice_prompt = f"{prompt}\n\nDecide the next step. Pick one: {', '.join(type_names)}"
-        for t in successors:
-            if t.__doc__:
-                choice_prompt += f"\n- {t.__name__}: {t.__doc__}"
         if is_terminal:
             choice_prompt += "\n- None: Terminate processing"
 
@@ -499,10 +473,6 @@ class ClaudeCLIBackend:
             for k, v in context.items()
         }}, indent=2)
         prompt = f"{context_json}\n\nPick one type: {', '.join(type_names)}"
-
-        for t in types:
-            if t.__doc__:
-                prompt += f"\n- {t.__name__}: {t.__doc__}"
 
         choice_schema = _build_choice_schema(type_names)
 
