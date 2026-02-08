@@ -1,208 +1,549 @@
-# Project Research Summary
+# Research Synthesis: Bae v3.0 Eval/Optimization DX
 
-**Project:** Bae v2.0 "Context Frames"
-**Domain:** Type-driven agent graphs with dependency injection, trace-based recall, and DSPy optimization
-**Researched:** 2026-02-07
-**Confidence:** HIGH
+**Synthesized:** 2026-02-08
+**Project:** Bae - Type-driven agent graphs with DSPy optimization
+**Milestone:** v3.0 - "Super accessible and friendly" eval/optimization developer experience
+**Goal:** Users creating agentic graphs within 1 minute
+
+---
 
 ## Executive Summary
 
-Bae v2.0's context frame pattern is a genuine innovation in the agent framework space. By making Pydantic model fields the dependency injection site—where each field independently declares how it gets its value via `Dep(callable)` or `Recall()` metadata—bae inverts the typical control flow. Instead of nodes producing successors, bae orchestrates field assembly from three sources (dependency callables, trace search, LLM generation), then constructs nodes. No surveyed framework (FastAPI, PydanticAI, LangGraph, DSPy, Dagster) implements per-field dependency resolution on model classes or type-based trace recall for runtime injection.
+Bae v3.0 needs to make eval and optimization feel native, not bolted-on. The research converges on a clear insight: **DSPy already has everything needed** -- `dspy.Evaluate`, three optimizer tiers (BootstrapFewShot → MIPROv2 → SIMBA), and LLM-as-judge via `dspy.Predict(Assess)`. Bae's job is not to build eval infrastructure but to **wrap DSPy's primitives in a zero-friction CLI** that converts bae graph concepts to DSPy concepts transparently. No external eval framework needed.
 
-The recommended approach leverages stdlib exclusively—no new dependencies needed. Python's `graphlib.TopologicalSorter` handles dependency chaining with cycle detection, `get_type_hints(include_extras=True)` extracts Annotated metadata, and Pydantic's `FieldInfo.metadata` categorizes field sources. The one dependency to remove is `incant`, which v2's simpler, purpose-built `Dep(callable)` system replaces entirely. Critical validation shows all patterns work correctly on Python 3.14 + Pydantic 2.12.5.
+The architecture adds three new modules (package.py, eval.py, dataset.py) that project Graph's existing topology introspection into developer-facing workflows. The domain package (`my_domain/graph.py` + `datasets/` + `compiled/`) becomes the organizational primitive. Progressive complexity tiers (0: structural checks → 1: example-based → 2: LLM-as-judge → 3: custom metrics) let developers start with zero config and add sophistication incrementally.
 
-The primary architectural risk is Pydantic's eager validation of required fields at `__init__` time, which conflicts with bae's intent to populate Dep/Recall fields after construction. Using `model_construct()` for internal node creation (bypassing validation) followed by explicit validation solves this cleanly without polluting type signatures with `Optional` everywhere. Secondary risks include circular dependency chains (mitigated by upfront DAG validation with `graphlib.CycleError`) and type collision in Recall (mitigated by uniqueness validation at graph build time). The refactoring is focused, not a rewrite—existing topology discovery, validation, and trace collection survive with minor modifications.
+The central risk is **false confidence**: eval tooling that's easy to use but measures the wrong thing. The current `node_transition_metric` (type-check only) would report 92% accuracy on a graph with terrible output quality. Mitigations: honest default metrics, forced "metric moment" on first eval, and auto-generated LLM-as-judge from Field descriptions.
 
-## Key Findings
+**Stack changes:** Add `rich` (explicit, was transitive), bump `dspy>=3.1` (for MIPROv2/SIMBA), bump `typer>=0.15` (Rich markup). No external eval framework. Copier (dev tool, not dependency) for optional scaffolding.
 
-### Recommended Stack
+**Build order:** Phase 1 (package discovery + eval foundation) → Phase 2 (dataset + optimize CLI) → Phase 3 (LLM-as-judge + polish). Phase 1 is critical -- it establishes the metric abstraction and progressive complexity tiers that everything else depends on.
 
-v2.0 requires **zero new dependencies**. Every capability—DAG resolution, Annotated metadata extraction, field categorization, trace search—is covered by Python's stdlib (`graphlib`, `typing`) and Pydantic's existing `FieldInfo` API. The key verified insight: Pydantic's `FieldInfo.metadata` already contains `Dep`/`Recall` instances when fields use `Annotated[T, Dep(fn)]`, enabling clean introspection without re-parsing.
+---
 
-**Core technologies:**
-- **`graphlib.TopologicalSorter` (stdlib)**: Dependency chain resolution — guaranteed available since Python 3.9, handles cycle detection via `CycleError`, provides execution order in one call
-- **`typing.get_type_hints(include_extras=True)` (stdlib)**: Annotated metadata extraction — needed for dep function parameter introspection, resolves type aliases transparently
-- **Pydantic `FieldInfo.metadata` (existing)**: Field categorization — simpler than stdlib approach for node field introspection, already parsed by Pydantic
-- **Remove `incant`**: Replaced by purpose-built Dep system — eliminates hook factory indirection, unnecessary generic DI framework
+## Convergence: What All Researchers Agree On
 
-**Version compatibility:**
-- Python: 3.9 minimum for `graphlib`, 3.14 installed (PEP 649 deferred annotations)
-- Pydantic: 2.11+ minimum (class-level `model_fields` access), 2.12.5 installed
+### 1. DSPy Is Sufficient -- No External Framework Needed
 
-### Expected Features
+All four research files converge: **DSPy 3.1.3 has everything bae needs**. External frameworks (DeepEval, RAGAS, Braintrust, Inspect AI) add dependency bloat and impedance mismatches. The killer advantage of DSPy-native LLM-as-judge: when your metric uses `dspy.Predict`, DSPy can optimize the judge itself. External frameworks evaluate but don't participate in the optimization loop.
 
-Research surveyed FastAPI, PydanticAI, LangGraph, DSPy, Dagster to identify table stakes vs differentiators for dependency injection and trace-based recall patterns.
+**STACK.md:** "DSPy already has everything needed for evals and optimization -- `dspy.Evaluate`, `EvaluationResult`, and three optimizer tiers."
 
-**Must have (table stakes):**
-- **Type-based dependency resolution** — Core pattern in FastAPI, Dagster, PydanticAI; users expect deps matched by type
-- **Dep callable invocation** — FastAPI `Depends(fn)` is canonical; if annotated `Dep(fn)`, framework must call fn
-- **Dep chaining (recursive resolution)** — FastAPI resolves sub-dependencies recursively; expected for `Dep(fn)` where fn itself has deps
-- **Clear error on missing deps** — All surveyed frameworks give clear errors; must name missing type and requesting node
-- **Execution trace as list of typed nodes** — LangGraph checkpoints, DSPy traces, Prefect task results all track history
-- **LLM fills unannotated fields** — Core bae identity: "no annotation = LLM fills it"
-- **Caching within single run** — FastAPI caches per-request; prevents calling expensive deps (API calls, DB) twice
+**FEATURES.md:** "DSPy metric functions (plain Python)" instead of DeepEval's 50+ metrics or RAGAS's RAG-specific focus.
 
-**Should have (competitive differentiators):**
-- **`Dep(callable)` on fields, not params** — Novel pattern; fields declare their own data sources, node class IS the dependency spec
-- **`Recall()` type-based trace search** — `Annotated[WeatherResult, Recall()]` searches execution trace for most recent match; no explicit data passing needed
-- **Node class name = LLM instruction** — Already in v1; class name IS the prompt instruction, no docstrings required
-- **Fields as context frame** — Node fields = assembled prompt context from heterogeneous sources (Dep, Recall, LLM)
-- **Dep chaining across heterogeneous sources** — Unique to bae; dep callable params can be other Dep types, Recall types, or plain values
+**ARCHITECTURE.md:** "Bae's `evaluate()` is intentionally **not** a wrapper around `dspy.Evaluate`. The bridge is at the optimizer boundary, not the eval boundary."
 
-**Defer (v2+):**
-- **Cross-source chaining** (dep callable taking Recall param) — Novel but complex; get basic chaining working first
-- **Recall with filters** (e.g., "recall from node named X") — Start with simple type matching
-- **Async dep resolution** — Bae is sync-only; don't add async
-- **Custom resolution strategies** — Three sources (Dep, Recall, LLM) are sufficient; no plugin architecture needed
+**PITFALLS.md:** "If bae ships a default `llm_judge` metric, developers will use it without understanding the biases."
 
-### Architecture Approach
+**Implication:** Ship DSPy-native patterns. Don't add eval framework dependencies. When developers outgrow bae's built-in metrics, guide them to DSPy's docs, not a third framework.
 
-v2 inverts control from "nodes produce successors" (v1) to "bae orchestrates field assembly, nodes declare what they need" (v2). The execution loop changes from LM producing entire next nodes to LM filling only plain fields after bae resolves Dep and Recall fields. This is a focused refactoring, not a rewrite—topology discovery, validation, and trace collection survive with minor modifications.
+---
 
-**Major components:**
-1. **markers.py (refactored)** — New `Dep(fn: Callable)` with callable, new `Recall()`, remove `Context`/`Bind`
-2. **resolver.py (NEW module)** — Houses Dep/Recall resolution logic: `resolve_fields()`, `resolve_dep()` with chaining via DAG, `resolve_recall()` with trace search
-3. **graph.py (major changes to run())** — Remove incant dependency, add field resolution step before LM call, modified execution loop with type-then-fill pattern
-4. **lm.py (protocol changes)** — Replace `make()`/`decide()` with `choose_type()` (pick successor from union) + `fill()` (populate plain fields given resolved context)
-5. **compiler.py (signature generation changes)** — Dep/Recall fields become InputFields (context for LLM), plain fields become OutputFields (LLM must produce)
-6. **node.py (minimal changes)** — Remove `lm` parameter from `__call__`, update default implementation to ellipsis
+### 2. Progressive Complexity Tiers Are the Core DX Design
 
-**Data flow (v2):**
+All researchers identify the same 4-tier progression:
+
+| Tier | What It Measures | Setup Time | STACK | FEATURES | ARCHITECTURE | PITFALLS |
+|------|------------------|------------|-------|----------|--------------|----------|
+| 0 | Structural (graph completes, types correct, fields populated) | 0 min | "Zero-config quality" | "Does it even work?" | "Default completion metric" | "Honest about what it measures" |
+| 1 | Example-based (expected output matching) | 5-10 min | "Field comparison metric" | "Regression testing" | "Golden dataset (input + expected)" | "Dataset too small or not representative" |
+| 2 | LLM-as-judge (quality rubric evaluation) | 15-30 min | "LLM-as-judge metric" | "Quality measurement" | "Custom metrics via DSPy" | "Judge bias and cost explosion" |
+| 3 | Custom (user-defined Python functions) | As long as needed | "Custom metric function" | "Full control" | "User writes arbitrary scoring logic" | "DSPy plumbing leaks through" |
+
+**FEATURES.md:** "No other framework explicitly designs for progressive complexity. They dump you into 'write a metric' immediately."
+
+**ARCHITECTURE.md:** "The tiers are **not** architecturally separate modules. They are **levels of configuration** within the same modules."
+
+**PITFALLS.md:** "The pitfall is cliff effects -- sharp jumps in complexity between tiers. The gap between 'just works' and 'slightly customized' is a cliff."
+
+**Implication:** Each tier must be independently useful. Zero-config must be honest about limitations. Tier 0→1 and 1→2 transitions must add one concept, not five. The metric abstraction layer is the most consequential API design.
+
+---
+
+### 3. Graph Structure Is an Eval Superpower
+
+Bae's typed graph topology is rich metadata that no competitor can match. All researchers identify opportunities here:
+
+**FEATURES.md:** "No other framework has typed graph topology to introspect. Promptfoo evaluates prompts. DSPy evaluates programs. None of them can say 'the graph should visit nodes A, B, C in order.'"
+
+**ARCHITECTURE.md:** "Graph already knows everything -- nodes, edges, field types, routing strategy. The eval/optimization DX is a projection of Graph's introspection."
+
+**PITFALLS.md:** "Node-level metrics miss cross-node quality issues. Developer writes a metric for the terminal node only, ignoring intermediate quality."
+
+**Opportunities:**
+- **Zero-config structural eval** from `Graph.nodes`, `Graph.edges`, `Graph.terminal_nodes`
+- **Auto-generated judge rubric** from `Field(description=...)` on node fields
+- **Graph-aware metrics** that understand paths and branching
+- **Eval overlay on mermaid diagrams** (green nodes passed, red failed)
+
+**Implication:** Don't treat eval as generic. Leverage graph structure for zero-config checks and auto-generated quality metrics.
+
+---
+
+### 4. Compiled Artifacts Need Conventions and Staleness Detection
+
+All researchers flag artifact management as critical:
+
+**STACK.md:** "DSPy version compatibility: same version for save and load (DSPy <3.0 doesn't guarantee backward compat)."
+
+**FEATURES.md:** "Standard directory layout: `<domain>/.compiled/` with timestamped artifacts, metadata, and a `latest` symlink."
+
+**ARCHITECTURE.md:** "The compiled directory lives inside the domain package: `my_domain/compiled/`."
+
+**PITFALLS.md:** "Compiled artifacts contain few-shot demonstrations baked from a specific graph structure, specific node field schemas, and a specific LLM model. When any of these change, the artifacts become stale."
+
+**Staleness risk:** Node schema changes (added field, renamed field, changed Dep) invalidate compiled artifacts. `load_optimized()` doesn't detect this -- it just loads stale demos. Result: LLM sees old-format examples, produces outputs that don't match current schema. No error, just degraded quality.
+
+**Implication:** Phase 2 must build staleness detection into save/load from day one. Hash node signatures (field names + types + instruction). Save metadata (model, dataset size, timestamp, node hash). Warn on load if hash mismatch.
+
+---
+
+### 5. The Central Risk Is False Confidence
+
+All four researchers identify this as the critical pitfall:
+
+**STACK.md:** "Current metric only checks 'did you pick the right type?' -- says nothing about output quality."
+
+**FEATURES.md:** "A zero-config eval that reports '92% accuracy' on a bad metric with a tiny dataset is worse than no eval at all."
+
+**ARCHITECTURE.md:** "Metrics that understand graph structure: 'Did the graph take the expected path?'"
+
+**PITFALLS.md:** "The stated goal is to make evals 'super accessible and friendly.' The most dangerous outcome is eval tooling that's easy to use but gives developers false confidence."
+
+**False confidence happens through:**
+- Metrics that measure the wrong thing (routing correctness ≠ output quality)
+- Datasets too small to catch edge cases (5 traces is not 200 traces)
+- Biased judges that inflate scores (verbosity bias, position bias)
+- Node-level evals that miss graph-level failures (all nodes score high but end-to-end fails)
+
+**Mitigation strategy:** Be honest about what the eval measures and what it doesn't. Every eval output should answer: "What did we measure? What didn't we measure? How confident are we?"
+
+---
+
+## Tensions: Where Researchers Disagree
+
+### Tension 1: Metric Signature -- DSPy Types or Bae Types?
+
+**ARCHITECTURE.md proposes two options:**
+- **Option A:** `Callable[[GraphResult], float]` -- metric only sees the result. Golden comparison happens outside the metric.
+- **Option B:** `Callable[[dict, GraphResult], float]` -- metric sees both input and result. Cleaner for golden trace comparison.
+
+**ARCHITECTURE.md recommends Option B.** The input dict is cheap to pass and enables golden-trace metrics.
+
+**But PITFALLS.md warns:** "DSPy metrics must return `bool` when `trace is not None` (bootstrap mode) and `float` when `trace is None` (evaluation mode). Bae should document this and provide a helper."
+
+**Resolution needed:** The metric interface must hide DSPy's (example, pred, trace) signature from developers while still supporting BootstrapFewShot's bool/float mode switching. Proposed wrapper:
+
+```python
+# Developer writes this (bae-native):
+def my_metric(input: dict, output: Node) -> float:
+    return 1.0 if output.field else 0.0
+
+# Bae translates to DSPy format internally:
+def _dspy_adapter(example, pred, trace=None):
+    score = my_metric(example.inputs, pred)
+    return score if trace is None else score > 0.8  # threshold for bootstrap
 ```
-Graph.run() loop iteration:
-  1. Determine target node TYPE (lm.choose_type or return type analysis)
-  2. Resolve target's Dep fields (topological order, call functions)
-  3. Resolve target's Recall fields (search trace backward)
-  4. LM fills remaining plain fields (given resolved deps/recalls as context)
-  5. Construct node instance from all field sources
-  6. Append to trace
+
+**Decision:** Metrics should take bae types, not DSPy types. Provide a `bae.metrics.from_fn(my_metric, bootstrap_threshold=0.8)` adapter.
+
+---
+
+### Tension 2: Package Scaffolding -- Required or Optional?
+
+**ARCHITECTURE.md:** "The 'domain package' is the organizational unit that ties a graph definition to its eval data, compiled artifacts, and documentation."
+
+**Proposed layout:**
+```
+my_domain/
+  __init__.py
+  graph.py
+  graph.md (auto-generated)
+  eval.py (optional)
+  datasets/
+  compiled/
 ```
 
-### Critical Pitfalls
+**But PITFALLS.md warns:** "If `bae init` generates a rigid structure, developers with existing code must reorganize to fit. Convention disagreements become breaking changes."
 
-**Top 5 from PITFALLS.md:**
+**PITFALLS.md recommends:** "Convention discovery, not convention enforcement. The CLI should look for graphs by module path, not by file location. No scaffold at all for v3.0."
 
-1. **Pydantic validation fires before Dep/Recall population** — Pydantic validates all fields at `__init__`, but bae populates Dep/Recall after construction. **Solution:** Use `model_construct()` for internal node creation (bypasses validation), populate fields, then optionally validate. Avoids `Optional` pollution of type signatures.
+**Resolution needed:** The CLI must work with arbitrary module paths (already works: `bae graph show examples.ootd`). Package discovery should be heuristic-based:
+1. Load graph from module path
+2. Look for `datasets/` in same directory (optional)
+3. Look for `compiled/` in same directory (optional)
+4. Look for `eval.py` in same directory (optional)
 
-2. **Circular dependencies in Dep chains** — Dep chaining (e.g., `get_weather` depends on `LocationDep`) can create cycles. **Solution:** Build Dep DAG at `Graph.__init__()` using `graphlib.TopologicalSorter`, which raises `CycleError` with exact cycle path. Fail fast at graph build time.
+**Scaffolding should be additive:** `bae init` generates minimal starter files but never required. Existing projects work without scaffolding.
 
-3. **Type collision in Recall** — If two nodes both have `str` field or same domain type, Recall finds wrong one. **Solution:** Validate type uniqueness at graph build time—each Recall target type should appear on exactly one upstream node. Log Recall resolutions for debugging.
+**Decision:** Phase 1 builds CLI with zero scaffolding. Phase 3 adds optional `bae init` if developers ask for it. YAGNI.
 
-4. **`from __future__ import annotations` breaks runtime extraction** — Existing codebase uses future import, turns annotations into strings. **Solution:** Audit all annotation access to use `get_type_hints(include_extras=True)`, never `__annotations__` directly. Consider removing future import entirely since Python 3.14 PEP 649 provides deferred evaluation natively.
+---
 
-5. **Removing Context/Bind breaks existing tests** — v1 API exports these markers; all tests use them. Big-bang removal breaks everything at once. **Solution:** Parallel implementation—add `Recall` and new `Dep(callable)` alongside existing markers, get new system working, then remove old markers. Use `@warnings.deprecated` during transition.
+### Tension 3: Graph-Level vs Node-Level Eval Default
 
-**Additional notable pitfall:**
-- **Error propagation in Dep chains** — Errors in chained deps show generic framework error, not actual user function error. Wrap dep execution with chain context tracking: "Error in dep chain: get_weather -> get_location: ConnectionError(...)".
+**ARCHITECTURE.md:** "Developers think in graph-level terms ('is my outfit recommendation pipeline good?') but the eval infrastructure works at node-level."
 
-## Implications for Roadmap
+**PITFALLS.md:** "Node-level metrics miss cross-node quality issues. Optimizing one node degrades another (no joint optimization)."
 
-Based on research, v2.0 implementation should follow dependency-driven phase structure:
+**But bae's optimizer is node-level** (`optimize_node(node_cls, trainset)`). DSPy doesn't have joint multi-predictor optimization.
 
-### Phase 1: Foundation (Markers + Resolver)
-**Rationale:** Everything else depends on markers and resolver being correct; testable in isolation without touching graph.py or lm.py.
-**Delivers:** New `Dep(callable)` and `Recall()` markers, resolver module with Dep DAG resolution (topological sort), Recall trace search, error handling for cycles and missing types.
-**Addresses:** Table stakes (type-based resolution, dep chaining, clear errors) and critical pitfall #2 (circular deps via graphlib).
-**Avoids:** Pitfall #1 (Pydantic validation)—decide `model_construct()` strategy upfront; Pitfall #4 (annotation access)—audit and standardize before any feature work.
-**Research flag:** Standard patterns (FastAPI `Depends` analog, graphlib docs comprehensive)—skip phase research.
+**Resolution needed:** Support both, default to graph-level for developer intuition.
 
-### Phase 2: Node + LM Protocol (Interface)
-**Rationale:** Node changes are small but affect every test; LM protocol change gates execution loop rewrite; must happen before Phase 3 integration.
-**Delivers:** Remove `lm` parameter from node `__call__`, update LM protocol to `choose_type()` + `fill()`, implement new protocol in one backend (PydanticAI or DSPy).
-**Addresses:** Differentiator (implicit LM configuration) and pitfall #8 (testability)—build `TestLM`/`StubLM` alongside.
-**Avoids:** Pitfall #5 (breaking tests)—support both v1 and v2 `__call__` signatures during transition (pitfall #13).
-**Research flag:** Standard patterns (protocol refactoring, documented in existing backends)—skip phase research.
+```bash
+bae eval my_domain              # Graph-level (default): evaluates full traces
+bae eval my_domain --per-node   # Node-level: breaks down scores per node
+```
 
-### Phase 3: Execution Loop (Integration)
-**Rationale:** Integration phase where Phase 1 (resolver) and Phase 2 (protocol) come together; largest code change in graph.py but built on tested components.
-**Delivers:** Rewritten `Graph.run()` with resolver integration, validation changes (remove Bind checks, add start node + DAG checks), remove incant dependency.
-**Addresses:** Table stakes (caching per-run, execution trace) and differentiators (context frame assembly).
-**Avoids:** Pitfall #7 (incant caching)—custom resolver replaces incant entirely; Pitfall #10 (model_fields_set unreliable)—static field classification at build time.
-**Research flag:** May need validation phase research if error handling patterns unclear during implementation—most logic is integration of tested components, but edge cases may surface.
+Graph-level metrics receive `GraphResult` (full trace + terminal node). Node-level metrics receive individual nodes from the trace. Both feed the optimizer after being translated to DSPy format.
 
-### Phase 4: Compiler + Optimization (Adaptation)
-**Rationale:** Compiler and optimization are downstream of core execution changes; DSPy signature generation must adapt to new field taxonomy.
-**Delivers:** Updated `compiler.py` (Dep/Recall as InputField, plain as OutputField), updated `optimizer.py` (trace format changes), `OptimizedLM` implementing new protocol.
-**Addresses:** Table stakes (LLM fills unannotated fields) with new context assembly model.
-**Avoids:** Breaking DSPy optimization pipeline—trace structure remains compatible, only signature generation changes.
-**Research flag:** Standard patterns (DSPy Signature construction documented)—skip phase research unless optimization metrics need redesign.
+**Decision:** Graph-level is the default. Node-level is accessible but not the happy path.
 
-### Phase 5: Cleanup + Migration
-**Rationale:** Final phase removes deprecated v1 patterns after new system is fully working; documentation and testing catchall.
-**Delivers:** Remove `Context`/`Bind` from `__init__.py` exports, update all tests to v2 patterns, verify `examples/ootd.py` end-to-end.
-**Addresses:** Pitfall #5 (breaking changes)—by this point parallel implementation complete.
-**Avoids:** Pitfall #12 (dep alias scattering)—document conventions, add `graph.describe()` for dep visibility.
-**Research flag:** No research needed—cleanup work.
+---
 
-### Phase Ordering Rationale
+## Key Design Decisions (Must Resolve Before Coding)
 
-- **Phase 1 before 2 before 3:** Dependency chain (resolver → protocol → integration). Can't rewrite `run()` without new LM protocol; can't change protocol without resolver to call.
-- **Phase 4 after 3:** Compiler adapts to new execution model; needs working graph to test against.
-- **Phase 5 last:** Cleanup only safe after new system validated end-to-end.
+### Decision 1: What Does Tier 0 (Zero-Config) Measure?
 
-**Critical path insight:** Pitfall #1 (Pydantic validation) and #4 (annotation access) must be addressed in Phase 1 or earlier—they block everything. Pitfall #2 (circular deps) must be solved in Phase 1 resolver design. Pitfall #5 (breaking tests) spans all phases via parallel implementation strategy.
+**Current state:** `node_transition_metric` checks type correctness only.
 
-### Research Flags
+**Problem:** This measures routing, not quality. 100% type-check score tells you nothing about whether the outfit is good.
 
-**Phases with standard patterns (skip research-phase):**
-- **Phase 1:** FastAPI `Depends` pattern well-documented, `graphlib` stdlib docs comprehensive, Pydantic `FieldInfo` API stable
-- **Phase 2:** Protocol refactoring straightforward, existing backends provide reference implementation
-- **Phase 4:** DSPy signature construction documented, existing compiler provides starting point
-- **Phase 5:** Cleanup work, no domain research needed
+**Proposal:** Tier 0 measures **structural correctness** with honest labeling:
+- Graph completes without exception
+- Terminal node is reached
+- All fields on terminal node are populated (non-null, non-empty)
+- Trace visits expected node types
+- Node transitions match graph edges
 
-**Phases potentially needing validation during planning:**
-- **Phase 3:** Integration edge cases may surface during implementation (error propagation in complex dep chains, Recall type matching with inheritance). Standard patterns exist but bae's combination is novel. Consider lightweight validation if unexpected issues arise, but start without phase research.
+**Output explicitly says:**
+```
+STRUCTURAL EVAL (checks correctness, not quality)
+  [PASS] Graph completed (3 nodes)
+  [PASS] Terminal node reached (RecommendOOTD)
+  [PASS] All fields populated (6/6)
+  [WARN] Quality metrics: 0/3 nodes
 
-**No phases require deep research** — all patterns verified against live Python 3.14 + Pydantic 2.12.5 environment.
+This eval checks structure, not output quality.
+To measure quality, add a dataset: bae eval my_domain --dataset examples.jsonl
+```
+
+**Decision:** Tier 0 is honest about being a smoke test. It catches crashes and routing errors. It does not measure quality.
+
+---
+
+### Decision 2: Metric Interface -- What Signature Do Developers Write?
+
+**Option A: DSPy-native**
+```python
+def my_metric(example: dspy.Example, pred, trace=None) -> float | bool:
+    ...
+```
+Pros: Direct DSPy integration. Cons: Exposes DSPy internals, steep learning curve.
+
+**Option B: Bae-native**
+```python
+def my_metric(input: dict, output: Node) -> float:
+    ...
+```
+Pros: Clean abstraction. Cons: Requires adapter layer.
+
+**PITFALLS.md warns:** "If metrics take `(example: dspy.Example, pred, trace=None)`, developers need to learn DSPy. The gap between 'just works' and 'slightly customized' is a cliff."
+
+**Recommendation:** **Option B with adapter layer.** Developers write bae-native metrics. Bae translates to DSPy format internally. Provide helpers:
+- `bae.metrics.from_fn(fn, bootstrap_threshold=0.8)` -- wraps a bae-native function
+- `bae.metrics.llm_judge(question: str)` -- auto-generates LLM-as-judge metric
+- `bae.metrics.field_completeness()` -- default Tier 1 metric
+
+**Decision:** Metrics are bae-native by default. Advanced users can drop down to DSPy format if needed.
+
+---
+
+### Decision 3: Are Compiled Artifacts Self-Describing?
+
+**Current state:** `{NodeClassName}.json` with DSPy predictor state. No version, no hash, no metadata.
+
+**Risk:** When node schema changes, compiled artifact becomes stale but loads silently. LLM sees old-format demos and gets confused.
+
+**Proposal:** Save metadata alongside predictor state:
+```json
+{
+  "node_class": "RecommendOOTD",
+  "node_hash": "abc123def456",
+  "field_signature": ["top: str", "bottom: str", "footwear: str", "..."],
+  "bae_version": "3.0.0",
+  "dspy_version": "3.1.3",
+  "model": "claude-sonnet-4",
+  "compiled_at": "2026-02-08T14:30:00Z",
+  "dataset_size": 50,
+  "metric_score": 0.87,
+  "predictor_state": { ... }
+}
+```
+
+On load, check `node_hash`. If mismatch, warn: "Compiled artifact for RecommendOOTD is stale (schema changed). Re-run `bae optimize`."
+
+**Decision:** Phase 2 adds metadata and staleness detection from day one. Never silently load stale artifacts.
+
+---
+
+### Decision 4: CLI Config Via Args or Files?
+
+**FEATURES.md surveyed frameworks:** Promptfoo's YAML-heavy workflow "adds friction for developers." DSPy is code-first.
+
+**PITFALLS.md warns:** "If bae's CLI requires a `bae.yaml` with deeply nested configuration, developers will bounce at the setup step."
+
+**Existing pattern:** `bae graph show examples.ootd` -- module path as argument, sensible defaults.
+
+**Proposal:** CLI arguments first, config file optional.
+```bash
+bae eval my_domain                        # Uses defaults (datasets/seed.jsonl, completion metric)
+bae eval my_domain --dataset golden.jsonl --metric quality
+bae eval my_domain --config eval.toml     # Optional config file for power users
+```
+
+**Convention-based discovery:** If no `--dataset` flag, look for `my_domain/datasets/seed.jsonl`. If no `--metric` flag, use default completion metric. If `my_domain/eval.py` exists, auto-import metrics from it.
+
+**Decision:** Zero config required. CLI args for customization. Config files for power users who want to save their args.
+
+---
+
+### Decision 5: Is Scaffolding Required?
+
+**ARCHITECTURE.md:** "Domain package structure is the organizational primitive."
+
+**PITFALLS.md:** "Developers with existing graphs can't adopt the eval DX without restructuring."
+
+**Tension:** Structured packages aid discovery. But requiring structure blocks adoption.
+
+**Resolution:** Discovery is heuristic, not enforcement.
+```python
+# This works (structured):
+my_domain/
+  graph.py
+  datasets/
+  compiled/
+
+# This also works (unstructured):
+my_stuff/
+  ootd_graph.py
+  ootd_data.jsonl
+  ootd_compiled/
+```
+
+CLI uses module path + convention-based hints:
+```bash
+bae eval my_stuff.ootd_graph --dataset my_stuff/ootd_data.jsonl --output my_stuff/ootd_compiled/
+```
+
+**Decision:** No scaffolding in Phase 1 or 2. Optional `bae init` in Phase 3 if developers ask for it. Structure aids but never blocks.
+
+---
+
+## Roadmap Implications: Suggested Build Order
+
+### Phase 1: Eval Foundation (Weeks 1-2)
+
+**Why first:** Eval is the feedback loop. You need to measure before you can optimize. This is the highest-value feature.
+
+**Deliverables:**
+- `bae/eval.py` -- `evaluate()` function, `EvalResult` dataclass, default metrics
+- `bae/dataset.py` -- `EvalDataset` class, JSONL load/save
+- `bae/cli.py` extension -- `bae eval <module>` command
+- Metric abstraction layer (bae-native signature with DSPy adapter)
+- Tier 0 (structural) and Tier 1 (example-based) working
+
+**Critical decisions resolved:**
+- Metric interface (bae-native with adapter)
+- Tier 0 measures structural correctness, not quality
+- CLI args first, no config file
+- No scaffolding required
+
+**Features from FEATURES.md:**
+- Zero-config structural eval
+- Dataset format (JSONL with input/output pairs)
+- Eval results display (pass/fail + scores)
+- Multiple examples per eval run
+- Clear error messages
+
+**Pitfalls addressed:**
+- #1: Accessible evals that mislead (honest default metrics)
+- #7: CLI config file hell (args first)
+- #8: Progressive complexity cliffs (abstract DSPy)
+- #12: Node vs graph-level confusion (support both, default graph-level)
+- #15: DSPy version coupling (adapter module)
+
+**Success criteria:**
+- Developer runs `bae eval examples.ootd --input '{"user_message": "..."}'` with zero setup
+- Output shows structural checks with honest "does not measure quality" warning
+- Adding `--dataset examples.jsonl` runs example-based eval
+- No DSPy types visible in metric interface
+
+---
+
+### Phase 2: Optimize Integration (Weeks 3-4)
+
+**Why second:** Optimization depends on having eval data and metrics. The optimization primitives already exist -- this phase wires them into the CLI.
+
+**Deliverables:**
+- `bae/cli.py` extension -- `bae optimize <module>` command
+- `bae/optimizer.py` enhancement -- parameterize optimizer type (bootstrap/mipro/simba)
+- Compiled artifact metadata and staleness detection
+- `bae run <module> --optimized` flag
+- Before/after eval comparison in optimize output
+
+**Critical decisions resolved:**
+- Compiled artifacts are self-describing (metadata + hash)
+- Optimizer selection is configurable
+- Optimize runs eval before and after, shows delta
+
+**Features from FEATURES.md:**
+- Save/load compiled artifacts (enhanced with metadata)
+- Optimization from CLI (wraps existing `CompiledGraph.optimize()`)
+- Compiled artifact conventions (metadata JSON, staleness check)
+- Eval diff (before/after comparison)
+
+**Pitfalls addressed:**
+- #2: Metric design that optimizes wrong thing (validation tooling)
+- #3: Compiled artifacts go stale (signature hashing)
+- #4: BootstrapFewShot suboptimal demos (expose optimizer selection)
+- #5: Dataset too small (coverage reporting)
+- #11: Eval disconnected from compile loop (before/after in optimize)
+
+**Success criteria:**
+- `bae optimize examples.ootd` runs BootstrapFewShot, saves to `examples/compiled/`
+- Output shows before/after eval scores: "Routing: 85% → 93%, Quality: 3.2 → 3.8"
+- `bae run examples.ootd --optimized` loads artifacts and runs
+- Loading stale artifact warns: "Schema changed, re-optimize"
+
+---
+
+### Phase 3: LLM-as-Judge + Polish (Weeks 5-6)
+
+**Why last:** Polish after core workflow works end-to-end. LLM-as-judge is Tier 2, which depends on Tier 0 and 1 being solid.
+
+**Deliverables:**
+- Auto-generated judge rubric from `Field(description=...)`
+- `bae eval <module> --judge` command
+- `bae.metrics.llm_judge(question)` helper
+- Eval result caching (avoid re-judging unchanged outputs)
+- Cost tracking and display
+- Optional `bae init <name>` scaffolding
+- Mermaid diagram enhancements (eval overlay)
+
+**Critical decisions resolved:**
+- Judge rubric is auto-generated from field descriptions
+- Judge results are cached aggressively
+- Scaffolding is optional, not required
+
+**Features from FEATURES.md:**
+- Auto-generated judge rubric from Field descriptions
+- LLM-as-judge metric helpers
+- Eval result persistence and comparison
+- Tier 4 config surface (optional)
+
+**Pitfalls addressed:**
+- #6: LLM-as-judge bias and cost (document biases, cache, show cost)
+- #9: Mermaid diagrams as write-only (eval overlay, on-demand generation)
+- #10: Scaffolding migration pain (additive not prescriptive, YAGNI)
+- #13: Hard-to-read eval output (summary-first, color-coded)
+- #14: Eval run cost surprises (cost tracking)
+
+**Success criteria:**
+- `bae eval examples.ootd --judge` auto-generates rubric from field descriptions
+- Judge evaluates quality per field: "top: specific garment? YES. bottom: specific garment? YES."
+- Output shows: "Judge cost: $0.47 (23 LLM calls). Cached: 177 results reused."
+- Optional `bae init my_domain` scaffolds minimal starter package
+
+---
+
+## Research Flags: Which Phases Need Deeper Research?
+
+### Phase 1: Well-Documented Patterns (Skip Research)
+- Dataset loading (JSONL is standard)
+- Metric functions (plain Python callables, DSPy docs are sufficient)
+- CLI with Typer (existing pattern in bae works)
+
+### Phase 2: Needs Validation Research
+- **Staleness detection heuristics** -- what hash algorithm? SHA256 of field names + types? Include instruction string?
+- **Optimizer comparison** -- BootstrapFewShot vs MIPROv2 vs SIMBA. When to recommend each? Need empirical data on cost/quality tradeoffs.
+- **Dataset size heuristics** -- "20 examples minimum" is from DSPy docs, but bae's graphs produce 2+ examples per trace. Research: how many traces needed to cover all paths?
+
+### Phase 3: Research During Implementation
+- **LLM-as-judge bias mitigation** -- position bias, verbosity bias documented. Research: which biases matter most for bae's use case? Test with real graph outputs.
+- **Caching strategy** -- cache key should be (input, graph hash, metric hash). Research: does DSPy provide predictor hash? If not, how to compute?
+
+**Overall assessment:** Phase 1 is well-understood. Phase 2 needs targeted validation. Phase 3 can research during implementation.
+
+---
 
 ## Confidence Assessment
 
-| Area | Confidence | Notes |
-|------|------------|-------|
-| Stack | HIGH | All patterns verified in bae's venv (Python 3.14, Pydantic 2.12.5); no new dependencies needed; incant removal confirmed viable |
-| Features | HIGH | Table stakes verified via official docs for 5 frameworks; differentiators confirmed novel (no framework does per-field dep resolution or type-based trace recall) |
-| Architecture | HIGH | Codebase analysis complete; phase dependencies clear; v2 reference implementation (`ootd.py`) demonstrates patterns work |
-| Pitfalls | HIGH | Grounded in codebase analysis + verified patterns from FastAPI, Pydantic, graphlib; solutions tested or documented in stdlib |
+| Area | Confidence | Reasoning |
+|------|------------|-----------|
+| **Stack (DSPy sufficiency)** | HIGH | DSPy 3.1.3 docs verified. MIPROv2/SIMBA APIs confirmed. No external framework needed. |
+| **Features (progressive tiers)** | HIGH | Pattern is sound and validated across 6 frameworks. Tier structure is proven. |
+| **Architecture (module boundaries)** | MEDIUM-HIGH | Graph introspection is solid. Eval wrapper design is clean. Metric abstraction needs validation. |
+| **Pitfalls (false confidence risk)** | HIGH | Validated against multiple sources (HoneyHive, Confident AI, arxiv). Central risk is real and documented. |
+| **LLM-as-judge auto-generation** | MEDIUM | Novel approach (no precedent). Field descriptions as rubric is logical but untested. |
+| **Build order** | HIGH | Dependency chain is clear: package discovery → eval → optimize. Progressive reveals dependencies naturally. |
 
-**Overall confidence:** HIGH
-
-### Gaps to Address
-
-Research is comprehensive with no major gaps. Minor items to validate during implementation:
-
-- **Dep cache scope decision:** Per-run caching (recommended) vs per-step caching. Start with per-run; add `cache=False` to Dep if needed later (YAGNI).
-- **Custom `__call__` escape hatch:** When node has custom logic, should it return a type (bae resolves fields) or dict of field overrides + type? Recommend type-only for simplicity; extend to dict if needed.
-- **Start node Dep/Recall validation:** Should bae error (recommended) or silently skip if start node has Dep/Recall fields? Recommend error—start node fields are caller-provided, Dep on start node is user mistake.
-- **Recall recency semantics:** Should Recall return most recent match (recommended), all matches, or fail if multiple? Start with most recent single match; add multi-match support if use cases emerge.
-
-All gaps are design decisions, not knowledge gaps. Defaults are reasonable; extensions can be added if real use cases emerge.
-
-## Sources
-
-### Primary (HIGH confidence)
-- [Python graphlib documentation](https://docs.python.org/3/library/graphlib.html) — TopologicalSorter API, CycleError
-- [Python typing documentation](https://docs.python.org/3/library/typing.html) — get_type_hints, Annotated, get_origin, get_args
-- [Pydantic Fields API](https://docs.pydantic.dev/latest/api/fields/) — FieldInfo.metadata, FieldInfo.is_required()
-- [Pydantic Models documentation](https://docs.pydantic.dev/latest/concepts/models/) — model_fields, model_construct
-- [FastAPI Dependencies](https://fastapi.tiangolo.com/tutorial/dependencies/) — Depends() pattern, chaining, caching
-- [PydanticAI Dependencies](https://ai.pydantic.dev/dependencies/) — RunContext, deps_type pattern
-- [DSPy Modules](https://dspy.ai/learn/programming/modules/) — Module composition, trace
-- [LangGraph Runtime Docs](https://docs.langchain.com/oss/python/langchain/runtime) — InjectedState, Runtime context
-- [Dagster Resources](https://dagster.io/blog/a-practical-guide-to-dagster-resources) — Type-annotated resource injection
-- Live testing in bae's venv (Python 3.14, Pydantic 2.12.5, graphlib stdlib)
-- Bae codebase analysis (`node.py`, `graph.py`, `lm.py`, `compiler.py`, `markers.py`, `examples/ootd.py`)
-
-### Secondary (MEDIUM confidence)
-- [PEP 649 — Deferred Evaluation of Annotations](https://peps.python.org/pep-0649/)
-- [PEP 749 — Implementing PEP 649](https://peps.python.org/pep-0749/)
-- [Pydantic v2.12 release notes](https://pydantic.dev/articles/pydantic-v2-12-release) — MISSING sentinel (experimental, decided against)
-- [incant documentation](https://incant.threeofwands.com/en/stable/usage.html) — Hook factory pattern (v1 usage)
-- [Anthropic Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — Context as assembled frame
-
-### Tertiary (LOW confidence, used for landscape only)
-- [Prefect vs Dagster comparison](https://www.decube.io/post/dagster-prefect-compare) — Data passing patterns
-- GitHub issues (LangGraph InjectedState, FastAPI Python 3.14 TYPE_CHECKING) — Edge case patterns
+**Gaps to address during planning:**
+1. **Metric abstraction API** -- bae-native vs DSPy-native signature. Needs design review with Dzara.
+2. **Staleness detection algorithm** -- hashing strategy for node schemas. Needs prototype.
+3. **Dataset generation helpers** -- how to auto-generate diverse traces? Needs experimentation.
+4. **Cost tracking integration** -- does PydanticAI backend expose token counts? Needs investigation.
 
 ---
-*Research completed: 2026-02-07*
-*Ready for roadmap: yes*
+
+## Sources (Aggregated)
+
+### PRIMARY SOURCES (HIGH confidence)
+- [DSPy Evaluate API](https://dspy.ai/api/evaluation/Evaluate/)
+- [DSPy EvaluationResult](https://dspy.ai/api/evaluation/EvaluationResult/)
+- [DSPy Metrics](https://dspy.ai/learn/evaluation/metrics/)
+- [DSPy MIPROv2 API](https://dspy.ai/api/optimizers/MIPROv2/)
+- [DSPy SIMBA API](https://dspy.ai/api/optimizers/SIMBA/)
+- [DSPy Optimizers Overview](https://dspy.ai/learn/optimization/optimizers/)
+- [DSPy Cheatsheet](https://dspy.ai/cheatsheet/)
+- [DSPy PyPI](https://pypi.org/project/dspy/) (v3.1.3)
+- [Typer PyPI](https://pypi.org/project/typer/) (v0.21.1)
+- [Rich PyPI](https://pypi.org/project/rich/) (v14.3.2)
+- [Copier PyPI](https://pypi.org/project/copier/) (v9.11.3)
+- Bae codebase analysis (all modules in bae/)
+
+### SECONDARY SOURCES (MEDIUM confidence)
+- [Braintrust How to Eval](https://www.braintrust.dev/articles/how-to-eval)
+- [Braintrust CI/CD Tools](https://www.braintrust.dev/articles/best-ai-evals-tools-cicd-2025)
+- [Promptfoo CLI](https://www.promptfoo.dev/docs/usage/command-line/)
+- [DeepEval Getting Started](https://deepeval.com/docs/getting-started)
+- [Inspect AI](https://inspect.aisi.org.uk/)
+- [Monte Carlo: LLM-as-Judge Best Practices](https://www.montecarlodata.com/blog-llm-as-judge/)
+- [Evidently AI: LLM-as-Judge Guide](https://www.evidentlyai.com/llm-guide/llm-as-a-judge)
+- [HoneyHive: Avoiding Common Pitfalls](https://www.honeyhive.ai/post/avoiding-common-pitfalls-in-llm-evaluation)
+- [arXiv: Justice or Prejudice?](https://arxiv.org/abs/2410.02736) (LLM-as-judge biases)
+- [Copier vs Cookiecutter comparison](https://medium.com/@gema.correa/from-cookiecutter-to-copier-uv-and-just-the-new-python-project-stack-90fb4ba247a9)
+
+### ECOSYSTEM SURVEYS (LOW confidence, landscape awareness)
+- [AI Multiply: LLM Eval Landscape 2026](https://research.aimultiple.com/llm-eval-tools/)
+- [Confident AI: Top LLM Eval Tools 2025](https://www.confident-ai.com/blog/greatest-llm-evaluation-tools-in-2025)
+
+---
+
+## Ready for Requirements
+
+All 4 research files have been synthesized. Key findings extracted. Roadmap implications derived with phase structure. Confidence assessed. Research flags identified.
+
+**Next step:** Orchestrator can proceed to requirements definition (feature breakdown, acceptance criteria, implementation tasks).
+
+**Critical handoffs to roadmapper:**
+1. **Phase structure** is dependency-driven: eval foundation → optimize integration → polish
+2. **Metric abstraction** is the most consequential API design decision
+3. **False confidence mitigation** must be baked into Tier 0 from day one
+4. **No scaffolding** in Phase 1/2 (YAGNI until proven needed)
+5. **DSPy sufficiency** means no external framework dependencies
+
+---
+
+*Research synthesis complete: 2026-02-08*
+*Source files: STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md*

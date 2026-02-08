@@ -1,547 +1,762 @@
-# Architecture: v2 Context Frames Integration
+# Architecture: Eval/Optimization DX Integration
 
-**Domain:** Bae node API redesign -- "nodes as context frames"
-**Researched:** 2026-02-07
-**Confidence:** HIGH (analysis of existing codebase + v2 reference implementation)
+**Domain:** Eval/optimization developer workflow for bae agent graphs
+**Researched:** 2026-02-08
+**Confidence:** HIGH (based on direct codebase analysis + DSPy official docs)
 
 ## Executive Summary
 
-The v2 redesign replaces three marker types (Context, Bind, Dep-on-params) with two field-level markers (Dep(callable), Recall()) and eliminates the LM parameter from `__call__`. This is a focused refactoring, not a rewrite. The existing topology discovery (graph.py `_discover`), validation, and trace collection all survive with minor modifications. The major structural change is in the execution loop: `Graph.run()` must now resolve field values (Dep, Recall) *before* calling the LM to fill remaining fields, rather than the current pattern where the LM produces the entire next node.
+Bae has the optimization primitives (compiler.py, optimizer.py) and the graph introspection (Graph.nodes, Graph.edges, Graph.to_mermaid) but lacks the DX layer that connects them into a developer workflow. The architecture needs four new subsystems: (1) domain package discovery, (2) eval runner bridging Graph.run() to DSPy Evaluate, (3) dataset management, and (4) CLI commands orchestrating the pipeline.
 
-The critical insight: **v1 nodes produce their successors. v2 nodes receive their fields from three sources (Dep, Recall, LM) and bae orchestrates the assembly.** This inverts control -- bae owns field population, nodes just declare what they need.
+The key architectural insight is that **Graph already knows everything** -- nodes, edges, field types, routing strategy. The eval/optimization DX is a projection of Graph's introspection, not a parallel system. Every new module should take a Graph as input and derive its behavior from Graph's existing topology discovery.
 
-## v1 vs v2 Execution Flow Comparison
+## Existing Architecture (What We Have)
 
-### v1 (Current)
-
-```
-Graph.run() loop:
-  1. current_node = start_node
-  2. strategy = _get_routing_strategy(current)
-  3. if "make":  next = lm.make(current, target_type)
-     if "decide": next = lm.decide(current)
-     if "custom": next = incanter.compose_and_call(current.__call__, lm=lm)
-     if "terminal": next = None
-  4. _capture_bind_fields(current, dep_registry)
-  5. current = next; repeat
-```
-
-LM receives current node, produces entire next node. Fields are either LM-generated or injected via incant at __call__ time.
-
-### v2 (Target)
+### Component Map
 
 ```
-Graph.run() loop:
-  1. current_node = start_node (fields provided by caller)
-  2. strategy = _get_routing_strategy(current)
-  3. Determine next node TYPE (lm.decide or return type analysis)
-  4. Resolve target node's Dep fields (topological order, call fns)
-  5. Resolve target node's Recall fields (search trace backward)
-  6. LM fills remaining plain fields (given resolved deps/recalls as context)
-  7. Construct next node instance from all field sources
-  8. Append to trace
-  9. current = next; repeat
+bae/
+  node.py        -- Node base class, _wants_lm, _has_ellipsis_body
+  graph.py       -- Graph (discovery, run, validate, to_mermaid)
+  markers.py     -- Dep(fn), Recall()
+  resolver.py    -- classify_fields, resolve_fields, build_dep_dag
+  compiler.py    -- node_to_signature, compile_graph, CompiledGraph, create_optimized_lm
+  optimizer.py   -- trace_to_examples, node_transition_metric, optimize_node, save/load_optimized
+  lm.py          -- LM Protocol, PydanticAIBackend, ClaudeCLIBackend
+  dspy_backend.py -- DSPyBackend
+  optimized_lm.py -- OptimizedLM extends DSPyBackend
+  result.py      -- GraphResult[T]
+  exceptions.py  -- BaeError hierarchy
+  cli.py         -- Typer app with graph show/export/mermaid + run commands
+  __init__.py    -- Public API
 ```
 
-LM receives resolved Dep/Recall values as context, fills only the unresolved fields. Node construction is bae's job, not the LM's.
+### Existing Integration Points
 
-## Component-by-Component Impact Analysis
+| Component | What It Provides to Eval/DX | How |
+|-----------|---------------------------|-----|
+| `Graph.nodes` | Set of all node types | Introspection target for eval scaffolding |
+| `Graph.edges` | Adjacency list | Topology for diagrams and dependency ordering |
+| `Graph.run()` | Execution with trace | Trace is the raw material for eval datasets |
+| `Graph.to_mermaid()` | Diagram generation | Already exists, needs auto-write to package |
+| `GraphResult.trace` | Ordered list[Node] | Input to trace_to_examples() |
+| `compiler.compile_graph()` | CompiledGraph | Bridge to DSPy optimization |
+| `compiler.create_optimized_lm()` | OptimizedLM | Production loading of compiled artifacts |
+| `optimizer.trace_to_examples()` | list[dspy.Example] | Bridge from bae traces to DSPy eval format |
+| `optimizer.save/load_optimized()` | Disk persistence | Compiled predictor JSON files |
+| `cli._load_graph_from_module()` | Graph from module path | Reusable for all CLI commands |
+| `cli.app` (Typer) | Existing graph subcommand | Extension point for eval/optimize commands |
 
-### 1. markers.py -- Refactored
+### Existing Data Flow
 
-**Current state:** Context, Dep (description-only), Bind
-**v2 state:** Dep(callable), Recall()
+```
+Graph(start=Node) --> .run(input, lm) --> GraphResult
+                                              |
+                                              v
+                                         .trace: list[Node]
+                                              |
+                                              v
+                                    trace_to_examples(trace)
+                                              |
+                                              v
+                                    list[dspy.Example]
+                                              |
+                                              v
+                                    optimize_node(cls, trainset, metric)
+                                              |
+                                              v
+                                    dspy.Predict (optimized)
+                                              |
+                                              v
+                                    save_optimized() --> NodeName.json
+                                              |
+                                              v
+                                    load_optimized() --> OptimizedLM
+                                              |
+                                              v
+                                    graph.run(input, lm=OptimizedLM)
+```
+
+**The gap:** Nothing orchestrates this pipeline. The developer must manually call each step, manage file paths, and wire things together.
+
+## Proposed Architecture (What We Need)
+
+### New Modules
+
+| Module | Purpose | Depends On |
+|--------|---------|------------|
+| `bae/package.py` | Domain package discovery + scaffolding | graph.py (for introspection) |
+| `bae/eval.py` | Eval runner + metric defaults | graph.py, result.py |
+| `bae/dataset.py` | Dataset loading/saving/management | result.py (for trace types) |
+| `bae/cli.py` (extend) | New subcommands: eval, optimize, init, inspect | All of the above |
+
+### Modified Modules
+
+| Module | Change | Why |
+|--------|--------|-----|
+| `bae/graph.py` | No changes needed | Graph.run() already returns traces |
+| `bae/compiler.py` | No changes needed | compile_graph() already works |
+| `bae/optimizer.py` | Minor: accept custom optimizer type | Currently hardcodes BootstrapFewShot |
+| `bae/cli.py` | Add eval, optimize, init, inspect subcommands | DX entry points |
+| `bae/__init__.py` | Export new public API | Package completeness |
+
+### Component Architecture
+
+```
+                    CLI Layer (bae/cli.py)
+                    ________________________
+                   |                        |
+                   |  bae init <name>       |
+                   |  bae run <pkg>         |  <-- already exists
+                   |  bae eval <pkg>        |
+                   |  bae optimize <pkg>    |
+                   |  bae inspect <pkg>     |
+                   |  bae graph show <pkg>  |  <-- already exists
+                   |________________________|
+                          |
+                          v
+                   Package Layer (bae/package.py)
+                   ________________________________
+                  |                                |
+                  |  discover_package(path)         |
+                  |  --> BaePackage(graph, datasets, |
+                  |      compiled_dir, config)      |
+                  |________________________________|
+                          |
+             ____________|_____________
+            |            |             |
+            v            v             v
+     Eval Layer    Dataset Layer    Existing Layers
+     (bae/eval.py) (bae/dataset.py) (graph, compiler, optimizer)
+     ___________   ______________   ________________________
+    |           | |              | |                        |
+    | evaluate  | | load_dataset | | Graph.run()            |
+    | EvalResult| | save_traces  | | compile_graph()        |
+    | metrics   | | EvalDataset  | | optimize_node()        |
+    |___________| |______________| | save/load_optimized()  |
+                                   |________________________|
+```
+
+## Domain Package Structure
+
+The "domain package" is the organizational unit that ties a graph definition to its eval data, compiled artifacts, and documentation. It is a standard Python package directory.
+
+### Proposed Layout
+
+```
+my_domain/
+  __init__.py          # exports `graph` (Graph instance)
+  graph.py             # Node definitions + Graph(start=...) instantiation
+  graph.md             # Auto-generated: mermaid diagram + node field docs
+  eval.py              # Optional: custom metrics, eval config
+  datasets/
+    seed.jsonl         # Seed examples (input for start node)
+    golden.jsonl       # Golden traces (input + expected output pairs)
+  compiled/
+    NodeA.json         # Optimized predictor for NodeA (DSPy format)
+    NodeB.json         # Optimized predictor for NodeB
+    .gitignore         # "*.json" -- compiled artifacts are regenerable
+```
+
+### Why This Structure
+
+1. **graph.py is the anchor.** The Graph instance at module scope is the entry point for all operations. Already supported by `cli._load_graph_from_module()`.
+
+2. **graph.md is auto-generated.** `bae init` or `bae graph update` writes it. Contains mermaid diagram and a field-level reference. Developers can add notes but the structured sections are regenerated.
+
+3. **eval.py is optional.** Zero-config eval uses default metrics. Custom metrics live here when needed. Progressive complexity: you don't need this file until you outgrow defaults.
+
+4. **datasets/ is flat JSONL.** Each line is a JSON object. Seed files have only start-node fields. Golden files have full traces. JSONL because it's append-friendly and git-diffable.
+
+5. **compiled/ is .gitignore-able.** Compiled artifacts are derived from graph + datasets + optimization runs. They can be regenerated. Some teams may want to commit them for reproducibility; .gitignore is a suggestion, not enforced.
+
+### Package Discovery
+
+`bae/package.py` discovers a domain package from a path:
 
 ```python
-# v1 markers.py
-@dataclass(frozen=True)
-class Context:         # REMOVE -- redundant with "fields with values"
-    description: str = ""
-
-@dataclass(frozen=True)
-class Dep:             # CHANGE -- takes callable instead of description
-    description: str = ""
-
-@dataclass(frozen=True)
-class Bind:            # REMOVE -- replaced by implicit trace + Recall
-    pass
-
-# v2 markers.py
-@dataclass(frozen=True)
-class Dep:
-    fn: Callable       # The function bae calls to populate this field
-    # No description needed -- the function IS the description
-
-@dataclass(frozen=True)
-class Recall:          # NEW -- search trace backward for matching type
-    pass
+@dataclass
+class BaePackage:
+    """Discovered domain package with all its components."""
+    name: str                      # Package name (directory name)
+    path: Path                     # Absolute path to package directory
+    graph: Graph                   # Loaded Graph instance
+    graph_module: str              # Importable module path (e.g. "my_domain.graph")
+    dataset_dir: Path              # path / "datasets"
+    compiled_dir: Path             # path / "compiled"
+    eval_module: ModuleType | None # Loaded eval.py if exists
 ```
 
-**Breaking changes:**
-- `Context` removed: all references in compiler.py, dspy_backend.py, tests must be updated
-- `Dep` signature changes: no longer takes `description`, takes `fn` callable
-- `Bind` removed: all references in graph.py, tests must be updated
-- `Recall` added: new marker
+Discovery algorithm:
+1. Given a path, check if it's a Python package (has `__init__.py`)
+2. Import `{package_name}.graph` and find `graph` attribute (Graph instance)
+3. Check for optional `eval.py`, `datasets/`, `compiled/`
+4. Return BaePackage with everything populated
 
-**Migration path:**
-- v1 `Context(description="...")` fields --> plain fields (no annotation needed for LM context)
-- v1 `Bind()` fields --> removed entirely (trace stores all nodes implicitly)
-- v1 `Dep(description="...")` on __call__ params --> `Dep(fn)` on node fields
-- New: `Recall()` on node fields for trace lookback
+This reuses and extends the existing `_load_graph_from_module()` pattern from cli.py.
 
-### 2. node.py -- Minimal Changes
+## Eval Runner Design
 
-**What stays:**
-- `Node(BaseModel)` base class
-- `successors()` classmethod (return type extraction)
-- `is_terminal()` classmethod
-- `_has_ellipsis_body()` (still used for routing strategy)
-- `_extract_types_from_hint()`, `_hint_includes_none()`
-- `NodeConfig` (still used for per-node model/temperature)
+### Core Question: Wrap or Extend Graph.run()?
 
-**What changes:**
-- `__call__` signature: remove `lm: LM` parameter
-- `__call__` default implementation: just `...` (ellipsis) since bae handles everything
-- The `Node` base `__call__` should no longer call `lm.decide(self)` -- bae owns routing
+**Answer: Wrap.** The eval runner calls Graph.run() inside a loop, collects traces, and scores them. It does not modify Graph.run()'s behavior.
+
+Rationale:
+- Graph.run() is the execution primitive. It should not know about eval.
+- Eval is a higher-level concern: "run this graph N times with different inputs, score each run."
+- DSPy's Evaluate class follows the same pattern -- it wraps a Module's __call__.
+
+### Architecture
 
 ```python
-# v1
-class Node(BaseModel):
-    def __call__(self, lm: LM, *_args, **_kwargs) -> Node | None:
-        return lm.decide(self)
+@dataclass
+class EvalResult:
+    """Result of evaluating a graph on a dataset."""
+    score: float                           # Aggregate score (0-100)
+    results: list[tuple[dict, GraphResult, float]]  # (input, result, score)
+    metadata: dict                         # Timing, error counts, etc.
 
-# v2
-class Node(BaseModel):
-    def __call__(self) -> Node | None:
-        ...  # Default: bae handles routing via return type hint
-```
 
-**Impact:**
-- All user-defined nodes lose `lm` parameter in `__call__`
-- Custom logic nodes that called `lm.make()` / `lm.decide()` need an escape hatch (see graph.py section)
-- `get_type_hints(cls.__call__)` still works for extracting return types
+def evaluate(
+    graph: Graph,
+    dataset: list[dict],                   # List of start-node field dicts
+    metric: Callable[[GraphResult], float] | None = None,
+    lm: LM | None = None,
+    max_iters: int = 10,
+) -> EvalResult:
+    """Run graph on each dataset example and score with metric.
 
-### 3. graph.py -- Major Changes to run()
-
-This is the biggest change. The execution loop must now:
-
-**A. Remove incant dependency**
-
-v1 uses incant for Dep injection into `__call__` parameters. v2 has no `__call__` parameters to inject into. Dep is now on node fields, resolved before LM call.
-
-```python
-# v1: incant injects deps into __call__ params
-incanter.compose_and_call(current.__call__, lm=lm)
-
-# v2: no incant needed -- field resolution replaces parameter injection
-```
-
-**B. Add field resolution step**
-
-New function: resolve Dep and Recall fields for a target node type before constructing it.
-
-```python
-def _resolve_fields(
-    target_cls: type[Node],
-    trace: list[Node],
-    dep_cache: dict[type, Any],
-) -> dict[str, Any]:
-    """Resolve Dep and Recall fields for a target node type.
-
-    Returns dict of field_name -> resolved_value for non-LM fields.
+    Default metric: terminal node is not None (graph completes successfully).
     """
-    resolved = {}
-    hints = get_type_hints(target_cls, include_extras=True)
-
-    for field_name, hint in hints.items():
-        if get_origin(hint) is Annotated:
-            args = get_args(hint)
-            base_type = args[0]
-            metadata = args[1:]
-
-            for meta in metadata:
-                if isinstance(meta, Dep):
-                    # Resolve dep (may chain)
-                    resolved[field_name] = _resolve_dep(meta.fn, dep_cache)
-                elif isinstance(meta, Recall):
-                    # Search trace backward
-                    resolved[field_name] = _resolve_recall(base_type, trace)
-
-    return resolved
 ```
 
-**C. Dep chaining resolution**
+### Metric Protocol
 
-Dep functions can themselves declare Dep-typed parameters. This creates a DAG that must be resolved in topological order. This is the most complex new logic.
-
-```
-get_weather(location: LocationDep) -> WeatherResult
-get_location() -> GeoLocation
-
-Resolution order: get_location() first, then get_weather(location=result)
-```
-
-This is a DAG resolution problem. The resolver must:
-1. Inspect the dep fn's parameter type hints
-2. For params with Dep annotations, resolve those first (recursively)
-3. Cache results (a dep fn should only run once per graph execution step)
-
-**D. Recall resolution**
-
-Search the trace backward for a node whose fields contain a value matching the requested type.
+Metrics are plain functions. No base class, no registration -- just a callable.
 
 ```python
-def _resolve_recall(target_type: type, trace: list[Node]) -> Any:
-    """Search trace backward for a field value matching target_type."""
-    for node in reversed(trace):
-        hints = get_type_hints(type(node), include_extras=True)
-        for field_name, hint in hints.items():
-            base_type = _get_base_type(hint)
-            if base_type == target_type or (isinstance(base_type, type) and issubclass(base_type, target_type)):
-                value = getattr(node, field_name)
-                if value is not None:
-                    return value
-    raise BaeError(f"Recall failed: no {target_type.__name__} found in trace")
+# Simplest metric: did the graph complete?
+def completion_metric(result: GraphResult) -> float:
+    return 1.0 if result.trace else 0.0
+
+# Field-level metric: does the terminal node have non-empty fields?
+def field_completeness_metric(result: GraphResult) -> float:
+    terminal = result.result
+    if terminal is None:
+        return 0.0
+    fields = terminal.model_dump()
+    filled = sum(1 for v in fields.values() if v)
+    return filled / len(fields) if fields else 0.0
+
+# LLM-as-judge metric: use DSPy Assess pattern
+def quality_metric(result: GraphResult) -> float:
+    # Uses dspy.Predict with an Assess signature
+    ...
 ```
 
-**E. Modified execution loop**
+Progressive complexity tiers for metrics:
+1. **Zero-config:** Graph completes without error -> 1.0
+2. **Field-level:** Terminal node fields are non-empty, well-formed
+3. **Golden trace:** Compare output to expected output (from golden.jsonl)
+4. **Custom function:** User writes arbitrary scoring logic in eval.py
+5. **LLM-as-judge:** DSPy Assess pattern with instruction-tuned judge
 
-```python
-def run(self, start_node: Node, lm: LM | None = None, max_steps: int = 100) -> GraphResult:
-    trace: list[Node] = []
-    current: Node | None = start_node
-    dep_cache: dict[type, Any] = {}  # Cache dep fn results across the run
+### Connection to DSPy's Evaluate
 
-    while current is not None and steps < max_steps:
-        trace.append(current)
+Bae's `evaluate()` is intentionally **not** a wrapper around `dspy.Evaluate`. The reasons:
 
-        strategy = _get_routing_strategy(current.__class__)
+1. `dspy.Evaluate` expects a `dspy.Module` -- bae's Graph is not a dspy.Module.
+2. `dspy.Evaluate` uses `dspy.Example` -- bae uses plain dicts for inputs and GraphResult for outputs.
+3. The metric signature differs: DSPy expects (example, pred, trace), bae's natural metric signature is (result: GraphResult) -> float.
 
-        if strategy[0] == "terminal":
-            break  # Terminal node -- current IS the output
-        elif strategy[0] == "custom":
-            next_node = current()  # No lm param in v2
-        else:
-            # Determine target type(s)
-            if strategy[0] == "make":
-                target_type = strategy[1]
-            elif strategy[0] == "decide":
-                target_type = lm.choose_type(current, strategy[1])
+However, **when optimizing**, we bridge to DSPy's format:
+- `trace_to_examples()` already converts bae traces to `dspy.Example` format
+- `CompiledGraph.optimize()` already uses `dspy.teleprompt.BootstrapFewShot`
+- The bridge is at the optimizer boundary, not the eval boundary
 
-            # Resolve Dep and Recall fields for target type
-            resolved = _resolve_fields(target_type, trace, dep_cache)
+This keeps bae's eval API clean and Python-native while still leveraging DSPy's optimization machinery.
 
-            # LM fills remaining fields, given resolved values as context
-            next_node = lm.fill(current, target_type, resolved_fields=resolved)
+## Dataset Management
 
-        current = next_node
-        steps += 1
+### Format: JSONL
 
-    return GraphResult(node=trace[-1] if trace else None, trace=trace)
+Each line is a JSON object. Two dataset types:
+
+**Seed dataset (inputs only):**
+```jsonl
+{"user_message": "ugh i just got up"}
+{"user_message": "heading to a wedding this afternoon"}
+{"user_message": "job interview tomorrow, need to look sharp"}
 ```
 
-**F. Validation changes**
-
-- Remove `_validate_bind_uniqueness()` -- Bind is gone
-- Add: validate that start node has no Dep/Recall fields (start node fields are caller-provided)
-- Add: validate that Dep fn signatures don't create cycles (DAG check)
-- Keep: terminal path validation (unchanged)
-
-**G. What to do with `_get_routing_strategy()`**
-
-Still useful. Ellipsis body detection still determines whether bae auto-routes or the user has custom logic. But the "custom" path changes -- custom `__call__` no longer receives `lm`, so custom nodes that need LM access need a different escape hatch.
-
-**Escape hatch options for custom logic:**
-1. Custom nodes return a type (not an instance) and bae still resolves fields
-2. Custom nodes can call a graph-level helper to access LM
-3. Custom nodes receive a `ctx` object with trace/lm access
-
-Recommendation: Option 1 is simplest and fits the paradigm. Custom `__call__` returns a type or `None`, bae resolves fields. If custom nodes need to set specific field values, they return a partial dict.
-
-### 4. lm.py -- Protocol Changes
-
-**Current LM protocol:**
-```python
-class LM(Protocol):
-    def make(self, node: Node, target: type[T]) -> T: ...
-    def decide(self, node: Node) -> Node | None: ...
+**Golden dataset (inputs + expected terminal output):**
+```jsonl
+{"input": {"user_message": "ugh i just got up"}, "expected": {"top": "oversized sweater", "bottom": "joggers"}}
 ```
 
-**v2 LM protocol:**
-
-The LM's job changes. It no longer produces entire node instances. It:
-1. Chooses a type from union options (`choose_type`)
-2. Fills plain fields given resolved deps/recalls as context (`fill`)
+### Dataset API
 
 ```python
-class LM(Protocol):
-    def choose_type(
-        self,
-        current: Node,
-        options: list[type[Node]],
-    ) -> type[Node]:
-        """Pick which successor type to produce."""
+@dataclass
+class EvalDataset:
+    """A named collection of eval examples."""
+    name: str
+    path: Path
+    examples: list[dict]
+
+    @classmethod
+    def load(cls, path: Path) -> EvalDataset: ...
+
+    @classmethod
+    def from_traces(cls, traces: list[list[Node]], name: str) -> EvalDataset:
+        """Convert collected execution traces to a dataset."""
         ...
 
-    def fill(
-        self,
-        current: Node,
-        target: type[T],
-        resolved_fields: dict[str, Any],
-    ) -> T:
-        """Fill plain fields of target type. Resolved fields are provided as context."""
-        ...
+    def save(self, path: Path | None = None) -> None: ...
 ```
 
-`make` and `decide` collapse into `choose_type` + `fill`. This is cleaner -- the LM always does two distinct jobs (type selection and field population), and bae handles field resolution.
+### Trace Collection for Dataset Building
 
-**Impact on backends:**
-- `PydanticAIBackend`: rewrite `make`/`decide` into `choose_type`/`fill`
-- `ClaudeCLIBackend`: same refactor
-- `DSPyBackend`: same refactor, but signature generation changes too (see compiler.py)
-- `OptimizedLM`: extends new base protocol
+A natural workflow: run the graph a few times, collect traces, save as golden dataset.
 
-### 5. compiler.py -- Significant Changes
+```
+bae run my_domain -i '{"user_message": "..."}' --save-trace
+# Appends trace to my_domain/datasets/traces.jsonl
 
-**Current:** `node_to_signature()` extracts `Context`-annotated fields as InputFields.
+bae eval my_domain
+# Uses seed.jsonl for inputs, scores with default metric
+```
 
-**v2:** Context is gone. The signature must reflect the new field taxonomy:
+## Compiled Artifact Flow
 
-| Field Kind | In Signature? | As What |
-|------------|---------------|---------|
-| Dep(fn) | YES (as InputField) | Resolved value is LLM context |
-| Recall() | YES (as InputField) | Recalled value is LLM context |
-| Plain (no annotation) | YES (as OutputField) | LLM must produce this |
-| Fields with defaults | Depends | If caller-set, InputField; if LLM-filled, OutputField |
+### Current (What Exists)
+
+`optimizer.save_optimized()` writes `{NodeClassName}.json` to a directory.
+`optimizer.load_optimized()` reads them back.
+`compiler.create_optimized_lm()` creates an OptimizedLM from a directory.
+
+### Proposed (What Changes)
+
+The compiled directory lives inside the domain package: `my_domain/compiled/`.
+
+No changes to save/load format. The only change is making the CLI commands know where to read/write:
+
+```
+bae optimize my_domain
+# Runs optimization, writes to my_domain/compiled/
+# Equivalent to:
+#   compiled = compile_graph(graph)
+#   compiled.optimize(trainset)
+#   compiled.save("my_domain/compiled/")
+
+bae run my_domain --optimized
+# Loads from my_domain/compiled/ and runs with OptimizedLM
+# Equivalent to:
+#   lm = create_optimized_lm(graph, "my_domain/compiled/")
+#   graph.run(start_node, lm=lm)
+```
+
+### Runtime Loading
+
+For production use (not via CLI):
 
 ```python
-def node_to_signature(node_cls: type[Node]) -> type[dspy.Signature]:
-    fields = {}
-    hints = get_type_hints(node_cls, include_extras=True)
+from my_domain.graph import graph
+from bae import create_optimized_lm
 
-    for name, hint in hints.items():
-        if get_origin(hint) is Annotated:
-            args = get_args(hint)
-            metadata = args[1:]
-            for meta in metadata:
-                if isinstance(meta, (Dep, Recall)):
-                    # Resolved by bae -- becomes InputField (context for LLM)
-                    fields[name] = (args[0], dspy.InputField())
-                    break
-        else:
-            # Plain field -- LLM fills this -- becomes OutputField
-            fields[name] = (hint, dspy.OutputField())
-
-    instruction = node_cls.__name__
-    return dspy.make_signature(fields, instruction)
+lm = create_optimized_lm(graph, "my_domain/compiled/")
+result = graph.run(StartNode(user_message="..."), lm=lm)
 ```
 
-**Impact on optimization pipeline:**
-- `trace_to_examples()` in optimizer.py needs to know which fields are inputs vs outputs
-- `optimize_node()` and `node_transition_metric()` may need updates
-- Save/load format unchanged (still JSON predictor state)
+This already works with existing `create_optimized_lm()`. No new API needed -- just DX to make the path conventional.
 
-### 6. result.py -- Minor Changes
+## CLI Architecture
 
-**Current:** `GraphResult(node: Node | None, trace: list[Node])`
+### Current Commands
 
-In v2, terminal node IS the output (its fields ARE the response schema). The `node` field should be the terminal node instance, not `None`.
+```
+bae
+  graph
+    show <module>       # Open mermaid.live in browser
+    export <module>     # Export to SVG/PNG via mmdc
+    mermaid <module>    # Print mermaid to stdout
+  run <module>          # Run graph with optional input
+```
+
+### Proposed Commands
+
+```
+bae
+  init <name>           # Scaffold a domain package
+  run <pkg>             # Run graph (existing, enhance with --save-trace, --optimized)
+  eval <pkg>            # Evaluate graph on dataset
+  optimize <pkg>        # Optimize graph with DSPy
+  inspect <pkg>         # Show graph info (nodes, fields, metrics, compiled status)
+  graph
+    show <module>       # Open mermaid.live (existing)
+    export <module>     # Export to file (existing)
+    mermaid <module>    # Print mermaid (existing)
+    update <pkg>        # Regenerate graph.md
+```
+
+### CLI Module Organization
+
+The existing `cli.py` is 283 lines. Adding all new commands in one file is fine as long as the CLI stays thin -- argument parsing and delegation to service modules (eval.py, package.py, dataset.py).
+
+**Recommendation:** Keep a single `cli.py` file. The commands are thin wrappers. Factor complex logic into eval.py, package.py, dataset.py. Only split if cli.py exceeds ~500 lines.
+
+### Command Detail: `bae init`
+
+```
+bae init my_domain
+```
+
+Creates:
+```
+my_domain/
+  __init__.py           # from .graph import graph
+  graph.py              # Skeleton with example nodes
+  graph.md              # Auto-generated from skeleton
+  datasets/
+    seed.jsonl           # Empty or single-example
+  compiled/
+    .gitignore           # *.json
+```
+
+### Command Detail: `bae eval`
+
+```
+bae eval my_domain                    # Default metric, seed dataset
+bae eval my_domain -d golden.jsonl    # Specific dataset
+bae eval my_domain -m quality         # Named metric from eval.py
+bae eval my_domain --save results.json  # Save detailed results
+```
+
+Flow:
+1. Discover package via `discover_package()`
+2. Load dataset (default: `datasets/seed.jsonl`)
+3. Load metric (default: completion, or from eval.py)
+4. Call `evaluate(graph, dataset, metric)`
+5. Display EvalResult (score, per-example breakdown)
+
+### Command Detail: `bae optimize`
+
+```
+bae optimize my_domain                     # BootstrapFewShot (default)
+bae optimize my_domain --optimizer mipro   # MIPROv2
+bae optimize my_domain --eval-after        # Run eval after optimization
+```
+
+Flow:
+1. Discover package
+2. Load training dataset (default: `datasets/golden.jsonl`)
+3. Compile graph: `compile_graph(graph)`
+4. Optimize: `compiled.optimize(trainset, metric)`
+5. Save: `compiled.save("my_domain/compiled/")`
+6. Optionally run eval on optimized graph
+
+### Command Detail: `bae inspect`
+
+```
+bae inspect my_domain
+```
+
+Output:
+```
+Package: my_domain
+Graph: 3 nodes, 2 edges
+  IsTheUserGettingDressed --> AnticipateUsersDay
+  AnticipateUsersDay --> RecommendOOTD
+  RecommendOOTD --> (terminal)
+
+Datasets:
+  seed.jsonl: 10 examples
+  golden.jsonl: 25 examples
+
+Compiled:
+  AnticipateUsersDay.json: 4 demos
+  RecommendOOTD.json: 8 demos
+  IsTheUserGettingDressed.json: (missing)
+
+Eval:
+  Last score: 72.3% (2026-02-08)
+```
+
+## Progressive Complexity Tiers
+
+The tiers are **not** architecturally separate modules. They are **levels of configuration** within the same modules.
+
+### Tier 0: Zero Config
+
+```
+bae init my_domain
+# Edit graph.py with your nodes
+bae eval my_domain
+```
+
+Uses:
+- Default completion metric
+- Auto-generated seed dataset from start node defaults (if possible)
+- No optimization
+
+### Tier 1: Custom Data
+
+```
+# Add examples to datasets/seed.jsonl
+bae eval my_domain
+```
+
+Uses:
+- Default completion metric
+- User-provided seed data
+- No optimization
+
+### Tier 2: Custom Metrics
 
 ```python
-# v1: node is None when graph terminates normally
-# v2: node is the terminal node instance (its fields are the output)
+# my_domain/eval.py
+def metric(result):
+    """Custom quality metric."""
+    terminal = result.result
+    return 1.0 if terminal and len(terminal.final_response) > 50 else 0.0
 ```
 
-This is mostly a semantic change. The data structure stays the same, but the terminal node is always the last trace entry and `result.node` should be that terminal node.
-
-### 7. Start Node and Terminal Node Semantics
-
-**Start node:**
-- Fields are caller-provided (no Dep, no Recall, no LM fill)
-- Validation should enforce: start node has no Dep/Recall annotations
-- Start node is created by the user: `graph.run(MyStartNode(field=value))`
-- This is already how v1 works, just needs enforcement
-
-**Terminal node:**
-- Returns `None` from `__call__` (unchanged)
-- Fields ARE the output schema
-- All fields filled by bae (Dep, Recall, LM) during the last transition
-- `GraphResult.node` should be the terminal node instance
-
-## New Components Needed
-
-### A. `bae/resolver.py` (NEW MODULE)
-
-Houses the Dep and Recall resolution logic. This is the core new functionality.
-
-**Contents:**
-- `resolve_fields(target_cls, trace, dep_cache) -> dict[str, Any]`
-- `resolve_dep(fn, dep_cache) -> Any` (with chaining)
-- `resolve_recall(target_type, trace) -> Any`
-- `build_dep_dag(fn) -> list[Callable]` (topological sort of dep chain)
-
-**Rationale for separate module:** This logic is self-contained, testable in isolation, and doesn't belong in graph.py (which is already handling topology and execution). The resolver is a new concept that deserves its own module.
-
-### B. Updated `bae/markers.py`
-
-Not a new module, but significantly changed. Dep gets a callable, Recall is new, Context and Bind are removed.
-
-## Integration Points
-
 ```
-                    +------------------+
-                    |      Graph       |
-                    | - _discover()    |  UNCHANGED
-                    | - validate()     |  MODIFIED (remove Bind check, add start/dep DAG checks)
-                    | - run()          |  MAJOR REWRITE
-                    +--------+---------+
-                             |
-              +--------------+--------------+
-              |              |              |
-    +---------v---+   +------v------+  +----v----------+
-    |   Node      |   |  Resolver   |  |    LM         |
-    | - fields    |   |  (NEW)      |  | - choose_type |
-    | - __call__  |   | - deps      |  | - fill        |
-    | - successors|   | - recalls   |  +----+----------+
-    +-------------+   +------+------+       |
-                             |        +-----+------+
-                             |        |            |
-                      +------v------+ v            v
-                      |   markers   | PydanticAI  DSPy
-                      | - Dep(fn)   | Backend     Backend
-                      | - Recall()  |
-                      +-------------+
+bae eval my_domain
+# Auto-discovers metric from eval.py
 ```
 
-### Data Flow (v2)
+### Tier 3: Optimization
 
 ```
-1. Graph.__init__(start=StartNode)
-   --> _discover() walks return types (UNCHANGED)
+bae optimize my_domain
+bae eval my_domain --optimized
+bae run my_domain --optimized -i '{"user_message": "..."}'
+```
 
-2. Graph.run(StartNode(field=value))
-   --> start_node added to trace
+### Tier 4: Advanced (MIPROv2, Custom Optimizers)
 
-3. Loop iteration:
-   a. _get_routing_strategy(current) --> strategy
-   b. If terminal: break, return current as result
-   c. If decide: lm.choose_type(current, [TypeA, TypeB]) --> target_type
-      If make: target_type = strategy[1]
-   d. resolver.resolve_fields(target_type, trace, dep_cache)
-      --> resolves Dep fields (calls fns, caches results)
-      --> resolves Recall fields (searches trace)
-      --> returns {field_name: value} for resolved fields
-   e. lm.fill(current, target_type, resolved_fields)
-      --> LM gets: current node as context, resolved fields as additional context
-      --> LM produces: values for remaining plain fields
-      --> Returns: target_type instance with all fields populated
-   f. next_node added to trace
-   g. current = next_node
+```python
+# my_domain/eval.py
+from bae.eval import EvalConfig
+
+config = EvalConfig(
+    optimizer="mipro",
+    max_bootstrapped_demos=8,
+    num_trials=50,
+)
+```
+
+The architecture supports this by:
+- `eval.py` is an optional configuration surface
+- Config discovery is convention-based (look for `config` attribute in eval.py)
+- Defaults are sensible at every tier
+- No tier requires understanding the tier above it
+
+## Data Flow: Complete Pipeline
+
+```
+                    [Developer writes graph.py]
+                              |
+                              v
+                    bae init my_domain
+                    bae graph update my_domain
+                              |
+                              v
+                    [Developer adds seed data]
+                    my_domain/datasets/seed.jsonl
+                              |
+                              v
+                    bae eval my_domain
+                              |
+                    __________|__________
+                   |                     |
+                   v                     v
+            evaluate()            Display EvalResult
+            for each input:       (score, per-example)
+              Graph.run(input)
+              metric(result)
+                   |
+                   v
+            [Developer reviews, adds golden traces]
+            my_domain/datasets/golden.jsonl
+                              |
+                              v
+                    bae optimize my_domain
+                              |
+                    __________|__________
+                   |          |          |
+                   v          v          v
+            compile_graph  trace_to_examples  optimize_node
+                   |          |               (BootstrapFewShot)
+                   v          v                    |
+            CompiledGraph  dspy.Example list       v
+                   |_________________________ dspy.Predict
+                                              (optimized)
+                              |
+                              v
+                    save_optimized()
+                    my_domain/compiled/NodeA.json
+                              |
+                              v
+                    bae run my_domain --optimized
+                              |
+                              v
+                    create_optimized_lm(graph, "my_domain/compiled/")
+                              |
+                              v
+                    graph.run(input, lm=OptimizedLM)
 ```
 
 ## Suggested Build Order
 
-Based on dependency analysis:
+Based on dependency analysis, the build order should be:
 
-### Phase 1: Markers + Resolver (Foundation)
+### Phase 1: Package Foundation
 
-1. **Refactor markers.py** -- New Dep(callable), new Recall(), remove Context/Bind
-2. **Create resolver.py** -- Dep resolution with chaining, Recall trace search
-3. **Test resolver in isolation** -- Unit tests for dep DAG, recall search, error cases
+**New:** `bae/package.py` + `bae init` CLI command + `bae graph update` command
 
-*Rationale:* Everything else depends on these. They're testable without touching graph.py or lm.py.
+Why first: Everything else needs package discovery. The domain package structure is the organizational primitive. Without it, eval and optimize don't know where to find data or write artifacts.
 
-### Phase 2: Node + LM Protocol (Interface)
+Dependencies: Only `bae/graph.py` (for Graph import) and `bae/cli.py` (for command registration).
 
-4. **Update node.py** -- Remove `lm` from `__call__`, update default implementation
-5. **Update LM protocol** -- `choose_type` + `fill` replacing `make` + `decide`
-6. **Update one backend** (PydanticAI or DSPy) -- Implement new protocol
+Deliverables:
+- `BaePackage` dataclass
+- `discover_package()` function
+- `bae init <name>` command (scaffold domain package)
+- `bae graph update <pkg>` command (auto-generate graph.md with mermaid + field docs)
+- `bae inspect <pkg>` command (show package status)
 
-*Rationale:* Node changes are small but affect every test. LM protocol change gates the execution loop rewrite.
+### Phase 2: Dataset + Eval
 
-### Phase 3: Execution Loop (Integration)
+**New:** `bae/dataset.py` + `bae/eval.py` + `bae eval` CLI command
 
-7. **Rewrite Graph.run()** -- New execution loop with resolver integration
-8. **Update validation** -- Remove Bind checks, add start node + dep DAG checks
-9. **Remove incant dependency** -- No longer needed
+Why second: Eval is the feedback loop. You need to measure before you can optimize. This is the highest-value feature for developers.
 
-*Rationale:* This is the integration phase. Everything from phases 1-2 comes together here.
+Dependencies: Phase 1 (package discovery), `bae/graph.py` (Graph.run), `bae/result.py` (GraphResult).
 
-### Phase 4: Compiler + Optimization (Adaptation)
+Deliverables:
+- `EvalDataset` class with load/save from JSONL
+- `evaluate()` function wrapping Graph.run() in a scoring loop
+- `EvalResult` dataclass with aggregate score + per-example breakdown
+- Default metrics (completion, field completeness)
+- `bae eval <pkg>` command
+- `bae run <pkg> --save-trace` enhancement for dataset building
 
-10. **Update compiler.py** -- New signature generation (Dep/Recall as InputField, plain as OutputField)
-11. **Update optimizer.py** -- Trace format changes, metric updates
-12. **Update OptimizedLM** -- Implement new protocol over optimized predictors
+### Phase 3: Optimize Integration
 
-*Rationale:* Compiler and optimization are downstream of the core execution changes.
+**Modified:** `bae/optimizer.py` (parameterize optimizer type) + `bae optimize` CLI command
 
-### Phase 5: Cleanup + Migration
+Why third: Optimization depends on having eval data and metrics. The optimization primitives already exist -- this phase wires them into the CLI and package workflow.
 
-13. **Update __init__.py exports** -- Remove Context/Bind, add Recall
-14. **Update all tests** -- Remove v1 patterns, test v2 behavior
-15. **Verify examples/ootd.py runs end-to-end**
+Dependencies: Phase 2 (datasets, metrics), `bae/compiler.py`, `bae/optimizer.py`.
 
-## Risk Assessment
+Deliverables:
+- `bae optimize <pkg>` command
+- `bae run <pkg> --optimized` flag
+- Configurable optimizer selection (BootstrapFewShot, MIPROv2)
+- Post-optimization eval comparison
 
-| Risk | Severity | Mitigation |
-|------|----------|------------|
-| Dep chaining creates cycles | HIGH | DAG validation at graph init, not at runtime |
-| Recall finds wrong type match | MEDIUM | Exact type match first, subclass match as fallback |
-| Custom __call__ escape hatch unclear | MEDIUM | Design decision needed: what do custom nodes return? |
-| LM fill quality degrades vs make | LOW | fill() gets more context (resolved deps), should be better |
-| incant removal breaks something unexpected | LOW | incant only used in one place (Graph.run custom path) |
+### Phase 4: Polish + Advanced
+
+**Enhancements across all modules**
+
+Why last: Polish after core workflow works end-to-end.
+
+Deliverables:
+- LLM-as-judge metric helpers
+- Eval result persistence and comparison (`bae eval <pkg> --compare baseline.json`)
+- Tier 4 config surface (EvalConfig in eval.py)
+- Better error messages and progress display
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern: DSPy Module Wrapper
+
+**Do not** make Graph a subclass of `dspy.Module`. Graph has its own execution model (step-by-step with resolve/fill). Wrapping it in dspy.Module would require adapting Graph.run() to DSPy's forward() convention, losing type safety and trace structure.
+
+**Instead:** Bridge at the data boundary. Use `trace_to_examples()` to convert bae outputs to DSPy inputs. Keep Graph.run() as the execution primitive.
+
+### Anti-Pattern: Eval Config as YAML/TOML
+
+**Do not** introduce a new config file format (eval.yaml, bae.toml). Python files are more powerful and already the project's language.
+
+**Instead:** Convention-based discovery in eval.py. A `metric` function, a `config` object -- all optional, all Python.
+
+### Anti-Pattern: Abstract Metric Base Class
+
+**Do not** create `class Metric(ABC)` with `score()` method. This adds ceremony for no benefit.
+
+**Instead:** Metrics are plain callables: `Callable[[GraphResult], float]`. Any function works. Any lambda works. No registration, no subclassing.
+
+### Anti-Pattern: Separate Compiled Registry
+
+**Do not** build a global registry of compiled predictors. The filesystem (my_domain/compiled/) IS the registry.
+
+**Instead:** `create_optimized_lm(graph, path)` already loads from disk. The convention is: compiled artifacts live in the package's `compiled/` directory.
+
+### Anti-Pattern: graph.md as Required
+
+**Do not** make graph.md a required file that blocks eval. It's a generated documentation artifact.
+
+**Instead:** graph.md is auto-generated on `bae init` and `bae graph update`. Its absence doesn't block any operation.
+
+## Integration Points Summary
+
+| Existing Component | New Component | Integration Type | Details |
+|---------------------|---------------|------------------|---------|
+| `Graph` | `BaePackage` | Composition | BaePackage holds a Graph |
+| `Graph.run()` | `evaluate()` | Call | evaluate() calls Graph.run() in a loop |
+| `Graph.start` | `bae init` | Read | Scaffold uses start node's fields for seed data template |
+| `GraphResult.trace` | `EvalDataset.from_traces()` | Conversion | Traces become dataset examples |
+| `trace_to_examples()` | `bae optimize` | Call | CLI uses existing function |
+| `compile_graph()` | `bae optimize` | Call | CLI uses existing function |
+| `save_optimized()` | `bae optimize` | Call | Writes to pkg.compiled_dir |
+| `create_optimized_lm()` | `bae run --optimized` | Call | Loads from pkg.compiled_dir |
+| `cli._load_graph_from_module()` | `discover_package()` | Subsumes | Package discovery is superset of module loading |
+| `cli.app` (Typer) | New commands | Extension | `@app.command()` additions |
+| `Graph.to_mermaid()` | `bae graph update` | Call | Writes mermaid to graph.md |
+| `Graph.nodes` / `Graph.edges` | `bae inspect` | Read | Display graph topology |
+| `classify_fields()` | graph.md generation | Call | Document field types per node |
+| `_get_routing_strategy()` | `bae inspect` | Call | Show routing info per node |
 
 ## Open Design Questions
 
-### 1. Custom __call__ escape hatch
+### 1. Metric signature: (GraphResult) or (example, result)?
 
-When a node has custom logic in `__call__`, what can it do in v2? In v1 it received `lm` and could call `lm.make()` / `lm.decide()`. In v2 there's no `lm` parameter.
+The current proposal uses `Callable[[GraphResult], float]`. But golden-trace metrics need access to the expected output too. Two options:
 
-**Options:**
-- A) Custom `__call__` returns a type (bae resolves fields)
-- B) Custom `__call__` returns a dict of field overrides + a type
-- C) Custom `__call__` receives a `Context` object with trace/lm/resolver access
-- D) Custom `__call__` can still receive lm via NodeConfig or graph-level injection
+**Option A:** `Callable[[GraphResult], float]` -- metric only sees the result. Golden comparison happens outside the metric (dataset loader attaches expected to result metadata).
 
-**Recommendation:** Option A for simplicity. If custom logic needs to set specific field values, Option B as extension. Option C is over-engineering for v2.
+**Option B:** `Callable[[dict, GraphResult], float]` -- metric sees both input and result. Cleaner for golden trace comparison.
 
-### 2. Dep cache scope
+**Recommendation:** Option B. The input dict is cheap to pass and enables golden-trace metrics without monkey-patching GraphResult.
 
-Should dep fn results be cached per-step or per-run?
+### 2. Dataset file naming convention
 
-- Per-step: `get_weather()` called fresh each time a node needs it
-- Per-run: `get_weather()` called once, result reused across all nodes
+Should seed vs golden be distinguished by filename convention or by content structure?
 
-The ootd.py example suggests per-run (weather doesn't change mid-conversation). But some deps might be time-sensitive.
+**Recommendation:** Filename convention. `seed.jsonl` has input dicts, `golden.jsonl` has `{"input": ..., "expected": ...}` dicts. The loader infers format from filename prefix or structure detection.
 
-**Recommendation:** Per-run cache by default. Add a `cache=False` option to Dep if needed later (YAGNI for now).
+### 3. graph.md format
 
-### 3. Start node Dep/Recall validation
+How much documentation goes in graph.md? Options:
 
-Should bae error if start node has Dep or Recall fields? Or silently skip resolution?
+**Minimal:** Just mermaid diagram + node list
+**Medium:** Mermaid + field table per node (type, annotation, description)
+**Full:** Mermaid + fields + routing strategy + dep chain visualization
 
-**Recommendation:** Error. Start node fields are caller-provided. If a user puts Dep on a start node, it's a mistake.
-
-### 4. Terminal node field population
-
-In the ootd.py example, `RecommendOOTD` is the terminal node. Its fields (top, bottom, footwear, etc.) need to be filled by the LM. So terminal nodes DO go through field resolution -- they're not just passthrough.
-
-The flow for the last step is:
-1. Current node is `AnticipateUsersDay` (all fields resolved)
-2. Strategy: make `RecommendOOTD`
-3. Resolve `RecommendOOTD`'s Dep/Recall fields (none in this case)
-4. LM fills plain fields (top, bottom, footwear, etc.)
-5. `RecommendOOTD` instance is the final output
-
-This means terminal detection should happen AFTER the node is constructed, not before. The loop should check if the newly constructed node's `__call__` returns None.
+**Recommendation:** Medium. Field tables are useful for developers; routing strategy and dep chains are available via `bae inspect` and don't need to be in a static file.
 
 ## Sources
 
-- Bae codebase analysis: `bae/node.py`, `bae/graph.py`, `bae/lm.py`, `bae/compiler.py`, `bae/markers.py`
-- v2 reference implementation: `examples/ootd.py`
-- v2 design decisions: `.planning/PROJECT.md` (v2 Design Decisions section)
-- v1 architecture: `.planning/codebase/ARCHITECTURE.md`
-- v1 research: `.planning/research/ARCHITECTURE.md` (DSPy integration)
+- [DSPy Evaluate API](https://dspy.ai/api/evaluation/Evaluate/) - HIGH confidence
+- [DSPy Evaluation Overview](https://dspy.ai/learn/evaluation/overview/) - HIGH confidence
+- [DSPy Metrics](https://dspy.ai/learn/evaluation/metrics/) - HIGH confidence
+- [DSPy Optimizers](https://dspy.ai/learn/optimization/optimizers/) - HIGH confidence
+- [DSPy Cheatsheet](https://dspy.ai/cheatsheet/) - HIGH confidence
+- [Typer Subcommands](https://typer.tiangolo.com/tutorial/subcommands/add-typer/) - HIGH confidence
+- Direct codebase analysis of all bae/ source files - HIGH confidence
 
 ---
-*Architecture research: 2026-02-07 -- v2 context frames integration*
+*Architecture research: 2026-02-08 -- eval/optimization DX integration*

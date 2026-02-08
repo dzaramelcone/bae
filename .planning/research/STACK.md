@@ -1,329 +1,375 @@
-# Technology Stack: v2.0 Context Frames
+# Technology Stack: v3.0 Eval/Optimization DX
 
 **Project:** Bae - Type-driven agent graphs with DSPy optimization
-**Researched:** 2026-02-07
-**Focus:** Stack additions/changes for Dep(callable) chaining, Recall() trace search, field categorization, and Annotated metadata extraction
-**Overall confidence:** HIGH -- verified all patterns against live Python 3.14 + Pydantic 2.12.5 in bae's venv
+**Researched:** 2026-02-08
+**Focus:** Stack additions for eval/optimization developer workflow, CLI tooling, LLM-as-judge, and package scaffolding
+**Overall confidence:** HIGH for DSPy integration, MEDIUM for alternative eval frameworks
 
 ---
 
 ## Executive Summary
 
-v2.0 context frames require **zero new dependencies**. Every capability needed -- DAG resolution, Annotated metadata extraction, field categorization, trace search -- is covered by Python's standard library (`graphlib`, `typing`) and Pydantic's existing `FieldInfo` API. The one dependency to **remove** is `incant`, which v2's `Dep(callable)` replaces entirely.
+Bae v3.0's eval/optimization DX needs **3 new dependencies** and leverages **1 existing dependency more deeply** (DSPy). The core insight: DSPy already has everything needed for evals and optimization -- `dspy.Evaluate`, `EvaluationResult`, and three optimizer tiers (BootstrapFewShot, MIPROv2, SIMBA). Bae's job is not to build eval infrastructure but to **wrap DSPy's eval primitives in a zero-friction CLI** that converts bae graph concepts to DSPy concepts transparently.
 
-The key insight verified through live testing: Pydantic's `FieldInfo.metadata` already contains Dep/Recall instances when fields use `Annotated[T, Dep(fn)]`. This means bae can use either `model_fields[name].metadata` (simpler, Pydantic-native) or `get_type_hints(include_extras=True)` + `get_origin`/`get_args` (lower-level, needed for dep function parameter introspection). Both approaches work; the right tool depends on context.
+For LLM-as-judge, DSPy's own pattern (use `dspy.Predict(Assess)` inside a metric function) is the right approach -- it integrates natively with optimization. External eval frameworks (DeepEval, RAGAS, Braintrust) are overkill for bae's use case and would add dependency bloat.
 
----
-
-## Stack Changes: v1 to v2
-
-### Remove
-
-| Package | Current Use | v2 Replacement | Why Remove |
-|---------|------------|----------------|------------|
-| `incant` | Dep injection in `Graph.run()` via `Incanter.compose_and_call` | `Dep(callable)` with `graphlib.TopologicalSorter` for DAG resolution | incant is a generic DI framework; v2's Dep system is simpler, purpose-built, and avoids the hook factory indirection. The entire `_create_dep_hook_factory` + `_is_dep_annotated` machinery in `graph.py` goes away. |
-
-### Add (stdlib only -- no new pip packages)
-
-| Module | Purpose | Already Available |
-|--------|---------|-------------------|
-| `graphlib.TopologicalSorter` | Resolve dep function execution order | Yes, stdlib since Python 3.9 |
-| `typing.get_type_hints(include_extras=True)` | Extract Annotated metadata from dep function signatures | Yes, stdlib |
-| `typing.get_origin` / `typing.get_args` | Decompose `Annotated[T, Dep(fn)]` into base type + metadata | Yes, stdlib (already used in `graph.py`) |
-
-### Keep (unchanged)
-
-| Package | Version (installed) | v2 Role |
-|---------|-------------------|---------|
-| `pydantic` | 2.12.5 | Node base class, field introspection, model validation |
-| `pydantic-ai` | (installed) | LLM backend (`PydanticAIBackend`) |
-| `dspy` | 3.1.2 | DSPy compilation (orthogonal to context frames) |
-| `typer` | (installed) | CLI |
+New dependencies: `rich` (eval output formatting), `copier` (project scaffolding, dev-only), and no new eval framework -- DSPy covers it.
 
 ---
 
-## Capability 1: DAG Resolution for Dep Chaining
+## Recommended Stack Changes
 
-### Recommendation: `graphlib.TopologicalSorter` (stdlib)
+### Add
 
-**Why:** Built into Python since 3.9. Bae requires 3.14+, so this is guaranteed available. No external dep needed. The API is minimal and correct: it detects cycles (raises `CycleError`), handles the exact graph shape we need, and `static_order()` gives us execution order in one call.
+| Package | Version | Purpose | Why |
+|---------|---------|---------|-----|
+| `rich` | >=14.0 | Eval result tables, progress bars, trace visualization in CLI | Already a transitive dep of typer. Making it explicit enables direct use for eval output formatting (tables, color-coded scores, progress). |
 
-**Why not external libraries:** Libraries like `networkx` or `toposort` are overkill. We need exactly one operation (topological sort of a small function DAG), not a graph analysis toolkit. `graphlib` does this in ~5 lines.
+### Add (dev/optional only)
 
-### Verified Pattern
+| Package | Version | Purpose | Why |
+|---------|---------|---------|-----|
+| `copier` | >=9.0 | Project scaffolding via `bae new` command | For `bae new my_domain` -> generates `my_domain/graph.py` + `graph.md`. Install via `uv tool install copier` or `pipx`, not as project dep. Template lives in bae repo. |
 
-Tested and confirmed working in bae's venv (Python 3.14, Pydantic 2.12.5):
+### Keep (leverage more deeply)
 
-```python
-from graphlib import TopologicalSorter, CycleError
-from typing import Annotated, get_type_hints, get_origin, get_args
+| Package | Current Version | New v3 Role |
+|---------|----------------|-------------|
+| `dspy` | 3.1.2 (latest: 3.1.3) | `dspy.Evaluate` for eval runs, MIPROv2/SIMBA for optimization, LLM-as-judge via `dspy.Predict(Assess)` inside metric functions |
+| `typer` | >=0.12 (latest: 0.21.1) | New CLI commands: `bae eval`, `bae optimize`, `bae inspect` |
+| `pydantic` | 2.12.5 | Eval dataset schemas, metric result models |
 
-def resolve_dep_order(node_cls: type[Node]) -> list[Callable]:
-    """Discover all Dep functions on a node, resolve transitive deps,
-    return execution order via topological sort."""
+### Do NOT Add
 
-    # 1. Collect direct dep fns from node fields
-    hints = get_type_hints(node_cls, include_extras=True)
-    direct_deps = []
-    for field_name, hint in hints.items():
-        if get_origin(hint) is Annotated:
-            for arg in get_args(hint)[1:]:
-                if isinstance(arg, Dep):
-                    direct_deps.append(arg.fn)
-
-    # 2. Discover transitive deps by introspecting fn params
-    all_fns = set(direct_deps)
-    to_scan = list(direct_deps)
-    while to_scan:
-        fn = to_scan.pop()
-        fn_hints = get_type_hints(fn, include_extras=True)
-        for param_name, param_hint in fn_hints.items():
-            if param_name == "return":
-                continue
-            if get_origin(param_hint) is Annotated:
-                for arg in get_args(param_hint)[1:]:
-                    if isinstance(arg, Dep):
-                        if arg.fn not in all_fns:
-                            all_fns.add(arg.fn)
-                            to_scan.append(arg.fn)
-
-    # 3. Build predecessor graph for TopologicalSorter
-    graph = {}
-    for fn in all_fns:
-        fn_hints = get_type_hints(fn, include_extras=True)
-        predecessors = set()
-        for param_name, param_hint in fn_hints.items():
-            if param_name == "return":
-                continue
-            if get_origin(param_hint) is Annotated:
-                for arg in get_args(param_hint)[1:]:
-                    if isinstance(arg, Dep):
-                        predecessors.add(arg.fn)
-        graph[fn] = predecessors
-
-    # 4. Topological sort -- CycleError if circular deps
-    ts = TopologicalSorter(graph)
-    return list(ts.static_order())
-```
-
-**Test result:** For `get_weather(location: LocationDep)` where `LocationDep = Annotated[GeoLocation, Dep(get_location)]`, the output is `[get_location, get_schedule, get_weather]` -- location resolves before weather. Confirmed correct.
-
-### Error Handling
-
-`graphlib.CycleError` is a subclass of `ValueError`. When a cycle is detected:
-- `CycleError.args[1]` contains the cycle as a list where first and last elements are identical
-- Bae should catch this and raise a `BaeError` with a clear message about the circular dependency
-
-### Key API Details
-
-| Method | Use |
-|--------|-----|
-| `TopologicalSorter(graph)` | Constructor; graph is `{node: {predecessors}}` |
-| `static_order()` | Returns iterator of nodes in valid execution order |
-| `CycleError` | Raised if graph has cycles; `.args[1]` has the cycle |
-| `prepare()` + `get_ready()` + `done()` | For parallel execution (YAGNI for now) |
+| Temptation | Why Not | What Instead |
+|------------|---------|--------------|
+| **DeepEval** | 50+ metrics is massive scope creep; bae needs 3-5 metric patterns, not 50. DeepEval's Confident AI cloud platform is vendor lock-in. | DSPy metric functions (plain Python). |
+| **RAGAS** | RAG-specific (context_relevancy, faithfulness). Bae is agent graphs, not RAG pipelines. Wrong abstraction. | Custom metrics via DSPy. |
+| **Braintrust / autoevals** | Cloud platform dependency. `autoevals` library is useful standalone but adds 130+ KB for features DSPy already provides natively. | DSPy LLM-as-judge pattern with `dspy.Predict`. |
+| **Promptfoo** | Node.js-based, YAML config paradigm. Bae is Python-native with type hints. Impedance mismatch. | DSPy eval + bae CLI. |
+| **Inspect AI** | Excellent framework but designed for benchmark evals (safety, capability). Bae needs dev-loop evals (quality iteration). Different use case. | DSPy eval for iteration, possibly Inspect for benchmarking later. |
+| **judges** (quotient-ai) | Small, focused library but depends on `instructor`. Redundant with DSPy's built-in `dspy.Predict(Assess)` pattern for LLM-as-judge. | DSPy metric with Assess signature. |
+| **mermaid-py** | Uses external mermaid.ink service for rendering. Bae already generates raw Mermaid text via `Graph.to_mermaid()`. No rendering library needed. | String concatenation in `Graph.to_mermaid()` (already works). |
+| **pymermaider** | Generates class diagrams from code. Bae needs graph (flowchart) diagrams from type hints, which it already does. | Existing `Graph.to_mermaid()`. |
+| **cookiecutter** | No template update support. Copier supports updating projects when template evolves. | Copier for scaffolding. |
 
 ---
 
-## Capability 2: Type Matching for Recall (Trace Search)
+## Deep Dive: DSPy Eval/Optimization (Current State)
 
-### Recommendation: Linear scan with `isinstance` check
+### DSPy Version: 3.1.3 (Feb 5, 2026)
 
-**Why:** The trace is a `list[Node]` that grows one node per step. For typical agent graphs (5-30 steps), this is a list of 5-30 items. Linear backward scan is the right approach -- anything fancier (indexing by type, etc.) is premature optimization.
+**Confidence: HIGH** -- verified against [PyPI](https://pypi.org/project/dspy/) and [official docs](https://dspy.ai/)
 
-### Verified Pattern
+### dspy.Evaluate API
 
-```python
-def recall_from_trace(target_type: type, trace: list[Node]) -> object | None:
-    """Search trace backward for the nearest field matching target_type."""
-    for node in reversed(trace):
-        for field_name in type(node).model_fields:  # class-level access, not instance
-            value = getattr(node, field_name)
-            if isinstance(value, target_type):
-                return value
-    return None
-```
-
-**Important Pydantic 2.12 note:** Accessing `node.model_fields` (instance-level) is deprecated since Pydantic 2.11 and will be removed in v3. Use `type(node).model_fields` or `node.__class__.model_fields` instead. This was surfaced by a deprecation warning during testing.
-
-### Field Resolution at Node Construction
-
-When bae constructs a new node, Recall fields are resolved from the trace:
+The core eval primitive. Bae should wrap this, not replace it.
 
 ```python
-hints = get_type_hints(target_node_cls, include_extras=True)
-recall_values = {}
-for field_name, hint in hints.items():
-    if get_origin(hint) is Annotated:
-        base_type = get_args(hint)[0]
-        for arg in get_args(hint)[1:]:
-            if isinstance(arg, Recall):
-                value = recall_from_trace(base_type, trace)
-                if value is not None:
-                    recall_values[field_name] = value
-                break
+from dspy.evaluate import Evaluate
+
+evaluator = Evaluate(
+    devset=devset,               # list[dspy.Example]
+    metric=your_metric,          # Callable(example, pred, trace=None) -> float|bool
+    num_threads=4,               # Parallel eval
+    display_progress=True,       # Progress bar
+    display_table=5,             # Show N rows of results
+    max_errors=5,                # Fail after N errors
+    save_as_json="results.json", # Persist results
+)
+
+result = evaluator(your_program)
+# result.score -> float (e.g., 67.3)
+# result.results -> list[(example, prediction, score)]
 ```
 
-### Performance Note
+**Key insight:** `Evaluate.__call__` returns an `EvaluationResult` with `.score` (float percentage) and `.results` (list of (example, prediction, score) tuples). This is everything bae needs to display eval results in a rich CLI table.
 
-If graphs ever grow beyond ~100 steps, consider building a `dict[type, object]` index during trace accumulation (O(1) lookup). But for v2, YAGNI -- the linear scan is correct and simple.
+### DSPy Metric Patterns
+
+Metrics are plain Python functions. Three patterns relevant to bae:
+
+#### Pattern 1: Type-Check Metric (what bae has now)
+
+```python
+def node_transition_metric(example, pred, trace=None):
+    match = expected_type == predicted_type
+    return match if trace is not None else (1.0 if match else 0.0)
+```
+
+#### Pattern 2: Field Comparison Metric (zero-config quality)
+
+```python
+def field_quality_metric(example, pred, trace=None):
+    """Compare expected vs actual field values."""
+    score = 0.0
+    total = 0
+    for field in expected_fields:
+        if getattr(pred, field, None) == getattr(example, field, None):
+            score += 1.0
+        total += 1
+    return score / total if total else 0.0
+```
+
+#### Pattern 3: LLM-as-Judge Metric (the key new capability)
+
+```python
+class Assess(dspy.Signature):
+    """Assess the quality of an answer on a given dimension."""
+    assessed_text: str = dspy.InputField()
+    assessment_question: str = dspy.InputField()
+    assessment_answer: bool = dspy.OutputField()
+
+def quality_metric(example, pred, trace=None):
+    assessor = dspy.Predict(Assess)
+    result = assessor(
+        assessed_text=pred.output,
+        assessment_question="Is this response helpful and accurate?"
+    )
+    return result.assessment_answer
+```
+
+**Critical:** When a metric itself uses `dspy.Predict`, it participates in DSPy's trace during optimization. This means MIPROv2/SIMBA can optimize the judge prompt too -- a capability no external eval framework provides.
+
+### DSPy Optimizer Tiers
+
+Bae should expose these as progressive optimization levels:
+
+| Tier | Optimizer | What It Optimizes | Compute Cost | When to Use |
+|------|-----------|-------------------|--------------|-------------|
+| 1 | `BootstrapFewShot` | Few-shot examples only | Low (1 pass) | First try, <50 examples |
+| 2 | `MIPROv2(auto="light")` | Instructions + examples | Medium (Bayesian search) | Have 50+ examples, want better prompts |
+| 3 | `MIPROv2(auto="medium")` | Instructions + examples | High (more trials) | Production prep |
+| 4 | `MIPROv2(auto="heavy")` | Instructions + examples | Very high | Maximum quality |
+| 5 | `SIMBA` | Self-reflective rules + demos | High (introspective) | Large LLMs, hard tasks |
+
+**Bae already uses tier 1** (BootstrapFewShot in `optimizer.py`). v3 adds tiers 2-5 as CLI options.
+
+### MIPROv2 API (for bae integration)
+
+```python
+optimizer = dspy.MIPROv2(
+    metric=metric_fn,
+    auto="light",                    # "light" | "medium" | "heavy"
+    max_bootstrapped_demos=4,        # Generated examples
+    max_labeled_demos=4,             # From dataset
+    num_threads=4,                   # Parallel
+    verbose=True,                    # Progress output
+    log_dir="./optimization_logs",   # Save logs
+)
+
+optimized = optimizer.compile(
+    student=dspy_program,
+    trainset=trainset,
+    minibatch=True,                  # Faster for large datasets
+    minibatch_size=35,
+)
+```
+
+### SIMBA API (newer, experimental)
+
+```python
+optimizer = dspy.SIMBA(
+    metric=metric_fn,
+    max_steps=8,                     # Optimization iterations
+    max_demos=4,                     # Max demos per predictor
+    bsize=32,                        # Mini-batch size
+    num_candidates=6,                # Candidates per iteration
+)
+
+optimized = optimizer.compile(
+    student=dspy_program,
+    trainset=trainset,
+)
+# optimized.candidate_programs -> list of candidates
+# optimized.trial_logs -> optimization history
+```
 
 ---
 
-## Capability 3: Distinguishing "Has Value" vs "Needs LLM Fill"
+## Deep Dive: LLM-as-Judge Approaches
 
-### Recommendation: Three-way field categorization using `FieldInfo.metadata` + `FieldInfo.is_required()`
+### Recommendation: DSPy-native Assess pattern
 
-The v2 model has exactly three field categories:
+**Why not external libraries:**
 
-| Category | How to Detect | Source |
-|----------|--------------|--------|
-| **Dep field** | `FieldInfo.metadata` contains a `Dep` instance | Bae calls the dep function |
-| **Recall field** | `FieldInfo.metadata` contains a `Recall` instance | Bae searches the trace |
-| **LLM field** | No Dep/Recall in metadata | LLM fills when constructing this node |
+| Library | Approach | Why Not for Bae |
+|---------|----------|-----------------|
+| `judges` (quotient-ai) | Instructor-based classifiers/graders | Adds `instructor` dep. DSPy's `dspy.Predict(Assess)` does the same thing natively. |
+| `autoevals` (Braintrust) | Pre-built LLM scorers (Factuality, etc.) | Useful concepts but the library is external to DSPy. Metric functions wouldn't participate in DSPy optimization traces. |
+| `deepeval` | G-Eval, hallucination detection | 50+ metrics, massive scope. G-Eval pattern is implementable in 10 lines with `dspy.Predict`. |
 
-### Verified Pattern
+**The killer advantage of DSPy-native LLM-as-judge:** When your metric uses `dspy.Predict`, DSPy can optimize the judge itself. External frameworks evaluate but don't participate in the optimization loop.
 
-Tested and confirmed on Pydantic 2.12.5:
+### Bae's LLM-as-Judge Design
+
+Progressive complexity for metric authoring:
 
 ```python
-def categorize_fields(node_cls: type[Node]) -> tuple[dict, dict, dict]:
-    """Categorize node fields into dep, recall, and llm-fill buckets.
+# Level 0: Zero-config (type-check only -- what exists today)
+# No metric needed, bae provides node_transition_metric
 
-    Returns:
-        (dep_fields, recall_fields, llm_fields) where each is
-        {field_name: metadata_instance} or {field_name: FieldInfo}.
-    """
-    dep_fields = {}
-    recall_fields = {}
-    llm_fields = {}
+# Level 1: Example-based (user provides expected outputs)
+# Bae generates a field comparison metric automatically
+# User just needs: input -> expected_output pairs
 
-    for field_name, fi in node_cls.model_fields.items():
-        found = False
-        for meta in fi.metadata:
-            if isinstance(meta, Dep):
-                dep_fields[field_name] = meta
-                found = True
-                break
-            elif isinstance(meta, Recall):
-                recall_fields[field_name] = meta
-                found = True
-                break
-        if not found:
-            llm_fields[field_name] = fi
+# Level 2: LLM-as-Judge (user provides assessment questions)
+# Bae generates a dspy.Predict(Assess) metric
+# User writes: "Is the outfit recommendation weather-appropriate?"
 
-    return dep_fields, recall_fields, llm_fields
+# Level 3: Custom metric (user writes Python)
+# Full control, plain function signature
+def my_metric(example, pred, trace=None) -> float | bool:
+    ...
 ```
-
-### Why `FieldInfo.metadata` and Not `get_type_hints`
-
-Two approaches exist:
-
-1. **`FieldInfo.metadata`** -- Pydantic already parsed the `Annotated` type and stored metadata objects in `fi.metadata` as a list. Direct, no re-parsing needed.
-
-2. **`get_type_hints(cls, include_extras=True)`** + `get_origin`/`get_args` -- Lower-level stdlib approach. Re-parses the type annotation.
-
-**Use `FieldInfo.metadata` for node field introspection** (Dep/Recall detection on model classes). It is simpler and Pydantic has already done the parsing.
-
-**Use `get_type_hints(include_extras=True)` for dep function parameter introspection** (dep chaining). Dep functions are plain callables, not Pydantic models, so `model_fields` does not apply.
-
-### Start Node vs Other Nodes
-
-For start nodes, all fields are caller-provided. Bae does not need to distinguish -- the caller constructs the start node directly with all values. The categorization matters only for nodes that bae constructs during graph execution.
-
-### "Has Value" at Construction Time
-
-When bae constructs a non-start node:
-1. Resolve Dep fields (call functions in topological order)
-2. Resolve Recall fields (search trace backward)
-3. Pass dep + recall values to the LLM alongside the current node context
-4. LLM fills remaining fields (the LLM fields)
-5. Construct the new node with all values
-
-Pydantic validates the complete node. If a required LLM field is missing, Pydantic raises `ValidationError` -- this is correct behavior and should propagate.
 
 ---
 
-## Capability 4: Annotated Metadata Extraction Patterns
+## Deep Dive: CLI Tooling
 
-### Two Access Paths (Both Verified)
+### Current State
 
-#### Path A: Pydantic `FieldInfo.metadata` (for model fields)
+Bae already has a `typer` CLI with:
+- `bae graph show/export/mermaid` -- visualization
+- `bae run` -- execute a graph
 
-```python
-for field_name, fi in MyNode.model_fields.items():
-    for meta in fi.metadata:
-        if isinstance(meta, Dep):
-            print(f"{field_name}: dep fn = {meta.fn}")
-        elif isinstance(meta, Recall):
-            print(f"{field_name}: recall")
-```
+### New Commands for v3
 
-**Verified output:**
-```
-weather: dep fn = get_weather
-schedule: dep fn = get_schedule
-```
+| Command | Purpose | Key Dependencies |
+|---------|---------|-----------------|
+| `bae eval <module>` | Run evals against a dataset | `dspy.Evaluate`, `rich` for output |
+| `bae optimize <module>` | Run optimization (bootstrap/mipro/simba) | DSPy optimizers |
+| `bae inspect <module>` | Show graph stats, node signatures, compiled prompts | `rich` tables |
+| `bae new <name>` | Scaffold a new graph project | `copier` (external tool) |
 
-#### Path B: stdlib `get_type_hints` (for plain callables)
+### Typer + Rich Integration
+
+Typer already includes Rich as a dependency. The integration is natural:
 
 ```python
-from typing import get_type_hints, get_origin, get_args, Annotated
+from rich.console import Console
+from rich.table import Table
+from rich.progress import Progress
 
-hints = get_type_hints(get_weather, include_extras=True)
-for param_name, hint in hints.items():
-    if param_name == "return":
-        continue
-    if get_origin(hint) is Annotated:
-        base_type = get_args(hint)[0]
-        metadata = get_args(hint)[1:]
-        for meta in metadata:
-            if isinstance(meta, Dep):
-                print(f"  param {param_name}: chained dep = {meta.fn.__name__}")
+console = Console()
+
+# Eval results table
+table = Table(title="Eval Results")
+table.add_column("Example", style="cyan")
+table.add_column("Score", style="green")
+table.add_column("Prediction", style="white")
+console.print(table)
+
+# Optimization progress
+with Progress() as progress:
+    task = progress.add_task("Optimizing...", total=num_trials)
+    ...
 ```
 
-**Verified output:**
-```
-  param location: chained dep = get_location
-```
+### Typer Version Notes
 
-### Type Alias Transparency
-
-Annotated type aliases (e.g., `WeatherDep = Annotated[WeatherResult, Dep(get_weather)]`) are fully transparent to both access paths. When a dep function parameter is typed as `location: LocationDep`, `get_type_hints` resolves the alias and returns `Annotated[GeoLocation, Dep(get_location)]`. No special handling needed. **Verified.**
-
-### Dep and Recall Marker Design
-
-Current v1 markers are `@dataclass(frozen=True)` classes. For v2:
-
-```python
-@dataclass(frozen=True)
-class Dep:
-    """Marker: bae calls this function to populate the field."""
-    fn: Callable
-
-@dataclass(frozen=True)
-class Recall:
-    """Marker: bae searches the trace to populate the field."""
-    pass
-```
-
-Using frozen dataclasses is correct: they are hashable (useful if we ever need to deduplicate), immutable, and have clean `__repr__`. No reason to change this pattern.
-
-### Edge Case: `__future__.annotations`
-
-Bae uses `from __future__ import annotations` in some files. On Python 3.14 with PEP 649, `get_type_hints()` handles deferred annotations correctly. However, `get_type_hints` on functions defined in modules with `from __future__ import annotations` requires the function's `__globals__` for resolution, which `get_type_hints` uses automatically when called with the function object. **No special handling needed.**
+Typer 0.21.1 (Jan 2026) supports Python 3.9-3.14. Bae's `>=0.12` floor is fine but should be bumped to `>=0.15` to guarantee Rich markup support in help text.
 
 ---
 
-## What NOT to Add
+## Deep Dive: Mermaid Diagram Generation
 
-| Temptation | Why Not | What to Use Instead |
-|------------|---------|---------------------|
-| `networkx` for dep DAG | 40MB+ dependency for one topological sort | `graphlib.TopologicalSorter` (stdlib, 0 bytes) |
-| `typing-inspection` (Pydantic's utility) | Already a transitive dep of Pydantic, but unnecessary -- `get_origin`/`get_args` + `FieldInfo.metadata` cover all needs | stdlib `typing` + Pydantic's `FieldInfo.metadata` |
-| `inject` or `dependency-injector` | Generic DI frameworks; Dep(callable) is simpler and domain-specific | Hand-rolled dep resolution with `graphlib` |
-| Custom sentinel for "needs LLM fill" | Pydantic's `PydanticUndefined` + `FieldInfo.is_required()` already distinguish this; MISSING sentinel (experimental in 2.12) is overkill | `FieldInfo.metadata` categorization (no Dep/Recall = LLM fills) |
-| `toposort` PyPI package | Redundant with stdlib `graphlib` | `graphlib.TopologicalSorter` |
+### Current State (Already Sufficient)
+
+`Graph.to_mermaid()` already generates Mermaid flowchart syntax from type hints:
+
+```python
+def to_mermaid(self) -> str:
+    lines = ["graph TD"]
+    for node_cls, successors in self._nodes.items():
+        node_name = node_cls.__name__
+        if node_cls.is_terminal():
+            lines.append(f"    {node_name}(({node_name}))")
+        for succ in successors:
+            lines.append(f"    {node_name} --> {succ.__name__}")
+    return "\n".join(lines)
+```
+
+### What to Add for v3
+
+No new library needed. Extend existing `to_mermaid()` with:
+
+1. **Field annotations** -- show Dep/Recall/plain fields in node boxes
+2. **Compiled status** -- indicate which nodes have optimized prompts
+3. **Eval scores** -- overlay per-node scores on the diagram
+
+These are string formatting changes, not library additions.
+
+### For Package Scaffolding
+
+When `bae new` scaffolds a project, the template should generate a `graph.md` file that includes the Mermaid diagram as a fenced code block:
+
+````markdown
+# My Graph
+
+```mermaid
+graph TD
+    StartNode --> ProcessNode
+    ProcessNode --> EndNode
+    EndNode((EndNode))
+```
+````
+
+This is a template concern, not a library concern.
+
+---
+
+## Deep Dive: Package Scaffolding
+
+### Recommendation: Copier (not Cookiecutter)
+
+**Copier 9.11.3** (Jan 23, 2026) is the right choice for `bae new`:
+
+| Feature | Cookiecutter | Copier |
+|---------|-------------|--------|
+| Template updates | No | Yes -- `copier update` syncs changes |
+| Config format | JSON | YAML |
+| Migrations | No | Yes |
+| Python version | 3.8+ | 3.10+ (fine for bae's 3.14+ requirement) |
+| Install method | pip/pipx | pip/pipx/uv |
+
+### Integration Strategy
+
+Copier is NOT a project dependency. It's an external tool invoked by the CLI:
+
+```python
+@app.command("new")
+def new_project(name: str):
+    """Scaffold a new bae graph project."""
+    import subprocess
+    template_path = Path(__file__).parent / "templates" / "graph-project"
+    subprocess.run(["copier", "copy", str(template_path), name])
+```
+
+If copier is not installed, the CLI should print installation instructions:
+
+```
+Error: copier not found. Install with:
+  uv tool install copier
+  # or: pipx install copier
+```
+
+### Template Structure
+
+```
+bae/templates/graph-project/
+    copier.yml              # Template config (questions)
+    {{project_name}}/
+        __init__.py
+        graph.py.jinja      # Starter graph with 3 nodes
+        evals/
+            __init__.py
+            dataset.json    # Empty eval dataset
+        compiled/
+            .gitkeep        # Compiled artifacts go here
+    graph.md.jinja          # Auto-generated mermaid diagram
+    pyproject.toml.jinja    # With bae dependency
+```
 
 ---
 
@@ -331,27 +377,76 @@ Bae uses `from __future__ import annotations` in some files. On Python 3.14 with
 
 ```toml
 [project]
+name = "bae"
+version = "0.3.0"
 dependencies = [
-    "pydantic>=2.11",        # was >=2.0; bump for model_fields deprecation awareness
+    "pydantic>=2.11",
     "pydantic-ai>=0.1",
-    "dspy>=2.0",
-    # "incant>=1.0",         # REMOVE: replaced by Dep(callable) + graphlib
-    "typer>=0.12",
+    "dspy>=3.1",             # Bump from >=2.0; need Evaluate, MIPROv2, SIMBA
+    "typer>=0.15",           # Bump from >=0.12; Rich markup support
+    "rich>=14.0",            # Make explicit (was transitive via typer)
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
 ]
 ```
 
-**Note:** Bump `pydantic>=2.11` minimum to match our reliance on class-level `model_fields` access (instance-level deprecated in 2.11). The installed version is 2.12.5, so this is a documentation concern, not a practical one.
+**Note on DSPy version floor:** Bumping to `>=3.1` because MIPROv2 auto parameter and SIMBA optimizer are features of the 3.x line. The `EvaluationResult` return type from `Evaluate.__call__` was also finalized in 3.x.
+
+**Note on Rich:** Already a transitive dependency of Typer, but making it explicit allows `from rich.table import Table` without relying on transitive installation. Zero additional download.
 
 ---
 
-## Version Compatibility (v2-specific)
+## DSPy Evolution: What Changed Since 2024
 
-| Component | Minimum | Installed | Notes |
-|-----------|---------|-----------|-------|
-| Python | 3.9 (graphlib) / 3.14 (PEP 649) | 3.14 | PEP 649 is the real constraint; graphlib comes free |
-| `pydantic` | 2.11 | 2.12.5 | 2.11+ for clean `model_fields` access |
-| `graphlib` | stdlib 3.9+ | stdlib | No version to manage |
-| `typing` | stdlib | stdlib | `get_type_hints(include_extras=True)` available since 3.11 |
+For context on bae's existing integration and what's new:
+
+### What Bae Already Uses (v1.0, Still Valid)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| `dspy.Signature` / `dspy.make_signature` | Stable | Core API, no changes |
+| `dspy.Predict` | Stable | Core API, no changes |
+| `BootstrapFewShot` | Stable | Working in `optimizer.py` |
+| `dspy.Example` | Stable | Working in `trace_to_examples()` |
+
+### What's New (Available for v3.0)
+
+| Feature | Added In | Use for Bae |
+|---------|----------|-------------|
+| `dspy.Evaluate` returning `EvaluationResult` | DSPy 3.x | Replace manual eval loops with structured evaluation |
+| `MIPROv2` with `auto` parameter | DSPy 2.5+ | One-line optimization: `MIPROv2(metric, auto="light")` |
+| `SIMBA` optimizer | DSPy 3.x | Self-reflective optimization for harder tasks |
+| `Evaluate.save_as_json` / `save_as_csv` | DSPy 3.x | Persist eval results without custom code |
+| `EvaluationResult.results` | DSPy 3.x | Per-example scores for detailed analysis |
+| `metric_threshold` on optimizers | DSPy 3.x | Stop optimization when quality target reached |
+| `log_dir` on MIPROv2 | DSPy 3.x | Optimization run logging for inspection |
+
+### What Bae Should Upgrade
+
+| Current | Upgrade To | Reason |
+|---------|-----------|--------|
+| Manual eval in test scripts | `dspy.Evaluate` wrapper | Structured results, parallel eval, progress display |
+| `BootstrapFewShot` only | `BootstrapFewShot` -> `MIPROv2` -> `SIMBA` progression | Progressive optimization intensity |
+| `node_transition_metric` (type-only) | Quality metrics (field comparison, LLM-as-judge) | Current metric only checks "did you pick the right type?" -- says nothing about output quality |
+| Manual save/load in `optimizer.py` | DSPy's built-in `save`/`load` + bae wrapper | Already using `predictor.save()`, just needs better DX around it |
+
+---
+
+## Version Compatibility Matrix
+
+| Component | Minimum | Latest | Installed | Bae Requires |
+|-----------|---------|--------|-----------|-------------|
+| Python | 3.10 (DSPy) | 3.14 | 3.14 | >=3.14 |
+| `dspy` | 3.1.0 | 3.1.3 | 3.1.2 | >=3.1 |
+| `pydantic` | 2.11 | 2.12.5 | 2.12.5 | >=2.11 |
+| `typer` | 0.15 | 0.21.1 | >=0.12 | >=0.15 |
+| `rich` | 14.0 | 14.3.2 | (transitive) | >=14.0 |
+| `copier` | 9.0 | 9.11.3 | (external tool) | >=9.0 (tool, not dep) |
 
 ---
 
@@ -359,29 +454,49 @@ dependencies = [
 
 | Claim | Confidence | Verification |
 |-------|------------|--------------|
-| `graphlib.TopologicalSorter` handles dep DAGs correctly | HIGH | Live-tested in bae's venv; correct ordering for chained deps |
-| `FieldInfo.metadata` contains Dep/Recall from Annotated | HIGH | Live-tested; Pydantic 2.12.5 stores metadata instances directly |
-| `get_type_hints(include_extras=True)` resolves type aliases | HIGH | Live-tested; `LocationDep` alias transparent to introspection |
-| Linear trace scan sufficient for Recall | HIGH | Architectural reasoning; graphs are 5-30 steps |
-| `incant` can be fully replaced | HIGH | v2 Dep pattern covers all current incant usage in `graph.py` |
-| Instance-level `model_fields` deprecated in 2.11 | HIGH | Deprecation warning observed during testing |
-| `CycleError` provides cycle details in `.args[1]` | HIGH | [Python docs](https://docs.python.org/3/library/graphlib.html) |
+| DSPy 3.1.3 is latest; `dspy.Evaluate` returns `EvaluationResult` | HIGH | [PyPI](https://pypi.org/project/dspy/), [DSPy docs](https://dspy.ai/api/evaluation/Evaluate/) |
+| MIPROv2 `auto` parameter accepts "light"/"medium"/"heavy" | HIGH | [DSPy MIPROv2 docs](https://dspy.ai/api/optimizers/MIPROv2/) |
+| SIMBA exists with `compile(student, trainset)` API | HIGH | [DSPy SIMBA docs](https://dspy.ai/api/optimizers/SIMBA/) |
+| DSPy LLM-as-judge pattern uses `dspy.Predict(Assess)` in metrics | HIGH | [DSPy metrics docs](https://dspy.ai/learn/evaluation/metrics/) |
+| Rich is a transitive dep of Typer | HIGH | [Typer docs](https://typer.tiangolo.com/) -- Rich is standard dependency |
+| Copier 9.11.3 supports template updates | HIGH | [PyPI](https://pypi.org/project/copier/), [Copier docs](https://copier.readthedocs.io/) |
+| External eval frameworks (DeepEval, RAGAS) are overkill for bae | MEDIUM | Architectural judgment based on bae's scope vs framework scope |
+| `judges` library depends on `instructor` | MEDIUM | [PyPI](https://pypi.org/project/judges/) -- checked deps |
+| Typer 0.15+ has Rich markup support | MEDIUM | [Typer release notes](https://typer.tiangolo.com/release-notes/) -- inferred from changelog |
 
 ---
 
 ## Sources
 
-### Primary (HIGH confidence -- verified against live environment)
-- [Python graphlib documentation](https://docs.python.org/3/library/graphlib.html) -- TopologicalSorter API, CycleError
-- [Python typing documentation](https://docs.python.org/3/library/typing.html) -- get_type_hints, Annotated, get_origin, get_args
-- [Pydantic Fields API](https://docs.pydantic.dev/latest/api/fields/) -- FieldInfo.metadata, FieldInfo.is_required()
-- [Pydantic Models documentation](https://docs.pydantic.dev/latest/concepts/models/) -- model_fields_set, model_fields
-- Live testing in bae's venv (Python 3.14, Pydantic 2.12.5, graphlib stdlib)
+### Primary (HIGH confidence)
+
+- [DSPy Evaluate API](https://dspy.ai/api/evaluation/Evaluate/) -- Evaluate class constructor, `__call__` method, EvaluationResult
+- [DSPy EvaluationResult](https://dspy.ai/api/evaluation/EvaluationResult/) -- Result structure with score and results list
+- [DSPy Metrics](https://dspy.ai/learn/evaluation/metrics/) -- Metric authoring patterns including LLM-as-judge
+- [DSPy MIPROv2 API](https://dspy.ai/api/optimizers/MIPROv2/) -- Constructor, compile method, auto parameter
+- [DSPy SIMBA API](https://dspy.ai/api/optimizers/SIMBA/) -- Constructor, compile method, introspective optimization
+- [DSPy Cheatsheet](https://dspy.ai/cheatsheet/) -- Recommended eval/optimization workflow progression
+- [DSPy Optimizers Overview](https://dspy.ai/learn/optimization/optimizers/) -- Optimizer comparison and selection guide
+- [DSPy PyPI](https://pypi.org/project/dspy/) -- Version 3.1.3, Feb 5 2026
+- [Typer PyPI](https://pypi.org/project/typer/) -- Version 0.21.1, Jan 6 2026
+- [Rich PyPI](https://pypi.org/project/rich/) -- Version 14.3.2, Feb 1 2026
+- [Copier PyPI](https://pypi.org/project/copier/) -- Version 9.11.3, Jan 23 2026
 
 ### Secondary (MEDIUM confidence)
-- [Pydantic 2.12 release notes](https://pydantic.dev/articles/pydantic-v2-12-release) -- MISSING sentinel (experimental, decided not to use)
-- [Python discuss: PEP 593 annotation extraction](https://discuss.python.org/t/what-is-the-right-way-to-extract-pep-593-annotations/42424) -- edge cases with Required/NotRequired nesting (not relevant to bae's use case)
-- [typing-inspection docs](https://typing-inspection.pydantic.dev/latest/usage/) -- evaluated and decided against using directly
+
+- [Braintrust autoevals](https://github.com/braintrustdata/autoevals) -- Pre-built LLM scorers, evaluated and decided against
+- [judges library](https://github.com/quotient-ai/judges) -- LLM-as-judge evaluators, evaluated and decided against
+- [DeepEval](https://deepeval.com/docs/getting-started) -- Comprehensive LLM eval framework, evaluated and decided against
+- [RAGAS](https://docs.ragas.io/en/stable/) -- RAG evaluation framework, not applicable to agent graphs
+- [Inspect AI](https://inspect.aisi.org.uk/) -- AISI eval framework, different use case (benchmarks vs dev-loop)
+- [Promptfoo](https://www.promptfoo.dev/) -- Node.js eval toolkit, wrong ecosystem
+- [Copier vs Cookiecutter comparison](https://medium.com/@gema.correa/from-cookiecutter-to-copier-uv-and-just-the-new-python-project-stack-90fb4ba247a9)
 
 ### Previous Research (this project)
-- v1 STACK.md (2026-02-04) -- DSPy compilation stack (orthogonal, still valid)
+
+- v2.0 STACK.md (2026-02-07) -- DAG resolution, Annotated metadata, field categorization (all still valid, not repeated here)
+- v1.0 codebase STACK.md (2026-02-04) -- Base stack analysis
+
+---
+
+*Stack research for v3.0 eval/optimization DX: 2026-02-08*
