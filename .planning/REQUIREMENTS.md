@@ -53,7 +53,7 @@
 - [x] **DEP2-03**: Circular dep chains detected at graph build time with clear error naming the cycle
 - [x] **DEP2-04**: Per-run dep caching — same dep function with same resolved args returns cached result within a single graph run
 - [x] **DEP2-05**: Clear error when dep callable fails — error names the dep function, the node, and the underlying exception
-- [ ] **DEP2-06**: Dep fields on start node are auto-resolved before graph execution begins
+- [x] **DEP2-06**: Dep fields on start node are auto-resolved before graph execution begins
 
 ### Trace & Recall
 
@@ -79,7 +79,7 @@
 
 - [ ] **CLN-01**: Remove Context marker from codebase and exports
 - [ ] **CLN-02**: Remove Bind marker from codebase and exports
-- [ ] **CLN-03**: Remove incant dependency
+- [x] **CLN-03**: Remove incant dependency
 - [ ] **CLN-04**: All tests updated to v2 patterns
 - [ ] **CLN-05**: examples/ootd.py runs end-to-end with v2 runtime
 
@@ -144,8 +144,8 @@
 | LM-02 | Phase 6 | Complete |
 | LM-03 | Phase 6 | Complete |
 | LM-04 | Phase 6 | Complete |
-| DEP2-06 | Phase 7 | Pending |
-| CLN-03 | Phase 7 | Pending |
+| DEP2-06 | Phase 7 | Complete |
+| CLN-03 | Phase 7 | Complete |
 | CLN-01 | Phase 8 | Pending |
 | CLN-02 | Phase 8 | Pending |
 | CLN-04 | Phase 8 | Pending |
