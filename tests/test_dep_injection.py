@@ -1,11 +1,12 @@
-"""TDD tests for dependency injection via incant.
+"""v2 integration tests for Graph.run() field resolution.
 
-Tests:
-1. External deps from run() kwargs are injectable via Dep marker
-2. Bind fields captured after node execution
-3. Dep params injected by type matching via incant
-4. Deps accumulate through the run
-5. Missing deps raise appropriate error
+Tests the v2 execution loop:
+- Dep(callable) fields resolved before __call__
+- Recall() fields resolved from trace before __call__
+- Custom __call__ reads resolved fields from self
+- Ellipsis body nodes route via choose_type/fill
+- Error hierarchy (DepError, RecallError) on failures
+- Iteration guard (max_iters)
 """
 
 from __future__ import annotations
@@ -14,10 +15,10 @@ from typing import Annotated
 
 import pytest
 
-from bae.exceptions import BaeError
+from bae.exceptions import BaeError, DepError
 from bae.graph import Graph
 from bae.lm import LM
-from bae.markers import Bind, Context, Dep
+from bae.markers import Dep, Recall
 from bae.node import Node
 from bae.result import GraphResult
 
@@ -27,415 +28,363 @@ from bae.result import GraphResult
 # =============================================================================
 
 
-class MockLM:
-    """Mock LM that returns nodes from a sequence."""
+class MockV2LM:
+    """Mock LM implementing v2 API (choose_type/fill)."""
 
-    def __init__(self, sequence: list[Node | None] | None = None):
-        self.sequence = sequence or []
-        self.index = 0
-        self.make_calls: list[tuple[Node, type]] = []
-        self.decide_calls: list[Node] = []
+    def __init__(self, responses: dict[type, Node]):
+        self.responses = responses
+        self.fill_calls: list[tuple[type, dict, str]] = []
+        self.choose_type_calls: list[tuple[list[type], dict]] = []
 
+    def choose_type(self, types: list[type], context: dict) -> type:
+        self.choose_type_calls.append((types, context))
+        for t in types:
+            if t in self.responses:
+                return t
+        return types[0]
+
+    def fill(self, target: type, resolved: dict, instruction: str, source=None) -> Node:
+        self.fill_calls.append((target, resolved, instruction))
+        return self.responses[target]
+
+    # Keep v1 methods as stubs to satisfy Protocol shape
     def make(self, node: Node, target: type) -> Node:
-        self.make_calls.append((node, target))
-        result = self.sequence[self.index]
-        self.index += 1
-        return result
+        raise NotImplementedError("v1 API")
 
     def decide(self, node: Node) -> Node | None:
-        self.decide_calls.append(node)
-        result = self.sequence[self.index]
-        self.index += 1
-        return result
+        raise NotImplementedError("v1 API")
 
 
 # =============================================================================
-# Test Types - External Dependencies
+# Test helper types - Dep resolution
 # =============================================================================
 
 
-class DatabaseConn:
-    """External database connection dependency."""
+class FetchResult:
+    """Result returned by fetch_data dep function."""
 
-    def __init__(self, name: str):
-        self.name = name
+    def __init__(self, value: str):
+        self.value = value
 
 
-class CacheClient:
-    """External cache client dependency."""
+def fetch_data() -> FetchResult:
+    """Simple dep function that returns FetchResult."""
+    return FetchResult(value="fetched-data")
 
-    def __init__(self, host: str):
-        self.host = host
+
+class Info:
+    """Info type for dep/recall tests."""
+
+    def __init__(self, content: str):
+        self.content = content
+
+
+def fetch_info() -> Info:
+    """Dep function that returns Info."""
+    return Info(content="gathered-info")
 
 
 # =============================================================================
-# Feature 1: External Deps via run() kwargs
+# Feature 1: Dep resolution on start node
 # =============================================================================
 
 
-class TerminalNode(Node):
-    """Terminal node for ending graph execution."""
+class StartWithDep(Node):
+    """Start node with a Dep field."""
 
-    result: str = "done"
+    data: Annotated[FetchResult, Dep(fetch_data)]
 
-    def __call__(self, lm: LM) -> None:
+    def __call__(self) -> None:
         ...
 
 
-class NodeNeedingDb(Node):
-    """Node that needs a database connection injected."""
+class TestDepResolutionOnStartNode:
+    """Feature 1: Dep(callable) fields resolved before __call__."""
 
-    query: Annotated[str, Context(description="Query to run")]
+    def test_dep_field_resolved_before_call(self):
+        """graph.run(StartWithDep) resolves dep field, trace[0] has data populated."""
+        graph = Graph(start=StartWithDep)
 
-    def __call__(
-        self, lm: LM, db: Annotated[DatabaseConn, Dep(description="Database connection")]
-    ) -> TerminalNode:
-        # Custom logic to verify injection works
-        return TerminalNode(result=f"queried {db.name}")
-
-
-class NodeNeedingMultipleDeps(Node):
-    """Node that needs multiple external dependencies."""
-
-    data: Annotated[str, Context(description="Data to process")]
-
-    def __call__(
-        self,
-        lm: LM,
-        db: Annotated[DatabaseConn, Dep(description="Database")],
-        cache: Annotated[CacheClient, Dep(description="Cache")],
-    ) -> TerminalNode:
-        return TerminalNode(result=f"db={db.name}, cache={cache.host}")
-
-
-class TestExternalDepsFromRunKwargs:
-    """Feature 1: External deps from run() kwargs are injectable."""
-
-    def test_single_external_dep_injected(self):
-        """run(node, db=conn) -> Dep[DatabaseConn] receives conn."""
-        graph = Graph(start=NodeNeedingDb)
-        lm = MockLM(sequence=[None])  # NodeNeedingDb returns TerminalNode directly
-
-        db = DatabaseConn(name="testdb")
-        result = graph.run(NodeNeedingDb(query="SELECT *"), lm=lm, db=db)
-
-        assert isinstance(result, GraphResult)
-        # The terminal node should have the result from NodeNeedingDb
-        assert len(result.trace) >= 1
-
-    def test_multiple_external_deps_injected(self):
-        """run(node, db=conn, cache=redis) -> multiple deps available."""
-        graph = Graph(start=NodeNeedingMultipleDeps)
-        lm = MockLM(sequence=[None])
-
-        db = DatabaseConn(name="proddb")
-        cache = CacheClient(host="localhost")
         result = graph.run(
-            NodeNeedingMultipleDeps(data="test"), lm=lm, db=db, cache=cache
+            StartWithDep.model_construct(),
+            lm=MockV2LM(responses={}),
         )
 
         assert isinstance(result, GraphResult)
-        assert len(result.trace) >= 1
-
-    def test_missing_external_dep_raises_error(self):
-        """run(node) with node needing Dep[X] raises BaeError."""
-        graph = Graph(start=NodeNeedingDb)
-        lm = MockLM(sequence=[])
-
-        # No db provided - should raise
-        with pytest.raises(BaeError, match="Missing dependency.*DatabaseConn"):
-            graph.run(NodeNeedingDb(query="SELECT *"), lm=lm)
+        assert len(result.trace) == 1
+        start = result.trace[0]
+        assert isinstance(start, StartWithDep)
+        assert isinstance(start.data, FetchResult)
+        assert start.data.value == "fetched-data"
 
 
 # =============================================================================
-# Feature 2: Bind Field Capture
+# Feature 2: Multi-node with deps and recalls
 # =============================================================================
 
 
-class ConnectionInfo:
-    """Type that will be bound and consumed downstream."""
+class GatherInfo(Node):
+    """Start node that gathers info via dep, passes to bridge via custom __call__."""
 
-    def __init__(self, url: str):
-        self.url = url
+    info: Annotated[Info, Dep(fetch_info)]
 
-
-class NodeThatBinds(Node):
-    """Node that binds a value for downstream nodes."""
-
-    input_data: Annotated[str, Context(description="Input")]
-    # This field will be captured after execution (default None, set during __call__)
-    conn: Annotated[ConnectionInfo | None, Bind()] = None
-
-    def __call__(self, lm: LM) -> NodeThatConsumes:
-        # Set the Bind field during execution
-        self.conn = ConnectionInfo(url=f"conn-from-{self.input_data}")
-        return NodeThatConsumes()
+    def __call__(self) -> InfoBridge:
+        # Custom __call__ reads dep-resolved field and produces bridge node
+        # with Info as a plain field (recallable)
+        return InfoBridge(info=self.info)
 
 
-class NodeThatConsumes(Node):
-    """Node that consumes a bound value via Dep."""
+class InfoBridge(Node):
+    """Bridge node that holds Info as plain field (recallable by Analyze)."""
 
-    consumed: str = ""
+    info: Info
 
-    def __call__(
-        self, lm: LM, conn: Annotated[ConnectionInfo, Dep(description="Connection")]
-    ) -> TerminalNode:
-        # Use the injected connection
-        self.consumed = conn.url
-        return TerminalNode(result=f"used {conn.url}")
+    def __call__(self) -> Analyze:
+        ...
 
 
-class TestBindFieldCapture:
-    """Feature 2: Bind fields captured after node execution."""
+class Analyze(Node):
+    """Node that recalls info from trace and produces analysis."""
 
-    def test_bind_field_captured_after_execution(self):
-        """Bind-annotated field value captured and available downstream."""
-        graph = Graph(start=NodeThatBinds)
-        lm = MockLM(sequence=[TerminalNode(), None])
+    prev_info: Annotated[Info, Recall()]
+    analysis: str = ""
 
-        result = graph.run(NodeThatBinds(input_data="test"), lm=lm)
+    def __call__(self) -> None:
+        ...
+
+
+class TestMultiNodeWithDepsAndRecalls:
+    """Feature 2: Multi-node graph with dep resolution and trace recall."""
+
+    def test_gather_dep_then_recall(self):
+        """GatherInfo dep resolved, InfoBridge holds plain field, Analyze recalls it."""
+        graph = Graph(start=GatherInfo)
+
+        # MockV2LM fills Analyze when InfoBridge (ellipsis body) routes
+        analyze_node = Analyze.model_construct(
+            prev_info=None,
+            analysis="deep analysis",
+        )
+        lm = MockV2LM(responses={Analyze: analyze_node})
+
+        result = graph.run(
+            GatherInfo.model_construct(),
+            lm=lm,
+        )
 
         assert isinstance(result, GraphResult)
-        # Should have executed: NodeThatBinds -> NodeThatConsumes -> TerminalNode
-        assert len(result.trace) >= 2
+        assert len(result.trace) == 3
 
-    def test_bind_value_passed_to_downstream_dep(self):
-        """Downstream node receives the bound value via Dep injection."""
-        # Use module-level nodes: NodeThatBinds -> NodeThatConsumes -> TerminalNode
-        graph = Graph(start=NodeThatBinds)
-        lm = MockLM(sequence=[TerminalNode(), None])
+        # GatherInfo should have dep resolved
+        gather = result.trace[0]
+        assert isinstance(gather, GatherInfo)
+        assert isinstance(gather.info, Info)
+        assert gather.info.content == "gathered-info"
 
-        result = graph.run(NodeThatBinds(input_data="test"), lm=lm)
+        # InfoBridge should have plain Info field from GatherInfo
+        bridge = result.trace[1]
+        assert isinstance(bridge, InfoBridge)
+        assert isinstance(bridge.info, Info)
+        assert bridge.info.content == "gathered-info"
 
-        # The ConsumingNode should have received the bound value
-        assert len(result.trace) >= 2
-        consuming_node = result.trace[1]
-        assert isinstance(consuming_node, NodeThatConsumes)
-        assert consuming_node.consumed == "conn-from-test"
-
-
-# =============================================================================
-# Feature 3: Dep Param Injection via Incant
-# =============================================================================
-
-
-class TestDepInjectionViaIncant:
-    """Feature 3: Dep params injected by incant type matching."""
-
-    def test_dep_param_injected_from_registry(self):
-        """__call__(self, lm, db: Dep[Conn]) -> db injected from registry."""
-        graph = Graph(start=NodeNeedingDb)
-        lm = MockLM(sequence=[None])
-
-        db = DatabaseConn(name="injected-db")
-        result = graph.run(NodeNeedingDb(query="test"), lm=lm, db=db)
-
-        # Node executed successfully with injected db
-        assert isinstance(result, GraphResult)
-
-    def test_no_dep_params_no_injection_needed(self):
-        """__call__(self, lm) -> no injection needed, works normally."""
-
-        class SimpleNode(Node):
-            data: str = ""
-
-            def __call__(self, lm: LM) -> TerminalNode:
-                return TerminalNode(result=f"simple-{self.data}")
-
-        graph = Graph(start=SimpleNode)
-        lm = MockLM(sequence=[None])
-
-        result = graph.run(SimpleNode(data="test"), lm=lm)
-
-        assert isinstance(result, GraphResult)
-        assert len(result.trace) >= 1
+        # Analyze should have recall resolved from trace (finds InfoBridge.info)
+        analyze = result.trace[2]
+        assert isinstance(analyze, Analyze)
+        assert isinstance(analyze.prev_info, Info)
+        assert analyze.prev_info.content == "gathered-info"
 
 
 # =============================================================================
-# Feature 4: Deps Accumulate Through Run
+# Feature 3: Custom __call__ with resolved deps
 # =============================================================================
 
 
-class SessionId:
-    """Session identifier type."""
+class TerminalResult(Node):
+    """Terminal node."""
 
-    def __init__(self, value: str):
-        self.value = value
+    value: str = ""
 
-
-class RequestData:
-    """Request data type."""
-
-    def __init__(self, body: str):
-        self.body = body
+    def __call__(self) -> None:
+        ...
 
 
-class NodeA(Node):
-    """First node that binds SessionId."""
+class CustomWithDep(Node):
+    """Node with Dep field + custom __call__ that reads self.data."""
 
-    session: Annotated[SessionId | None, Bind()] = None
+    data: Annotated[FetchResult, Dep(fetch_data)]
 
-    def __call__(self, lm: LM) -> NodeB:
-        self.session = SessionId(value="sess-123")
-        return NodeB()
-
-
-class NodeB(Node):
-    """Second node that binds RequestData and consumes SessionId."""
-
-    request: Annotated[RequestData | None, Bind()] = None
-    received_session: str = ""
-
-    def __call__(
-        self, lm: LM, session: Annotated[SessionId, Dep(description="Session")]
-    ) -> NodeC:
-        self.received_session = session.value
-        self.request = RequestData(body=f"req-for-{session.value}")
-        return NodeC()
+    def __call__(self) -> TerminalResult:
+        # Custom logic reads resolved dep from self
+        return TerminalResult(value=f"got-{self.data.value}")
 
 
-class NodeC(Node):
-    """Third node that consumes both SessionId and RequestData."""
+class TestCustomCallWithResolvedDeps:
+    """Feature 3: Custom __call__ can access self.dep_field after resolution."""
 
-    final_result: str = ""
+    def test_custom_call_reads_resolved_dep(self):
+        """Node with Dep field + custom __call__ accesses self.data after resolution."""
+        graph = Graph(start=CustomWithDep)
 
-    def __call__(
-        self,
-        lm: LM,
-        session: Annotated[SessionId, Dep(description="Session")],
-        request: Annotated[RequestData, Dep(description="Request")],
-    ) -> TerminalNode:
-        self.final_result = f"session={session.value}, request={request.body}"
-        return TerminalNode(result=self.final_result)
-
-
-# Module-level types for test_external_and_bound_deps_coexist
-class ExternalConfig:
-    def __init__(self, env: str):
-        self.env = env
-
-
-class BoundToken:
-    def __init__(self, value: str):
-        self.value = value
-
-
-class ConfigStartNode(Node):
-    """Start node that binds a token based on config."""
-
-    token: Annotated[BoundToken | None, Bind()] = None
-
-    def __call__(
-        self,
-        lm: LM,
-        config: Annotated[ExternalConfig, Dep(description="Config")],
-    ) -> ConfigEndNode:
-        self.token = BoundToken(value=f"token-{config.env}")
-        return ConfigEndNode()
-
-
-class ConfigEndNode(Node):
-    """End node that consumes config and token."""
-
-    result: str = ""
-
-    def __call__(
-        self,
-        lm: LM,
-        config: Annotated[ExternalConfig, Dep(description="Config")],
-        token: Annotated[BoundToken, Dep(description="Token")],
-    ) -> TerminalNode:
-        self.result = f"env={config.env}, token={token.value}"
-        return TerminalNode()
-
-
-# Module-level types for test_missing_bound_dep_raises_bae_error
-class NodeThatForgotsToBind(Node):
-    """Node that should bind but forgets to."""
-
-    conn: Annotated[ConnectionInfo | None, Bind()] = None
-
-    def __call__(self, lm: LM) -> NodeThatNeedsConn:
-        # Oops, forgot to set self.conn!
-        return NodeThatNeedsConn()
-
-
-class NodeThatNeedsConn(Node):
-    """Node that needs a connection dep."""
-
-    def __call__(
-        self,
-        lm: LM,
-        conn: Annotated[ConnectionInfo, Dep(description="Connection")],
-    ) -> TerminalNode:
-        return TerminalNode()
-
-
-class TestDepsAccumulateThroughRun:
-    """Feature 4: Deps accumulate through the run."""
-
-    def test_deps_accumulate_across_nodes(self):
-        """Values bound by earlier nodes available to later nodes."""
-        graph = Graph(start=NodeA)
-        lm = MockLM(sequence=[TerminalNode(), None])
-
-        result = graph.run(NodeA(), lm=lm)
-
-        # Verify chain executed
-        assert isinstance(result, GraphResult)
-        assert len(result.trace) >= 3
-
-        # Verify NodeB received SessionId from NodeA
-        node_b = result.trace[1]
-        assert isinstance(node_b, NodeB)
-        assert node_b.received_session == "sess-123"
-
-        # Verify NodeC received both SessionId and RequestData
-        node_c = result.trace[2]
-        assert isinstance(node_c, NodeC)
-        assert "session=sess-123" in node_c.final_result
-        assert "request=req-for-sess-123" in node_c.final_result
-
-    def test_external_and_bound_deps_coexist(self):
-        """External deps from run() kwargs and bound deps both available."""
-        graph = Graph(start=ConfigStartNode)
-        lm = MockLM(sequence=[TerminalNode(), None])
-
-        config = ExternalConfig(env="production")
-        result = graph.run(ConfigStartNode(), lm=lm, config=config)
+        result = graph.run(
+            CustomWithDep.model_construct(),
+            lm=MockV2LM(responses={}),
+        )
 
         assert isinstance(result, GraphResult)
-        end_node = result.trace[1]
-        assert isinstance(end_node, ConfigEndNode)
-        assert "env=production" in end_node.result
-        assert "token=token-production" in end_node.result
+        assert len(result.trace) == 2
+
+        # Custom node should have dep resolved before __call__
+        custom = result.trace[0]
+        assert isinstance(custom, CustomWithDep)
+        assert isinstance(custom.data, FetchResult)
+        assert custom.data.value == "fetched-data"
+
+        # Terminal node should be produced by custom __call__
+        terminal = result.trace[1]
+        assert isinstance(terminal, TerminalResult)
+        assert terminal.value == "got-fetched-data"
 
 
 # =============================================================================
-# Feature 5: Missing Deps Raise Appropriate Error
+# Feature 4: Dep failure raises DepError
 # =============================================================================
 
 
-class TestMissingDepsRaiseError:
-    """Feature 5: Missing deps raise BaeError."""
+def failing_fn() -> FetchResult:
+    """Dep function that always fails."""
+    raise RuntimeError("database connection refused")
 
-    def test_missing_external_dep_raises_bae_error(self):
-        """Missing external dep raises BaeError with clear message."""
-        graph = Graph(start=NodeNeedingDb)
-        lm = MockLM(sequence=[])
 
-        with pytest.raises(BaeError) as exc_info:
-            graph.run(NodeNeedingDb(query="test"), lm=lm)
+class NodeWithFailingDep(Node):
+    """Node with a dep that will fail."""
 
-        assert "DatabaseConn" in str(exc_info.value)
-        assert "Missing dependency" in str(exc_info.value)
+    data: Annotated[FetchResult, Dep(failing_fn)]
 
-    def test_missing_bound_dep_raises_bae_error(self):
-        """Missing bound dep (node didn't set Bind field) raises BaeError."""
-        graph = Graph(start=NodeThatForgotsToBind)
-        lm = MockLM(sequence=[TerminalNode(), None])
+    def __call__(self) -> None:
+        ...
 
-        with pytest.raises(BaeError) as exc_info:
-            graph.run(NodeThatForgotsToBind(), lm=lm)
 
-        assert "ConnectionInfo" in str(exc_info.value)
+class TestDepFailureRaisesDepError:
+    """Feature 4: DepError raised on dep failures with __cause__ and trace."""
+
+    def test_dep_failure_raises_dep_error(self):
+        """graph.run raises DepError when dep function fails."""
+        graph = Graph(start=NodeWithFailingDep)
+
+        with pytest.raises(DepError) as exc_info:
+            graph.run(
+                NodeWithFailingDep.model_construct(),
+                lm=MockV2LM(responses={}),
+            )
+
+        err = exc_info.value
+        assert isinstance(err.__cause__, RuntimeError)
+        assert "database connection refused" in str(err.__cause__)
+        assert hasattr(err, "trace")
+        assert err.trace is not None
+
+
+# =============================================================================
+# Feature 5: Iteration guard
+# =============================================================================
+
+
+class LoopNode(Node):
+    """Node that returns self type, creating an infinite loop."""
+
+    counter: int = 0
+
+    def __call__(self) -> LoopNode:
+        ...
+
+
+class CountdownNode(Node):
+    """Node that terminates after a few steps via custom __call__."""
+
+    steps_left: int = 3
+
+    def __call__(self) -> CountdownNode | None:
+        if self.steps_left <= 0:
+            return None
+        return CountdownNode(steps_left=self.steps_left - 1)
+
+
+class TestIterationGuard:
+    """Feature 5: max_iters limits execution to prevent infinite loops."""
+
+    def test_max_iters_exceeded_raises_bae_error(self):
+        """graph.run with max_iters=5 raises BaeError after 5 iterations."""
+        graph = Graph(start=LoopNode)
+
+        loop_node = LoopNode.model_construct(counter=0)
+        lm = MockV2LM(responses={LoopNode: loop_node})
+
+        with pytest.raises(BaeError, match="exceeded 5 iterations"):
+            graph.run(loop_node, lm=lm, max_iters=5)
+
+    def test_max_iters_zero_means_infinite(self):
+        """graph.run with max_iters=0 does NOT raise (sentinel for infinite)."""
+        graph = Graph(start=CountdownNode)
+
+        result = graph.run(
+            CountdownNode(steps_left=3),
+            lm=MockV2LM(responses={}),
+            max_iters=0,
+        )
+
+        assert isinstance(result, GraphResult)
+        # Should have executed: 3, 2, 1, 0 (terminal)
+        assert len(result.trace) == 4
+
+
+# =============================================================================
+# Feature 6: Terminal node in trace
+# =============================================================================
+
+
+class SimpleTerminal(Node):
+    """A simple terminal node."""
+
+    message: str = "done"
+
+    def __call__(self) -> None:
+        ...
+
+
+class NodeBeforeTerminal(Node):
+    """Node that transitions to terminal."""
+
+    def __call__(self) -> SimpleTerminal:
+        return SimpleTerminal(message="finished")
+
+
+class TestTerminalNodeInTrace:
+    """Feature 6: Terminal node is included in trace (last element)."""
+
+    def test_terminal_node_in_trace(self):
+        """Terminal node (returns None) is included in trace."""
+        graph = Graph(start=SimpleTerminal)
+
+        result = graph.run(
+            SimpleTerminal(message="the end"),
+            lm=MockV2LM(responses={}),
+        )
+
+        assert isinstance(result, GraphResult)
+        assert len(result.trace) == 1
+        assert isinstance(result.trace[-1], SimpleTerminal)
+        assert result.trace[-1].message == "the end"
+
+    def test_terminal_node_is_last_in_multi_node_trace(self):
+        """In multi-node graph, terminal is last in trace."""
+        graph = Graph(start=NodeBeforeTerminal)
+
+        result = graph.run(
+            NodeBeforeTerminal(),
+            lm=MockV2LM(responses={}),
+        )
+
+        assert isinstance(result, GraphResult)
+        assert len(result.trace) == 2
+        assert isinstance(result.trace[-1], SimpleTerminal)
+        assert result.trace[-1].message == "finished"

@@ -9,14 +9,14 @@ from __future__ import annotations
 import json
 import time
 import types
-from typing import TYPE_CHECKING, Annotated, Any, TypeVar, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, TypeVar, get_args, get_type_hints
 
 import dspy
 from pydantic import ValidationError
+import json
 
 from bae.compiler import node_to_signature
 from bae.exceptions import BaeLMError, BaeParseError
-from bae.markers import Context, Dep
 
 if TYPE_CHECKING:
     from bae.node import Node
@@ -62,26 +62,9 @@ class DSPyBackend:
         """
         self.max_retries = max_retries
 
-    def _extract_context_fields(self, node: Node) -> dict[str, Any]:
-        """Extract Context-annotated field values from node."""
-        fields = {}
-        hints = get_type_hints(node.__class__, include_extras=True)
-
-        for name, hint in hints.items():
-            if get_origin(hint) is Annotated:
-                args = get_args(hint)
-                metadata = args[1:]
-
-                for meta in metadata:
-                    if isinstance(meta, Context):
-                        fields[name] = getattr(node, name)
-                        break
-
-        return fields
-
     def _build_inputs(self, node: Node, **deps: Any) -> dict[str, Any]:
-        """Build input dict from node Context fields and deps."""
-        inputs = self._extract_context_fields(node)
+        """Build input dict from node fields and deps."""
+        inputs = {name: getattr(node, name) for name in node.__class__.model_fields}
         inputs.update(deps)
         return inputs
 
@@ -236,10 +219,8 @@ class DSPyBackend:
         choice_signature = dspy.make_signature(fields, "DecideNextStep")
         predictor = dspy.Predict(choice_signature)
 
-        # Build context from node
-        context = f"Node: {node.__class__.__name__}\n"
-        for name, value in node.model_dump().items():
-            context += f"  {name}: {value!r}\n"
+        # Build context from node as JSON
+        context = json.dumps({node.__class__.__name__: node.model_dump(mode="json")}, indent=2)
 
         result = predictor(context=context)
         chosen = result.choice.strip()
@@ -299,3 +280,101 @@ class DSPyBackend:
             target = types_list[0]  # Fallback
 
         return self.make(node, target)
+
+    def choose_type(
+        self,
+        types: list[type],
+        context: dict[str, Any],
+    ) -> type:
+        """Pick successor type from candidates using dspy.Predict.
+
+        For single-type lists, returns the type directly without an LLM call.
+
+        Args:
+            types: List of candidate Node types.
+            context: Resolved field values (from resolve_fields).
+
+        Returns:
+            One of the types from the list.
+        """
+        if len(types) == 1:
+            return types[0]
+
+        type_names = [t.__name__ for t in types]
+
+        # Build choice signature with context as InputField
+        fields = {
+            "context": (str, dspy.InputField(desc="Resolved context fields")),
+            "choice": (str, dspy.OutputField(desc=f"Choose one: {', '.join(type_names)}")),
+        }
+
+        choice_signature = dspy.make_signature(fields, "ChooseNextType")
+        predictor = dspy.Predict(choice_signature)
+
+        # Format context for the LLM
+        from pydantic import BaseModel
+        context_str = json.dumps({"context": {
+            k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+            for k, v in context.items()
+        }}, indent=2)
+
+        # Add type docstrings to context
+        for t in types:
+            if t.__doc__:
+                context_str += f"\n- {t.__name__}: {t.__doc__}"
+
+        result = predictor(context=context_str)
+        chosen = result.choice.strip()
+
+        # Map name back to type
+        for t in types:
+            if t.__name__ == chosen:
+                return t
+
+        # Fallback: partial/case-insensitive match
+        for t in types:
+            if t.__name__.lower() in chosen.lower():
+                return t
+
+        return types[0]
+
+    def fill(
+        self,
+        target: type[T],
+        resolved: dict[str, Any],
+        instruction: str,
+        source: "Node | None" = None,
+    ) -> T:
+        """Populate a node's plain fields using dspy.Predict.
+
+        Uses node_to_signature(target, is_start=False) so plain fields
+        become OutputFields (LLM fills them) and Dep/Recall fields become
+        InputFields (provided via resolved dict).
+
+        Args:
+            target: The Node type to instantiate.
+            resolved: Only the target's resolved dep/recall values.
+            instruction: Class name + optional docstring for the LLM.
+            source: The previous node (context frame). Not yet used by DSPy.
+
+        Returns:
+            An instance of target with all fields populated.
+
+        Raises:
+            BaeParseError: If parsing fails after retry.
+            BaeLMError: If API fails after retry.
+        """
+        signature = node_to_signature(target, is_start=False)
+        predictor = dspy.Predict(signature)
+
+        # resolved dict provides InputField values; LLM generates OutputField values
+        result = self._call_with_retry(predictor, resolved)
+
+        # Collect all field values: resolved (InputFields) + LM output (OutputFields)
+        all_fields = dict(resolved)
+        # Extract OutputField values from prediction
+        for key in result.keys():
+            if key not in resolved:
+                all_fields[key] = getattr(result, key)
+
+        return target.model_construct(**all_fields)

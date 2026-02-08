@@ -7,13 +7,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Any, get_args, get_origin, get_type_hints
+from typing import Any, get_type_hints
 
 import dspy
 
-from bae.graph import Graph
-from bae.markers import Context, Dep
+from bae.graph import Graph, _get_base_type
 from bae.node import Node
+from bae.resolver import classify_fields
 
 
 class CompiledGraph:
@@ -30,7 +30,7 @@ class CompiledGraph:
         self.signatures = signatures
         self.optimized: dict[type[Node], dspy.Predict] = {}
 
-    def run(self, start_node: Node, **deps) -> "GraphResult":
+    def run(self, start_node: Node) -> "GraphResult":
         """Run the compiled graph using optimized predictors.
 
         Creates an OptimizedLM from loaded predictors and delegates
@@ -39,7 +39,6 @@ class CompiledGraph:
 
         Args:
             start_node: The initial node to start execution.
-            **deps: External dependencies to inject.
 
         Returns:
             GraphResult with final node and execution trace.
@@ -48,7 +47,7 @@ class CompiledGraph:
         from bae.result import GraphResult
 
         lm = OptimizedLM(optimized=self.optimized)
-        return self.graph.run(start_node, lm=lm, **deps)
+        return self.graph.run(start_node, lm=lm)
 
     def optimize(
         self,
@@ -89,96 +88,48 @@ class CompiledGraph:
         return compiled
 
 
-def _extract_context_fields(
+def node_to_signature(
     node_cls: type[Node],
-) -> dict[str, tuple[type, dspy.InputField]]:
-    """Extract Context-annotated class fields as InputFields."""
-    fields: dict[str, tuple[type, dspy.InputField]] = {}
-
-    hints = get_type_hints(node_cls, include_extras=True)
-    for name, hint in hints.items():
-        if get_origin(hint) is Annotated:
-            args = get_args(hint)
-            base_type = args[0]
-            metadata = args[1:]
-
-            for meta in metadata:
-                if isinstance(meta, Context):
-                    fields[name] = (base_type, dspy.InputField(desc=meta.description))
-                    break
-
-    return fields
-
-
-def _extract_dep_params(
-    node_cls: type[Node],
-) -> dict[str, tuple[type, dspy.InputField]]:
-    """Extract Dep-annotated __call__ parameters as InputFields.
-
-    Skips 'self', 'lm', and 'return' - only processes additional parameters.
-    Only includes parameters with Annotated[type, Dep(...)] wrapper.
-    """
-    fields: dict[str, tuple[type, dspy.InputField]] = {}
-
-    # Only process if node_cls defines its own __call__
-    # (not inherited from Node base class)
-    if "__call__" not in node_cls.__dict__:
-        return fields
-
-    try:
-        call_hints = get_type_hints(node_cls.__call__, include_extras=True)
-    except Exception:
-        # If we can't get hints, return empty
-        return fields
-
-    # Skip these parameters
-    skip_params = {"self", "lm", "return"}
-
-    for name, hint in call_hints.items():
-        if name in skip_params:
-            continue
-
-        if get_origin(hint) is Annotated:
-            args = get_args(hint)
-            base_type = args[0]
-            metadata = args[1:]
-
-            for meta in metadata:
-                if isinstance(meta, Dep):
-                    fields[name] = (base_type, dspy.InputField(desc=meta.description))
-                    break
-
-    return fields
-
-
-def node_to_signature(node_cls: type[Node]) -> type[dspy.Signature]:
+    is_start: bool = False,
+) -> type[dspy.Signature]:
     """Convert a Node class to a DSPy Signature.
 
-    - Class name becomes instruction text
-    - Annotated[type, Context(description="...")] fields become InputFields
-    - Annotated[type, Dep(description="...")] __call__ params become InputFields
-    - Unannotated fields/params are excluded (internal state)
-    - Return type becomes OutputField (str for Phase 1)
+    Uses classify_fields() to determine InputField vs OutputField mapping:
+    - Dep fields -> InputField (context from external sources)
+    - Recall fields -> InputField (context from trace)
+    - Plain fields + is_start -> InputField (caller-provided)
+    - Plain fields + not is_start -> OutputField (LLM fills)
+
+    Instruction is built from class name + optional docstring.
 
     Args:
         node_cls: The node class to convert.
+        is_start: Whether this is the start node. When True, plain fields
+            become InputFields (caller-provided) instead of OutputFields.
 
     Returns:
         A dspy.Signature subclass with the appropriate fields.
     """
+    classifications = classify_fields(node_cls)
+    hints = get_type_hints(node_cls, include_extras=True)
     fields: dict[str, tuple[type, dspy.InputField | dspy.OutputField]] = {}
 
-    # Extract Context-annotated class fields
-    fields.update(_extract_context_fields(node_cls))
+    for name, kind in classifications.items():
+        base_type = _get_base_type(hints[name])
 
-    # Extract Dep-annotated __call__ parameters
-    fields.update(_extract_dep_params(node_cls))
+        if kind in ("dep", "recall"):
+            fields[name] = (base_type, dspy.InputField())
+        elif is_start:
+            # Plain field on start node -> caller-provided
+            fields[name] = (base_type, dspy.InputField())
+        else:
+            # Plain field on non-start node -> LLM fills
+            fields[name] = (base_type, dspy.OutputField())
 
-    # Output field (str for Phase 1 - union handling in Phase 2)
-    fields["output"] = (str, dspy.OutputField())
-
-    # Class name as instruction
+    # Build instruction from class name + optional docstring
     instruction = node_cls.__name__
+    if node_cls.__doc__ is not None:
+        instruction += f": {node_cls.__doc__.strip()}"
 
     return dspy.make_signature(fields, instruction)
 

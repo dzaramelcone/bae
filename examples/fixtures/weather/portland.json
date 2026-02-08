@@ -1,0 +1,12 @@
+{
+  "coord": {"lon": -122.68, "lat": 45.52},
+  "weather": [{"id": 803, "main": "Clouds", "description": "broken clouds", "icon": "04d"}],
+  "main": {"temp": 293.15, "feels_like": 292.5, "temp_min": 291.15, "temp_max": 295.15, "pressure": 1015, "humidity": 50},
+  "visibility": 10000,
+  "wind": {"speed": 3.58, "deg": 270},
+  "clouds": {"all": 75},
+  "dt": 1738800000,
+  "sys": {"country": "US", "sunrise": 1738765200, "sunset": 1738801800},
+  "timezone": -28800,
+  "name": "Portland"
+}

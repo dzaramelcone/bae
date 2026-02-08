@@ -188,9 +188,9 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "dspy" },
-    { name = "incant" },
     { name = "pydantic" },
     { name = "pydantic-ai" },
+    { name = "typer" },
 ]
 
 [package.optional-dependencies]
@@ -203,12 +203,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dspy", specifier = ">=2.0" },
-    { name = "incant", specifier = ">=1.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-ai", specifier = ">=0.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
+    { name = "typer", specifier = ">=0.12" },
 ]
 provides-extras = ["dev"]
 
@@ -984,18 +984,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f3/49/3b30cad09e7771a4982d9975a8cbf64f00d4a1ececb53297f1d9a7be1b10/importlib_metadata-8.7.1.tar.gz", hash = "sha256:49fef1ae6440c182052f407c8d34a68f72efc36db9ca90dc0113398f2fdde8bb", size = 57107, upload-time = "2025-12-21T10:00:19.278Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fa/5e/f8e9a1d23b9c20a551a8a02ea3637b4642e22c2626e3a13a9a29cdea99eb/importlib_metadata-8.7.1-py3-none-any.whl", hash = "sha256:5a1f80bf1daa489495071efbb095d75a634cf28a8bc299581244063b53176151", size = 27865, upload-time = "2025-12-21T10:00:18.329Z" },
-]
-
-[[package]]
-name = "incant"
-version = "25.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "attrs" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/4a/fd/0b842adae881846e73770dba3ce55251cb98a893ccd9fb80b430d4256d5c/incant-25.1.0.tar.gz", hash = "sha256:3624bcd81e96145921b008d4a0111779bb9fc8e15052ae6307cf6ec7343021c3", size = 538092, upload-time = "2025-05-25T11:05:23.903Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/f9/bb5a0d05ffc5eea4546696e9b3113fbda3b64838fda52a162b5ec9451f7d/incant-25.1.0-py3-none-any.whl", hash = "sha256:f32418e346351eaa525350ee0953f6d02d710cd83c54e872f7de7cd64fecb343", size = 17171, upload-time = "2025-05-25T11:05:22.207Z" },
 ]
 
 [[package]]

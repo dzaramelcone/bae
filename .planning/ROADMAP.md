@@ -1,24 +1,14 @@
 # Roadmap: Bae DSPy Compilation
 
-## Overview
+## Milestones
 
-This roadmap delivers DSPy prompt compilation for Bae's type-driven agent graphs. Starting from Node-to-Signature conversion (proving the core integration works), through wiring DSPy's Predict module to replace naive prompts, to trace collection and optimization, and finally production deployment with fallbacks. Each phase builds on the previous - signatures must work before integration, integration must work before optimization, optimization must work before deployment.
+- v1.0 DSPy Compilation - Phases 1-4 (shipped 2026-02-05)
+- v2.0 Context Frames - Phases 5-8 (in progress)
 
 ## Phases
 
-**Phase Numbering:**
-- Integer phases (1, 2, 3, 4): Planned milestone work
-- Decimal phases (e.g., 2.1): Urgent insertions (marked with INSERTED)
-
-Decimal phases appear between their surrounding integers in numeric order.
-
-- [x] **Phase 1: Signature Generation** - Convert Node classes to DSPy Signatures ✓
-- [x] **Phase 1.1: Deps & Signature Extension** - Dep marker, __call__ params become InputFields (INSERTED) ✓
-- [x] **Phase 2: DSPy Integration** - Auto-routing, dep injection, dspy.Predict ✓
-- [x] **Phase 3: Optimization** - Trace collection and BootstrapFewShot compilation ✓
-- [x] **Phase 4: Production Runtime** - Load compiled prompts with fallbacks ✓
-
-## Phase Details
+<details>
+<summary>v1.0 DSPy Compilation (Phases 1-4) - SHIPPED 2026-02-05</summary>
 
 ### Phase 1: Signature Generation
 **Goal**: Node classes become DSPy Signatures through automatic conversion
@@ -27,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 1 plan
 
 Plans:
-- [x] 01-01-PLAN.md — TDD: node_to_signature() with Context marker ✓
+- [x] 01-01-PLAN.md — TDD: node_to_signature() with Context marker
 
 **Success Criteria** (what must be TRUE):
   1. Given a Node subclass, node_to_signature() returns a valid dspy.Signature class
@@ -49,7 +39,7 @@ Plans:
   4. Both Context fields and Dep params appear as InputFields
 
 Plans:
-- [x] 01.1-01-PLAN.md — TDD: Dep marker and signature extension ✓
+- [x] 01.1-01-PLAN.md — TDD: Dep marker and signature extension
 
 ### Phase 2: DSPy Integration
 **Goal**: Graph.run() auto-routes and injects deps; LM uses dspy.Predict
@@ -58,11 +48,11 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
-- [x] 02-01-PLAN.md — TDD: Foundation types (GraphResult, Bind, exceptions) + validation ✓
-- [x] 02-02-PLAN.md — TDD: Auto-routing (return type introspection, ellipsis body) ✓
-- [x] 02-03-PLAN.md — TDD: DSPy Predict backend with self-correction ✓
-- [x] 02-04-PLAN.md — TDD: Dep injection via incant ✓
-- [x] 02-05-PLAN.md — Integration wiring and verification ✓
+- [x] 02-01-PLAN.md — TDD: Foundation types (GraphResult, Bind, exceptions) + validation
+- [x] 02-02-PLAN.md — TDD: Auto-routing (return type introspection, ellipsis body)
+- [x] 02-03-PLAN.md — TDD: DSPy Predict backend with self-correction
+- [x] 02-04-PLAN.md — TDD: Dep injection via incant
+- [x] 02-05-PLAN.md — Integration wiring and verification
 
 **Success Criteria** (what must be TRUE):
   1. Graph.run() introspects return type: union -> decide, single type -> make
@@ -80,10 +70,10 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [x] 03-01-PLAN.md — TDD: Trace-to-Example conversion and metric function ✓
-- [x] 03-02-PLAN.md — TDD: BootstrapFewShot optimization ✓
-- [x] 03-03-PLAN.md — TDD: Save/Load compiled prompts ✓
-- [x] 03-04-PLAN.md — Wire optimizer into CompiledGraph + exports ✓
+- [x] 03-01-PLAN.md — TDD: Trace-to-Example conversion and metric function
+- [x] 03-02-PLAN.md — TDD: BootstrapFewShot optimization
+- [x] 03-03-PLAN.md — TDD: Save/Load compiled prompts
+- [x] 03-04-PLAN.md — Wire optimizer into CompiledGraph + exports
 
 **Success Criteria** (what must be TRUE):
   1. Graph.run() captures (input_node, output_node) pairs as execution traces
@@ -99,8 +89,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [x] 04-01-PLAN.md — TDD: OptimizedLM with predictor registry and fallback ✓
-- [x] 04-02-PLAN.md — CompiledGraph integration and package exports ✓
+- [x] 04-01-PLAN.md — TDD: OptimizedLM with predictor registry and fallback
+- [x] 04-02-PLAN.md — CompiledGraph integration and package exports
 
 **Success Criteria** (what must be TRUE):
   1. OptimizedLM wrapper loads compiled prompts at graph startup
@@ -108,24 +98,138 @@ Plans:
   3. OptimizedLM falls back to naive prompts for nodes without compiled versions
   4. Observability shows which nodes are using optimized vs naive prompts
 
+</details>
+
+### v2.0 Context Frames (In Progress)
+
+**Milestone Goal:** Redesign the node API around the "nodes as context frames" paradigm — Dep/Recall field annotations, implicit LM, clean start/terminal semantics.
+
+#### Phase 5: Markers & Resolver
+**Goal**: Field-level dependency resolution and trace recall work correctly in isolation
+**Depends on**: Phase 4 (v1.0 complete)
+**Requirements**: DEP2-01, DEP2-02, DEP2-03, DEP2-04, DEP2-05, RCL-01, RCL-02, RCL-03
+**Plans:** 4 plans
+
+Plans:
+- [x] 05-01-PLAN.md — TDD: v2 Dep/Recall markers, RecallError, classify_fields
+- [x] 05-02-PLAN.md — TDD: Dep DAG construction and build-time validation
+- [x] 05-03-PLAN.md — TDD: Recall from trace
+- [x] 05-04-PLAN.md — TDD: Resolver (dep resolution, caching, resolve_fields)
+
+**Success Criteria** (what must be TRUE):
+  1. `Annotated[T, Dep(fn)]` field causes the resolver to call `fn` and return the result for injection
+  2. Dep functions whose parameters are themselves dep-typed resolve bottom-up via topological sort (chaining works)
+  3. Circular dep chains raise a clear error naming the cycle at graph build time
+  4. Recall() searches a trace list backward and returns the most recent node field matching the target type
+  5. Recall on a start node raises an error at graph build time (no trace exists yet)
+
+#### Phase 6: Node & LM Protocol
+**Goal**: Nodes declare field sources through annotations; LM fills only what it should, configured at graph level
+**Depends on**: Phase 5
+**Requirements**: NODE-01, NODE-02, NODE-03, NODE-04, LM-01, LM-02, LM-03, LM-04
+**Plans:** 5 plans
+
+Plans:
+- [x] 06-01-PLAN.md — TDD: NodeConfig standalone TypedDict + node_config ClassVar + _wants_lm
+- [x] 06-02-PLAN.md — TDD: node_to_signature() v2 with classify_fields integration
+- [x] 06-03-PLAN.md — TDD: GraphResult.result property + Graph[T] optional generic
+- [x] 06-04-PLAN.md — TDD: LM Protocol choose_type/fill methods + backend implementations
+- [x] 06-05-PLAN.md — Package exports + full regression verification
+
+**Success Criteria** (what must be TRUE):
+  1. Node fields without Dep/Recall annotations are identified as LLM-filled; fields with Dep/Recall are identified as context
+  2. Start node fields (without Dep) are identifiable as caller-provided input via `is_start` parameter in signature generation
+  3. Terminal node (returns None) fields are accessible as the graph's response schema via `GraphResult.result`
+  4. NodeConfig provides per-node LM override infrastructure; `_wants_lm` detects opt-in `lm` injection in `__call__`; graph-level LM integration wired in Phase 7
+  5. LM protocol exposes `choose_type()` (pick successor from union) and `fill()` (populate plain fields given resolved context) on all backends
+
+#### Phase 7: Integration
+**Goal**: Graph.run() assembles context frames from all sources and executes the full node lifecycle
+**Depends on**: Phase 5, Phase 6
+**Requirements**: DEP2-06, CLN-03
+**Plans:** 4 plans
+
+Plans:
+- [x] 07-01-PLAN.md — TDD: Error hierarchy (DepError/FillError) + _wants_lm type-hint detection
+- [x] 07-02-PLAN.md — TDD: Graph.run() v2 rewrite with resolve_fields and choose_type/fill
+- [x] 07-03-PLAN.md — Test migration + incant removal from pyproject.toml
+- [x] 07-04-PLAN.md — Phase gate: regression + success criteria verification
+
+**Success Criteria** (what must be TRUE):
+  1. Dep fields on the start node are auto-resolved in the first loop iteration (caller provides non-dep fields, bae resolves dep fields)
+  2. Each execution loop iteration resolves deps, resolves recalls, then has LM fill remaining fields — in that order
+  3. The incant dependency is removed; dep resolution uses bae's own resolver
+  4. A multi-node graph with deps, recalls, and LLM-filled fields runs end-to-end producing correct results
+
+#### Phase 8: Cleanup & Migration
+**Goal**: v1 markers are gone, all tests use v2 patterns, reference example works end-to-end
+**Depends on**: Phase 7
+**Requirements**: CLN-01, CLN-02, CLN-04, CLN-05
+**Plans:** 4 plans
+
+Plans:
+- [x] 08-01-PLAN.md — Source-side v1 marker removal (Context, Bind, Dep.description)
+- [x] 08-02-PLAN.md — Test migration batch 1 (compiler, dspy_backend, signature_v2)
+- [x] 08-03-PLAN.md — Test migration batch 2 (auto_routing, optimized_lm, optimizer, integration_dspy, resolver)
+- [x] 08-04-PLAN.md — Phase gate: CompiledGraph fix, full suite, ootd.py E2E
+
+**Success Criteria** (what must be TRUE):
+  1. Context marker is removed from codebase and package exports — importing it raises ImportError
+  2. Bind marker is removed from codebase and package exports — importing it raises ImportError
+  3. All tests use v2 patterns (Dep(callable) on fields, Recall(), implicit LM) — no v1 marker usage remains
+  4. `examples/ootd.py` runs end-to-end with the v2 runtime and produces a valid outfit recommendation
+
+### v3.0 JSON Structured Fill & Prompt Quality (Planned)
+
+#### Phase 9: JSON Structured Fill
+**Goal**: fill() uses JSON structured output with constrained decoding — source JSON + instruction prompt, schema-validated response
+**Depends on**: Phase 8 (v2.0 complete)
+**Status**: In progress on spike/e2e-cli branch
+
+**Design**: Claude CLI's `--json-schema` flag enables constrained decoding (Anthropic structured outputs). `transform_schema()` from the Anthropic SDK prepares Pydantic models for both input and output schemas — strips unsupported constraints, adds `additionalProperties: false`. Prompt includes input schema + input data + output schema + instruction, all JSON. Response guaranteed schema-conformant by constrained decoding. XML in prompts causes CLI to hang (enters agent mode); JSON works reliably.
+
+**Reference**: `tests/traces/json_structured_fill_reference.py` — working E2E pattern
+
+**Success Criteria** (what must be TRUE):
+  1. fill() prompt includes: input schema (transform_schema of source), source data JSON, resolved deps JSON, output schema (transform_schema of plain model), instruction text
+  2. Output JSON schema generated via `_build_plain_model()` + `transform_schema()`; LLM response guaranteed conformant by constrained decoding
+  3. Dep/recall fields validated at resolve time (DepError); plain fields validated separately (FillError) — clear boundary
+  4. ClaudeCLIBackend uses JSON mode (`--json-schema` + `--output-format json`) for both fill and choose_type
+  5. All `format_as_xml` usage removed from lm.py and dspy_backend.py — JSON everywhere
+  6. `examples/ootd.py` runs end-to-end producing valid OOTD recommendation
+
+#### Phase 10: AdditionalContext Annotation
+**Goal**: Replace implicit docstring extraction with explicit AdditionalContext annotation for LLM instruction context
+**Depends on**: Phase 9
+
+**Motivation**: LLMs compulsively generate docstrings on node classes. Making instruction context opt-in via annotation adds friction against unwanted docstring augmentation. Class name IS the instruction — additional context should be a deliberate choice.
+
+**Success Criteria** (what must be TRUE):
+  1. `AdditionalContext(str)` annotation marker exists in bae/markers.py
+  2. `_build_instruction()` uses AdditionalContext instead of `__doc__`
+  3. Docstrings on Node subclasses are NOT automatically included in LLM prompts
+  4. Nodes without AdditionalContext annotation use only class name as instruction
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4
+Phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9 -> 10
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Signature Generation | 1/1 | Complete ✓ | 2026-02-04 |
-| 1.1 Deps & Signature Extension | 1/1 | Complete ✓ | 2026-02-04 |
-| 2. DSPy Integration | 5/5 | Complete ✓ | 2026-02-05 |
-| 3. Optimization | 4/4 | Complete ✓ | 2026-02-05 |
-| 4. Production Runtime | 2/2 | Complete ✓ | 2026-02-05 |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Signature Generation | v1.0 | 1/1 | Complete | 2026-02-04 |
+| 1.1 Deps & Signature Extension | v1.0 | 1/1 | Complete | 2026-02-04 |
+| 2. DSPy Integration | v1.0 | 5/5 | Complete | 2026-02-05 |
+| 3. Optimization | v1.0 | 4/4 | Complete | 2026-02-05 |
+| 4. Production Runtime | v1.0 | 2/2 | Complete | 2026-02-05 |
+| 5. Markers & Resolver | v2.0 | 4/4 | Complete | 2026-02-08 |
+| 6. Node & LM Protocol | v2.0 | 5/5 | Complete | 2026-02-08 |
+| 7. Integration | v2.0 | 4/4 | Complete | 2026-02-08 |
+| 8. Cleanup & Migration | v2.0 | 4/4 | Complete | 2026-02-08 |
+| 9. JSON Structured Fill | v3.0 | —/— | In Progress | — |
 
 ---
 *Roadmap created: 2026-02-04*
-*Phase 1 planned: 2026-02-04*
-*Phase 1.1 planned: 2026-02-04*
-*Phase 2 planned: 2026-02-04*
-*Phase 3 planned: 2026-02-05*
-*Phase 4 planned: 2026-02-05*
-*Depth: comprehensive (but focused milestone = 4 phases)*
+*v1.0 shipped: 2026-02-05*
+*v2.0 roadmap created: 2026-02-07*
+*Depth: comprehensive*

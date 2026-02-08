@@ -2,103 +2,119 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-04)
+See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v1.0 Milestone Complete - All phases delivered and verified
+**Current focus:** v3.0 Phase 9 — JSON Structured Fill
 
 ## Current Position
 
-Phase: 4 of 4 (Production Runtime) - COMPLETE ✓
-Plan: 2 of 2 in current phase (all complete)
-Status: Milestone complete, all phases verified
-Last activity: 2026-02-05 - Phase 4 verified (11/11 must-haves passed)
+Phase: 9 (JSON Structured Fill) — COMPLETE
+Plan: spike/e2e-cli branch
+Status: Complete — JSON structured fill working E2E, all XML removed
+Last activity: 2026-02-08 — Real CLI E2E verified (3-node ootd graph, ~25s haiku)
 
-Progress: [██████████] 100%
-
-Note: All 4 phases complete. Full production runtime integration achieved.
+Progress: [##############################] 100% v2.0 (30/30 plans) | Phase 9 in progress
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 13
-- Average duration: 6.2 min
-- Total execution time: 1.38 hours
+- Total plans completed: 30 (13 v1.0 + 17 v2.0)
+- Average duration: —
+- Total execution time: —
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-signature-generation | 1 | 8 min | 8 min |
-| 01.1-deps-signature-extension | 1 | 3 min | 3 min |
-| 02-dspy-integration | 5 | 34 min | 6.8 min |
-| 03-optimization | 4 | 29 min | 7.25 min |
-| 04-production-runtime | 2 | 9 min | 4.5 min |
+| 1. Signature Generation | 1 | — | — |
+| 1.1 Deps & Signature Extension | 1 | — | — |
+| 2. DSPy Integration | 5 | — | — |
+| 3. Optimization | 4 | — | — |
+| 4. Production Runtime | 2 | — | — |
+| 5. Markers & Resolver | 4/4 | ~25min | ~6min |
+| 6. Node & LM Protocol | 5/5 | ~40min | ~8min |
+| 7. Integration | 4/4 | ~20min | ~5min |
+| 8. Cleanup & Migration | 4/4 | ~11min | ~3min |
 
-**Recent Trend:**
-- Last 5 plans: 03-03 (8 min), 03-04 (6 min), 04-01 (5 min), 04-02 (4 min)
-- Trend: Consistent and efficient (plans ~4-8 min average)
-
-*Updated after each plan completion*
+*All phases complete*
 
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+v2 design decisions documented in PROJECT.md v2 Design Decisions section.
 
-- Class name is Signature instruction (no parsing/transformation)
-- Output type is str for Phase 1 (union handling deferred to Phase 2)
-- Only Context-annotated fields become InputFields (unannotated = internal state)
-- Dep marker for `__call__` params - injected deps become InputFields (implemented 01.1-01)
-- **IMPLEMENTED (02-02)**: Auto-routing - Graph.run() handles decide/make based on return type
-- **IMPLEMENTED (02-02)**: `__call__` body `...` signals automatic routing; custom logic still works
-- **IMPLEMENTED (02-03)**: Self-correction retry - pass parse error as input hint on retry
-- **IMPLEMENTED (02-03)**: Two-step decide - separate choice prediction from instance creation
-- **IMPLEMENTED (02-01)**: Bind marker - empty marker for type-unique field binding
-- **IMPLEMENTED (02-01)**: Exception hierarchy - BaeError/BaeParseError/BaeLMError with cause chaining
-- **IMPLEMENTED (02-02)**: A | None triggers decide, not make (LLM chooses whether to produce A or terminate)
-- **IMPLEMENTED (02-02)**: GraphResult always returned from Graph.run() (consistent API, trace for debugging)
-- **IMPLEMENTED (02-04)**: Dep injection via incant - external deps from run() kwargs, Bind capture
-- **IMPLEMENTED (02-05)**: DSPyBackend is default when lm=None in Graph.run()
-- **IMPLEMENTED (02-05)**: Lazy import DSPyBackend to avoid circular import with compiler
-- **IMPLEMENTED (02-05)**: All Phase 2 types exported from bae package root
-- **IMPLEMENTED (03-01)**: Substring matching for flexible LLM output in metric
-- **IMPLEMENTED (03-01)**: Return type depends on trace parameter: float for evaluation, bool for bootstrapping
-- **IMPLEMENTED (03-03)**: DSPy native save/load with save_program=False for JSON format
-- **IMPLEMENTED (03-03)**: One JSON file per node class named {NodeClassName}.json
-- **IMPLEMENTED (03-03)**: Missing files on load produce fresh predictors (graceful degradation)
-- **IMPLEMENTED (03-02)**: Filter trainset by node_type before checking threshold
-- **IMPLEMENTED (03-02)**: Threshold of 10 examples for optimization vs unoptimized return
-- **IMPLEMENTED (03-02)**: BootstrapFewShot config: demos=4/8, rounds=1 for efficiency
-- **IMPLEMENTED (03-04)**: Lazy imports in CompiledGraph methods to avoid circular import
-- **IMPLEMENTED (03-04)**: optimize() returns self for method chaining
-- **IMPLEMENTED (03-04)**: All optimizer functions exported from bae package root
-- **IMPLEMENTED (04-01)**: OptimizedLM extends DSPyBackend for predictor registry
-- **IMPLEMENTED (04-01)**: Dict-based predictor lookup with type[Node] keys
-- **IMPLEMENTED (04-01)**: Stats tracking for optimized vs naive usage
-- **IMPLEMENTED (04-01)**: decide() inherited unchanged - uses overridden make()
-- **IMPLEMENTED (04-02)**: CompiledGraph.run() delegates to Graph.run() with OptimizedLM
-- **IMPLEMENTED (04-02)**: Sync-only run() method (bae is sync-only)
-- **IMPLEMENTED (04-02)**: create_optimized_lm() factory for convenience
+Key v2 decisions affecting Phase 5:
+- Use `model_construct()` for internal node creation (bypass Pydantic validation for deferred field population)
+- `graphlib.TopologicalSorter` for dep chain resolution and cycle detection
+- Dep on start node is allowed (auto-resolved); Recall on start node is an error
+- Per-run dep caching (same dep function + args = cached result within one graph run)
+- Dep.fn is first positional field so `Dep(callable)` works without keyword (description kwarg removed in Phase 8)
+- classify_fields() skips "return" key from get_type_hints
+- build_dep_dag uses id(fn) for visited set deduplication
+- validate_node_deps calls build_dep_dag internally for cycle detection
+- Only first marker per field processed in validation (consistent with classify_fields)
+- recall_from_trace uses issubclass(field_type, target_type) direction for MRO matching
+- recall_from_trace skips Dep and Recall annotated fields (infrastructure, not LLM-filled)
+- resolve_dep cache keyed by callable identity (fn object), not function name
+- Dep function exceptions propagate raw (no BaeError wrapping)
+- resolve_fields returns only Dep and Recall field values, not plain fields
 
-### Research Flags
+Key v2 decisions from Phase 6:
+- NodeConfig is standalone TypedDict (not extending Pydantic ConfigDict)
+- _wants_lm checks for 'lm' parameter in __call__ signature
+- node_to_signature uses classify_fields from resolver (not Context markers)
+- is_start parameter controls plain field direction (InputField vs OutputField)
+- choose_type/fill take context dict, not node instance (decoupled from v1)
+- Single-type lists skip LLM call entirely (optimization on all backends)
+- DSPyBackend.fill uses model_construct to merge context + LM output
 
-From research/SUMMARY.md:
-- Phase 1 needs prototyping: Two-step decide validation (single signature vs chained modules) - DONE in 02-03
-- Phase 3 needs design: Metric function for "good" node transitions - DONE in 03-01
+Key v2 decisions from Phase 7:
+- _get_base_type kept in graph.py (compiler.py imports it, not incant-specific)
+- recall_from_trace skips Dep fields; tests use bridge node pattern for Recall
+- max_iters=0 means infinite (falsy check skips iteration guard)
+- Terminal nodes appended to trace before loop exit
+- Graph.run() no longer accepts **kwargs (external dep injection removed)
+- MockLMs keep v1 make/decide as stubs for custom __call__ nodes that invoke them
+- v1 incant tests deleted (not ported) — v2 dep resolution covered by test_dep_injection.py
+- incant removed from pyproject.toml dependencies
+
+Key decisions from Phase 8:
+- _build_inputs collects all node model_fields (not just Context-annotated) — correct v2 behavior
+- v1 make/decide kept on LM Protocol for custom __call__ escape-hatch nodes (docstring updated)
+- Dep.description removed — Dep(callable) is the only constructor form
+- E2E tests gated behind --run-e2e flag to avoid CI failures without API keys
+- Structural validation sufficient for phase gate when no LLM key available
+
+Key decisions from Phase 9 (JSON Structured Fill):
+- Pivoted from XML completion to JSON structured output — Claude CLI's `--json-schema` provides constrained decoding (guaranteed schema-conformant responses)
+- XML in CLI prompts causes agent mode / hangs — JSON prompts work reliably (~10-15s)
+- `transform_schema()` from Anthropic SDK used for BOTH input and output schemas — input schema in prompt for comprehension, output schema via --json-schema for constrained decoding
+- `_build_plain_model()` creates dynamic Pydantic model with only plain fields for LLM output schema
+- `_build_choice_schema()` uses dynamic Pydantic enum + transform_schema for choose_type constrained decoding
+- `_build_fill_prompt()` uses JSON: input schema + source data + context + output schema + instruction
+- ALL format_as_xml removed from lm.py, dspy_backend.py, and tests
+- `_strip_format()` removes `format` from CLI schemas — CLI silently rejects schemas with format:uri (API supports it, CLI doesn't)
+- Two-stage validation: CLI constrained decoding ensures structure, `validate_plain_fields` validates types (HttpUrl etc.)
+- `--setting-sources ""` correlates with broken structured output — root cause unknown, needs investigation
+- Working reference: tests/traces/json_structured_fill_reference.py
+- Real CLI E2E verified: 3-node ootd graph completes in ~25s with haiku
 
 ### Pending Todos
 
-None - all phases complete.
+- Root-cause `--setting-sources ""` breaking structured output (vague correlation, not understood)
+- Nice-to-have: use inflect library to singularize field names for list item tags
+- Consider Dzara's question about partially-completed JSON prompts (DSPy InputField/OutputField pattern)
 
 ### Blockers/Concerns
 
-None.
+- **Claude CLI session noise**: Optimizer runs create many boring test sessions that drown out real sessions in Claude CLI history. When using ClaudeCLIBackend for optimization, set the "don't save session to disk" flag to avoid polluting session history.
 
 ## Session Continuity
 
-Last session: 2026-02-05
-Stopped at: Completed 04-02-PLAN.md (CompiledGraph.run() Integration)
+Last session: 2026-02-08
+Stopped at: Phase 9 complete. E2E verified. Remaining: --setting-sources root cause, partially-completed JSON question
+Branch: spike/e2e-cli
 Resume file: None

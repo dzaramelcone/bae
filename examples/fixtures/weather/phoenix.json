@@ -1,0 +1,12 @@
+{
+  "coord": {"lon": -112.07, "lat": 33.45},
+  "weather": [{"id": 800, "main": "Clear", "description": "clear sky", "icon": "01d"}],
+  "main": {"temp": 308.15, "feels_like": 307.5, "temp_min": 306.15, "temp_max": 310.15, "pressure": 1010, "humidity": 15},
+  "visibility": 10000,
+  "wind": {"speed": 2.24, "deg": 180},
+  "clouds": {"all": 0},
+  "dt": 1738800000,
+  "sys": {"country": "US", "sunrise": 1738765200, "sunset": 1738803600},
+  "timezone": -25200,
+  "name": "Phoenix"
+}

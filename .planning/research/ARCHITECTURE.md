@@ -1,502 +1,547 @@
-# Architecture Patterns: DSPy Compilation Integration
+# Architecture: v2 Context Frames Integration
 
-**Domain:** Agent graph framework with DSPy prompt optimization
-**Researched:** 2026-02-04
-**Confidence:** MEDIUM (Context7 unavailable for DSPy; verified against official docs at dspy.ai)
+**Domain:** Bae node API redesign -- "nodes as context frames"
+**Researched:** 2026-02-07
+**Confidence:** HIGH (analysis of existing codebase + v2 reference implementation)
 
 ## Executive Summary
 
-DSPy is a declarative framework that replaces prompt engineering with programmatic modules and automatic optimization. Integrating DSPy into Bae requires mapping Bae's existing abstractions (Node, Graph, LM protocol) to DSPy's abstractions (Signature, Module, Adapter, Optimizer).
+The v2 redesign replaces three marker types (Context, Bind, Dep-on-params) with two field-level markers (Dep(callable), Recall()) and eliminates the LM parameter from `__call__`. This is a focused refactoring, not a rewrite. The existing topology discovery (graph.py `_discover`), validation, and trace collection all survive with minor modifications. The major structural change is in the execution loop: `Graph.run()` must now resolve field values (Dep, Recall) *before* calling the LM to fill remaining fields, rather than the current pattern where the LM produces the entire next node.
 
-The key insight: **DSPy doesn't replace your execution framework; it optimizes the prompts used during execution.** Bae's Graph runs the agent loop; DSPy optimizes what the LM sees at each step.
+The critical insight: **v1 nodes produce their successors. v2 nodes receive their fields from three sources (Dep, Recall, LM) and bae orchestrates the assembly.** This inverts control -- bae owns field population, nodes just declare what they need.
 
-## Current Bae Architecture
+## v1 vs v2 Execution Flow Comparison
+
+### v1 (Current)
+
+```
+Graph.run() loop:
+  1. current_node = start_node
+  2. strategy = _get_routing_strategy(current)
+  3. if "make":  next = lm.make(current, target_type)
+     if "decide": next = lm.decide(current)
+     if "custom": next = incanter.compose_and_call(current.__call__, lm=lm)
+     if "terminal": next = None
+  4. _capture_bind_fields(current, dep_registry)
+  5. current = next; repeat
+```
+
+LM receives current node, produces entire next node. Fields are either LM-generated or injected via incant at __call__ time.
+
+### v2 (Target)
+
+```
+Graph.run() loop:
+  1. current_node = start_node (fields provided by caller)
+  2. strategy = _get_routing_strategy(current)
+  3. Determine next node TYPE (lm.decide or return type analysis)
+  4. Resolve target node's Dep fields (topological order, call fns)
+  5. Resolve target node's Recall fields (search trace backward)
+  6. LM fills remaining plain fields (given resolved deps/recalls as context)
+  7. Construct next node instance from all field sources
+  8. Append to trace
+  9. current = next; repeat
+```
+
+LM receives resolved Dep/Recall values as context, fills only the unresolved fields. Node construction is bae's job, not the LM's.
+
+## Component-by-Component Impact Analysis
+
+### 1. markers.py -- Refactored
+
+**Current state:** Context, Dep (description-only), Bind
+**v2 state:** Dep(callable), Recall()
+
+```python
+# v1 markers.py
+@dataclass(frozen=True)
+class Context:         # REMOVE -- redundant with "fields with values"
+    description: str = ""
+
+@dataclass(frozen=True)
+class Dep:             # CHANGE -- takes callable instead of description
+    description: str = ""
+
+@dataclass(frozen=True)
+class Bind:            # REMOVE -- replaced by implicit trace + Recall
+    pass
+
+# v2 markers.py
+@dataclass(frozen=True)
+class Dep:
+    fn: Callable       # The function bae calls to populate this field
+    # No description needed -- the function IS the description
+
+@dataclass(frozen=True)
+class Recall:          # NEW -- search trace backward for matching type
+    pass
+```
+
+**Breaking changes:**
+- `Context` removed: all references in compiler.py, dspy_backend.py, tests must be updated
+- `Dep` signature changes: no longer takes `description`, takes `fn` callable
+- `Bind` removed: all references in graph.py, tests must be updated
+- `Recall` added: new marker
+
+**Migration path:**
+- v1 `Context(description="...")` fields --> plain fields (no annotation needed for LM context)
+- v1 `Bind()` fields --> removed entirely (trace stores all nodes implicitly)
+- v1 `Dep(description="...")` on __call__ params --> `Dep(fn)` on node fields
+- New: `Recall()` on node fields for trace lookback
+
+### 2. node.py -- Minimal Changes
+
+**What stays:**
+- `Node(BaseModel)` base class
+- `successors()` classmethod (return type extraction)
+- `is_terminal()` classmethod
+- `_has_ellipsis_body()` (still used for routing strategy)
+- `_extract_types_from_hint()`, `_hint_includes_none()`
+- `NodeConfig` (still used for per-node model/temperature)
+
+**What changes:**
+- `__call__` signature: remove `lm: LM` parameter
+- `__call__` default implementation: just `...` (ellipsis) since bae handles everything
+- The `Node` base `__call__` should no longer call `lm.decide(self)` -- bae owns routing
+
+```python
+# v1
+class Node(BaseModel):
+    def __call__(self, lm: LM, *_args, **_kwargs) -> Node | None:
+        return lm.decide(self)
+
+# v2
+class Node(BaseModel):
+    def __call__(self) -> Node | None:
+        ...  # Default: bae handles routing via return type hint
+```
+
+**Impact:**
+- All user-defined nodes lose `lm` parameter in `__call__`
+- Custom logic nodes that called `lm.make()` / `lm.decide()` need an escape hatch (see graph.py section)
+- `get_type_hints(cls.__call__)` still works for extracting return types
+
+### 3. graph.py -- Major Changes to run()
+
+This is the biggest change. The execution loop must now:
+
+**A. Remove incant dependency**
+
+v1 uses incant for Dep injection into `__call__` parameters. v2 has no `__call__` parameters to inject into. Dep is now on node fields, resolved before LM call.
+
+```python
+# v1: incant injects deps into __call__ params
+incanter.compose_and_call(current.__call__, lm=lm)
+
+# v2: no incant needed -- field resolution replaces parameter injection
+```
+
+**B. Add field resolution step**
+
+New function: resolve Dep and Recall fields for a target node type before constructing it.
+
+```python
+def _resolve_fields(
+    target_cls: type[Node],
+    trace: list[Node],
+    dep_cache: dict[type, Any],
+) -> dict[str, Any]:
+    """Resolve Dep and Recall fields for a target node type.
+
+    Returns dict of field_name -> resolved_value for non-LM fields.
+    """
+    resolved = {}
+    hints = get_type_hints(target_cls, include_extras=True)
+
+    for field_name, hint in hints.items():
+        if get_origin(hint) is Annotated:
+            args = get_args(hint)
+            base_type = args[0]
+            metadata = args[1:]
+
+            for meta in metadata:
+                if isinstance(meta, Dep):
+                    # Resolve dep (may chain)
+                    resolved[field_name] = _resolve_dep(meta.fn, dep_cache)
+                elif isinstance(meta, Recall):
+                    # Search trace backward
+                    resolved[field_name] = _resolve_recall(base_type, trace)
+
+    return resolved
+```
+
+**C. Dep chaining resolution**
+
+Dep functions can themselves declare Dep-typed parameters. This creates a DAG that must be resolved in topological order. This is the most complex new logic.
+
+```
+get_weather(location: LocationDep) -> WeatherResult
+get_location() -> GeoLocation
+
+Resolution order: get_location() first, then get_weather(location=result)
+```
+
+This is a DAG resolution problem. The resolver must:
+1. Inspect the dep fn's parameter type hints
+2. For params with Dep annotations, resolve those first (recursively)
+3. Cache results (a dep fn should only run once per graph execution step)
+
+**D. Recall resolution**
+
+Search the trace backward for a node whose fields contain a value matching the requested type.
+
+```python
+def _resolve_recall(target_type: type, trace: list[Node]) -> Any:
+    """Search trace backward for a field value matching target_type."""
+    for node in reversed(trace):
+        hints = get_type_hints(type(node), include_extras=True)
+        for field_name, hint in hints.items():
+            base_type = _get_base_type(hint)
+            if base_type == target_type or (isinstance(base_type, type) and issubclass(base_type, target_type)):
+                value = getattr(node, field_name)
+                if value is not None:
+                    return value
+    raise BaeError(f"Recall failed: no {target_type.__name__} found in trace")
+```
+
+**E. Modified execution loop**
+
+```python
+def run(self, start_node: Node, lm: LM | None = None, max_steps: int = 100) -> GraphResult:
+    trace: list[Node] = []
+    current: Node | None = start_node
+    dep_cache: dict[type, Any] = {}  # Cache dep fn results across the run
+
+    while current is not None and steps < max_steps:
+        trace.append(current)
+
+        strategy = _get_routing_strategy(current.__class__)
+
+        if strategy[0] == "terminal":
+            break  # Terminal node -- current IS the output
+        elif strategy[0] == "custom":
+            next_node = current()  # No lm param in v2
+        else:
+            # Determine target type(s)
+            if strategy[0] == "make":
+                target_type = strategy[1]
+            elif strategy[0] == "decide":
+                target_type = lm.choose_type(current, strategy[1])
+
+            # Resolve Dep and Recall fields for target type
+            resolved = _resolve_fields(target_type, trace, dep_cache)
+
+            # LM fills remaining fields, given resolved values as context
+            next_node = lm.fill(current, target_type, resolved_fields=resolved)
+
+        current = next_node
+        steps += 1
+
+    return GraphResult(node=trace[-1] if trace else None, trace=trace)
+```
+
+**F. Validation changes**
+
+- Remove `_validate_bind_uniqueness()` -- Bind is gone
+- Add: validate that start node has no Dep/Recall fields (start node fields are caller-provided)
+- Add: validate that Dep fn signatures don't create cycles (DAG check)
+- Keep: terminal path validation (unchanged)
+
+**G. What to do with `_get_routing_strategy()`**
+
+Still useful. Ellipsis body detection still determines whether bae auto-routes or the user has custom logic. But the "custom" path changes -- custom `__call__` no longer receives `lm`, so custom nodes that need LM access need a different escape hatch.
+
+**Escape hatch options for custom logic:**
+1. Custom nodes return a type (not an instance) and bae still resolves fields
+2. Custom nodes can call a graph-level helper to access LM
+3. Custom nodes receive a `ctx` object with trace/lm access
+
+Recommendation: Option 1 is simplest and fits the paradigm. Custom `__call__` returns a type or `None`, bae resolves fields. If custom nodes need to set specific field values, they return a partial dict.
+
+### 4. lm.py -- Protocol Changes
+
+**Current LM protocol:**
+```python
+class LM(Protocol):
+    def make(self, node: Node, target: type[T]) -> T: ...
+    def decide(self, node: Node) -> Node | None: ...
+```
+
+**v2 LM protocol:**
+
+The LM's job changes. It no longer produces entire node instances. It:
+1. Chooses a type from union options (`choose_type`)
+2. Fills plain fields given resolved deps/recalls as context (`fill`)
+
+```python
+class LM(Protocol):
+    def choose_type(
+        self,
+        current: Node,
+        options: list[type[Node]],
+    ) -> type[Node]:
+        """Pick which successor type to produce."""
+        ...
+
+    def fill(
+        self,
+        current: Node,
+        target: type[T],
+        resolved_fields: dict[str, Any],
+    ) -> T:
+        """Fill plain fields of target type. Resolved fields are provided as context."""
+        ...
+```
+
+`make` and `decide` collapse into `choose_type` + `fill`. This is cleaner -- the LM always does two distinct jobs (type selection and field population), and bae handles field resolution.
+
+**Impact on backends:**
+- `PydanticAIBackend`: rewrite `make`/`decide` into `choose_type`/`fill`
+- `ClaudeCLIBackend`: same refactor
+- `DSPyBackend`: same refactor, but signature generation changes too (see compiler.py)
+- `OptimizedLM`: extends new base protocol
+
+### 5. compiler.py -- Significant Changes
+
+**Current:** `node_to_signature()` extracts `Context`-annotated fields as InputFields.
+
+**v2:** Context is gone. The signature must reflect the new field taxonomy:
+
+| Field Kind | In Signature? | As What |
+|------------|---------------|---------|
+| Dep(fn) | YES (as InputField) | Resolved value is LLM context |
+| Recall() | YES (as InputField) | Recalled value is LLM context |
+| Plain (no annotation) | YES (as OutputField) | LLM must produce this |
+| Fields with defaults | Depends | If caller-set, InputField; if LLM-filled, OutputField |
+
+```python
+def node_to_signature(node_cls: type[Node]) -> type[dspy.Signature]:
+    fields = {}
+    hints = get_type_hints(node_cls, include_extras=True)
+
+    for name, hint in hints.items():
+        if get_origin(hint) is Annotated:
+            args = get_args(hint)
+            metadata = args[1:]
+            for meta in metadata:
+                if isinstance(meta, (Dep, Recall)):
+                    # Resolved by bae -- becomes InputField (context for LLM)
+                    fields[name] = (args[0], dspy.InputField())
+                    break
+        else:
+            # Plain field -- LLM fills this -- becomes OutputField
+            fields[name] = (hint, dspy.OutputField())
+
+    instruction = node_cls.__name__
+    return dspy.make_signature(fields, instruction)
+```
+
+**Impact on optimization pipeline:**
+- `trace_to_examples()` in optimizer.py needs to know which fields are inputs vs outputs
+- `optimize_node()` and `node_transition_metric()` may need updates
+- Save/load format unchanged (still JSON predictor state)
+
+### 6. result.py -- Minor Changes
+
+**Current:** `GraphResult(node: Node | None, trace: list[Node])`
+
+In v2, terminal node IS the output (its fields ARE the response schema). The `node` field should be the terminal node instance, not `None`.
+
+```python
+# v1: node is None when graph terminates normally
+# v2: node is the terminal node instance (its fields are the output)
+```
+
+This is mostly a semantic change. The data structure stays the same, but the terminal node is always the last trace entry and `result.node` should be that terminal node.
+
+### 7. Start Node and Terminal Node Semantics
+
+**Start node:**
+- Fields are caller-provided (no Dep, no Recall, no LM fill)
+- Validation should enforce: start node has no Dep/Recall annotations
+- Start node is created by the user: `graph.run(MyStartNode(field=value))`
+- This is already how v1 works, just needs enforcement
+
+**Terminal node:**
+- Returns `None` from `__call__` (unchanged)
+- Fields ARE the output schema
+- All fields filled by bae (Dep, Recall, LM) during the last transition
+- `GraphResult.node` should be the terminal node instance
+
+## New Components Needed
+
+### A. `bae/resolver.py` (NEW MODULE)
+
+Houses the Dep and Recall resolution logic. This is the core new functionality.
+
+**Contents:**
+- `resolve_fields(target_cls, trace, dep_cache) -> dict[str, Any]`
+- `resolve_dep(fn, dep_cache) -> Any` (with chaining)
+- `resolve_recall(target_type, trace) -> Any`
+- `build_dep_dag(fn) -> list[Callable]` (topological sort of dep chain)
+
+**Rationale for separate module:** This logic is self-contained, testable in isolation, and doesn't belong in graph.py (which is already handling topology and execution). The resolver is a new concept that deserves its own module.
+
+### B. Updated `bae/markers.py`
+
+Not a new module, but significantly changed. Dep gets a callable, Recall is new, Context and Bind are removed.
+
+## Integration Points
 
 ```
                     +------------------+
                     |      Graph       |
-                    | - _discover()    |
-                    | - run()          |
-                    | - validate()     |
+                    | - _discover()    |  UNCHANGED
+                    | - validate()     |  MODIFIED (remove Bind check, add start/dep DAG checks)
+                    | - run()          |  MAJOR REWRITE
                     +--------+---------+
                              |
               +--------------+--------------+
-              |                             |
-    +---------v---------+         +---------v---------+
-    |       Node        |         |       Node        |
-    | - fields (state)  |         | - fields (state)  |
-    | - __call__(lm)    |         | - __call__(lm)    |
-    | - successors()    |         | - successors()    |
-    +---------+---------+         +---------+---------+
-              |                             |
-              +-------------+---------------+
-                            |
-                   +--------v--------+
-                   |    LM Protocol  |
-                   | - make(target)  |
-                   | - decide(node)  |
-                   +--------+--------+
-                            |
-              +-------------+-------------+
-              |                           |
-    +---------v---------+       +---------v---------+
-    | PydanticAIBackend |       |  ClaudeCLIBackend |
-    +-------------------+       +-------------------+
+              |              |              |
+    +---------v---+   +------v------+  +----v----------+
+    |   Node      |   |  Resolver   |  |    LM         |
+    | - fields    |   |  (NEW)      |  | - choose_type |
+    | - __call__  |   | - deps      |  | - fill        |
+    | - successors|   | - recalls   |  +----+----------+
+    +-------------+   +------+------+       |
+                             |        +-----+------+
+                             |        |            |
+                      +------v------+ v            v
+                      |   markers   | PydanticAI  DSPy
+                      | - Dep(fn)   | Backend     Backend
+                      | - Recall()  |
+                      +-------------+
 ```
 
-**Bae's strengths:**
-- Type-driven topology from return type hints
-- Clean separation: Node holds state, LM produces next state
-- Pydantic models give automatic JSON schema
-- Graph handles execution loop
-
-**Bae's current prompt generation:**
-- `_node_to_prompt()` converts node state to naive string
-- Docstrings used as context (minimal)
-- No few-shot examples
-- No instruction optimization
-
-## DSPy Architecture (How It Works)
-
-### Core Abstractions
-
-| DSPy Concept | What It Does | Bae Equivalent |
-|--------------|--------------|----------------|
-| **Signature** | Declares input/output contract | Node class fields + return type |
-| **Module** | Wraps a prompting strategy (CoT, ReAct) | `lm.decide()` / `lm.make()` |
-| **Adapter** | Formats signature -> LM messages | `_node_to_prompt()` |
-| **Optimizer** | Tunes prompts/demos from examples | (none - this is what we're adding) |
-
-### DSPy Data Flow
+### Data Flow (v2)
 
 ```
-Signature (what)
-     |
-     v
-Module (how) + dspy.settings.lm
-     |
-     v
-Adapter.format() -> Messages
-     |
-     v
-LiteLLM / LM call
-     |
-     v
-Adapter.parse() -> Prediction
-     |
-     v
-Optimizer evaluates against metric
-     |
-     v
-Optimizer modifies Module parameters (demos, instructions)
+1. Graph.__init__(start=StartNode)
+   --> _discover() walks return types (UNCHANGED)
+
+2. Graph.run(StartNode(field=value))
+   --> start_node added to trace
+
+3. Loop iteration:
+   a. _get_routing_strategy(current) --> strategy
+   b. If terminal: break, return current as result
+   c. If decide: lm.choose_type(current, [TypeA, TypeB]) --> target_type
+      If make: target_type = strategy[1]
+   d. resolver.resolve_fields(target_type, trace, dep_cache)
+      --> resolves Dep fields (calls fns, caches results)
+      --> resolves Recall fields (searches trace)
+      --> returns {field_name: value} for resolved fields
+   e. lm.fill(current, target_type, resolved_fields)
+      --> LM gets: current node as context, resolved fields as additional context
+      --> LM produces: values for remaining plain fields
+      --> Returns: target_type instance with all fields populated
+   f. next_node added to trace
+   g. current = next_node
 ```
 
-### How DSPy Optimization Works
+## Suggested Build Order
 
-1. **Trace Collection:** Run program on training examples, capture I/O at each module
-2. **Metric Evaluation:** Score each trace (did we get the right output?)
-3. **Bootstrap/Search:** Keep high-scoring traces as few-shot examples OR search for better instructions
-4. **Parameter Update:** Store optimized demos/instructions in module state
-5. **Repeat:** Until convergence or budget exhausted
+Based on dependency analysis:
 
-## Recommended Integration Architecture
+### Phase 1: Markers + Resolver (Foundation)
 
-### Layer Diagram
+1. **Refactor markers.py** -- New Dep(callable), new Recall(), remove Context/Bind
+2. **Create resolver.py** -- Dep resolution with chaining, Recall trace search
+3. **Test resolver in isolation** -- Unit tests for dep DAG, recall search, error cases
 
-```
-                        +---------------------------+
-                        |        Graph.run()        |
-                        |   (unchanged execution)   |
-                        +-------------+-------------+
-                                      |
-                        +-------------v-------------+
-                        |      Node.__call__()      |
-                        |   (unchanged interface)   |
-                        +-------------+-------------+
-                                      |
-                        +-------------v-------------+
-                        |   OptimizedLM (new)       |
-                        | wraps LM with DSPy        |
-                        +-------------+-------------+
-                                      |
-              +-----------------------+-----------------------+
-              |                                               |
-    +---------v---------+                         +-----------v-----------+
-    |   DSPy Module     |                         |   Fallback to raw LM  |
-    | (if optimized)    |                         |   (if not optimized)  |
-    +---------+---------+                         +-----------+-----------+
-              |                                               |
-              +-------------------+---------------------------+
-                                  |
-                        +---------v---------+
-                        |  Underlying LM    |
-                        | (via LiteLLM or   |
-                        |  existing backend)|
-                        +-------------------+
-```
+*Rationale:* Everything else depends on these. They're testable without touching graph.py or lm.py.
 
-### Component Boundaries
+### Phase 2: Node + LM Protocol (Interface)
 
-| Component | Responsibility | Communicates With |
-|-----------|---------------|-------------------|
-| `Graph` | Topology discovery, execution loop, validation | Node, LM |
-| `Node` | State container, routing logic, type hints | LM (via `__call__`) |
-| `LM` (Protocol) | Abstract interface for `make`/`decide` | Backends |
-| `OptimizedLM` (NEW) | Wraps LM, routes through DSPy modules if optimized | DSPy modules, underlying LM |
-| `NodeSignature` (NEW) | Converts Node class -> DSPy Signature | Node metadata |
-| `Compiler` (REWRITE) | Extracts signatures, creates DSPy modules, runs optimizers | Graph, NodeSignature, DSPy |
-| `CompiledGraph` (REWRITE) | Holds optimized modules, provides optimized LM | Graph, OptimizedLM |
+4. **Update node.py** -- Remove `lm` from `__call__`, update default implementation
+5. **Update LM protocol** -- `choose_type` + `fill` replacing `make` + `decide`
+6. **Update one backend** (PydanticAI or DSPy) -- Implement new protocol
 
-### Data Flow for Tracing and Optimization
+*Rationale:* Node changes are small but affect every test. LM protocol change gates the execution loop rewrite.
 
-```
-COMPILATION PHASE (offline):
-============================
+### Phase 3: Execution Loop (Integration)
 
-1. Graph introspection:
-   Graph.nodes -> [NodeClass1, NodeClass2, ...]
+7. **Rewrite Graph.run()** -- New execution loop with resolver integration
+8. **Update validation** -- Remove Bind checks, add start node + dep DAG checks
+9. **Remove incant dependency** -- No longer needed
 
-2. Signature extraction:
-   NodeClass -> NodeSignature -> dspy.Signature
+*Rationale:* This is the integration phase. Everything from phases 1-2 comes together here.
 
-   Fields: NodeClass.model_fields -> InputFields
-   Output: NodeClass.successors() -> OutputFields (one per successor type)
+### Phase 4: Compiler + Optimization (Adaptation)
 
-3. Module creation:
-   For each Node: dspy.Predict(signature) or dspy.ChainOfThought(signature)
+10. **Update compiler.py** -- New signature generation (Dep/Recall as InputField, plain as OutputField)
+11. **Update optimizer.py** -- Trace format changes, metric updates
+12. **Update OptimizedLM** -- Implement new protocol over optimized predictors
 
-4. Training data collection:
-   User provides: [(input_node, expected_output_node), ...]
+*Rationale:* Compiler and optimization are downstream of the core execution changes.
 
-5. Optimization loop:
-   optimizer.compile(program, trainset=examples, metric=metric)
+### Phase 5: Cleanup + Migration
 
-   Internally:
-   - Runs program on each example
-   - Traces I/O through DSPy modules
-   - Scores outputs against metric
-   - Bootstraps high-scoring traces as demos
-   - Searches for better instructions
+13. **Update __init__.py exports** -- Remove Context/Bind, add Recall
+14. **Update all tests** -- Remove v1 patterns, test v2 behavior
+15. **Verify examples/ootd.py runs end-to-end**
 
-6. Save optimized modules:
-   compiled_graph.save("./optimized_prompts/")
+## Risk Assessment
 
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| Dep chaining creates cycles | HIGH | DAG validation at graph init, not at runtime |
+| Recall finds wrong type match | MEDIUM | Exact type match first, subclass match as fallback |
+| Custom __call__ escape hatch unclear | MEDIUM | Design decision needed: what do custom nodes return? |
+| LM fill quality degrades vs make | LOW | fill() gets more context (resolved deps), should be better |
+| incant removal breaks something unexpected | LOW | incant only used in one place (Graph.run custom path) |
 
-EXECUTION PHASE (online):
-=========================
+## Open Design Questions
 
-1. Load optimized:
-   compiled_graph = CompiledGraph.load("./optimized_prompts/")
+### 1. Custom __call__ escape hatch
 
-2. Create optimized LM:
-   lm = compiled_graph.get_optimized_lm(base_backend)
-
-3. Run graph normally:
-   graph.run(start_node, lm=lm)
-
-   At each Node.__call__():
-   - lm.decide(node) checks if DSPy module exists for this node
-   - If yes: routes through DSPy module (with optimized demos/instructions)
-   - If no: falls back to naive prompt generation
-```
-
-## Suggested Integration Points
-
-### 1. Signature Extraction (Node -> dspy.Signature)
-
-**Location:** `bae/compiler.py` (expand existing `node_to_signature()`)
-
-**Approach:**
-```python
-def node_to_dspy_signature(node_cls: type[Node]) -> type[dspy.Signature]:
-    """Convert a Bae Node class to a DSPy Signature class."""
-
-    # Input fields from node's Pydantic fields
-    input_fields = {}
-    for name, field in node_cls.model_fields.items():
-        input_fields[name] = dspy.InputField(
-            desc=field.description or f"The {name}"
-        )
-
-    # Output field: which successor type to produce
-    successors = node_cls.successors()
-    if len(successors) == 1:
-        # Single successor: output is that type's fields
-        output_fields = _fields_from_node_cls(list(successors)[0])
-    else:
-        # Multiple successors: output is choice + fields
-        output_fields = {
-            "next_node_type": dspy.OutputField(desc=f"One of: {[s.__name__ for s in successors]}"),
-            "next_node_data": dspy.OutputField(desc="JSON data for the chosen node type")
-        }
-
-    # Create dynamic Signature class
-    sig_cls = type(
-        f"{node_cls.__name__}Signature",
-        (dspy.Signature,),
-        {
-            "__doc__": node_cls.__doc__ or f"Process {node_cls.__name__}",
-            **input_fields,
-            **output_fields
-        }
-    )
-    return sig_cls
-```
-
-**Confidence:** MEDIUM - DSPy docs confirm dynamic Signature creation works, but Bae-specific edge cases (optional fields, complex types) need testing.
-
-### 2. Module Creation Strategy
+When a node has custom logic in `__call__`, what can it do in v2? In v1 it received `lm` and could call `lm.make()` / `lm.decide()`. In v2 there's no `lm` parameter.
 
 **Options:**
+- A) Custom `__call__` returns a type (bae resolves fields)
+- B) Custom `__call__` returns a dict of field overrides + a type
+- C) Custom `__call__` receives a `Context` object with trace/lm/resolver access
+- D) Custom `__call__` can still receive lm via NodeConfig or graph-level injection
 
-| Strategy | Pros | Cons | When to Use |
-|----------|------|------|-------------|
-| `dspy.Predict` | Simple, fast | No reasoning trace | Simple routing decisions |
-| `dspy.ChainOfThought` | Better reasoning, more optimizable | Slower, more tokens | Complex decisions |
-| `dspy.ProgramOfThought` | Can generate code | Needs execution sandbox | Code-generating nodes |
+**Recommendation:** Option A for simplicity. If custom logic needs to set specific field values, Option B as extension. Option C is over-engineering for v2.
 
-**Recommendation:** Default to `dspy.ChainOfThought` for nodes with multiple successors (decision points), `dspy.Predict` for nodes with single successor (transforms).
+### 2. Dep cache scope
 
-### 3. LM Integration Strategy
+Should dep fn results be cached per-step or per-run?
 
-**Option A: Replace LM backends entirely with DSPy's LiteLLM**
-- Pros: One LM abstraction, full DSPy compatibility
-- Cons: Loses Bae's `ClaudeCLIBackend`, breaking change
+- Per-step: `get_weather()` called fresh each time a node needs it
+- Per-run: `get_weather()` called once, result reused across all nodes
 
-**Option B: Wrap existing LM backends (RECOMMENDED)**
-- Pros: Preserves existing backends, opt-in optimization
-- Cons: Two LM abstractions to maintain
+The ootd.py example suggests per-run (weather doesn't change mid-conversation). But some deps might be time-sensitive.
 
-**Implementation for Option B:**
+**Recommendation:** Per-run cache by default. Add a `cache=False` option to Dep if needed later (YAGNI for now).
 
-```python
-class OptimizedLM:
-    """LM wrapper that routes through DSPy modules when available."""
+### 3. Start node Dep/Recall validation
 
-    def __init__(self, base_lm: LM, optimized_modules: dict[type[Node], dspy.Module] = None):
-        self.base_lm = base_lm
-        self.optimized_modules = optimized_modules or {}
+Should bae error if start node has Dep or Recall fields? Or silently skip resolution?
 
-    def make(self, node: Node, target: type[T]) -> T:
-        # Optimization typically happens at decide(), not make()
-        # Fall through to base
-        return self.base_lm.make(node, target)
+**Recommendation:** Error. Start node fields are caller-provided. If a user puts Dep on a start node, it's a mistake.
 
-    def decide(self, node: Node) -> Node | None:
-        node_cls = type(node)
+### 4. Terminal node field population
 
-        if node_cls in self.optimized_modules:
-            # Route through DSPy
-            module = self.optimized_modules[node_cls]
-            inputs = node.model_dump()
-            result = module(**inputs)
-            return self._result_to_node(result, node_cls)
-        else:
-            # Fall back to unoptimized
-            return self.base_lm.decide(node)
-```
+In the ootd.py example, `RecommendOOTD` is the terminal node. Its fields (top, bottom, footwear, etc.) need to be filled by the LM. So terminal nodes DO go through field resolution -- they're not just passthrough.
 
-### 4. Training Data Format
+The flow for the last step is:
+1. Current node is `AnticipateUsersDay` (all fields resolved)
+2. Strategy: make `RecommendOOTD`
+3. Resolve `RecommendOOTD`'s Dep/Recall fields (none in this case)
+4. LM fills plain fields (top, bottom, footwear, etc.)
+5. `RecommendOOTD` instance is the final output
 
-DSPy expects `dspy.Example` objects. Define a conversion:
-
-```python
-def bae_trace_to_dspy_example(
-    input_node: Node,
-    output_node: Node | None
-) -> dspy.Example:
-    """Convert a Bae execution trace to a DSPy training example."""
-
-    example = dspy.Example(
-        # Inputs from source node
-        **input_node.model_dump(),
-        # Expected output
-        next_node_type=type(output_node).__name__ if output_node else "None",
-        next_node_data=output_node.model_dump() if output_node else {}
-    ).with_inputs(*input_node.model_fields.keys())
-
-    return example
-```
-
-### 5. Metric Definition
-
-DSPy metrics score (example, prediction) pairs. For Bae:
-
-```python
-def node_transition_metric(example, prediction, trace=None) -> float:
-    """Score whether the predicted node transition is correct."""
-
-    # Did we choose the right successor type?
-    type_correct = (
-        prediction.next_node_type == example.next_node_type
-    )
-
-    if not type_correct:
-        return 0.0
-
-    # Did we produce correct field values?
-    # (Could be fuzzy match, semantic similarity, etc.)
-    if example.next_node_type == "None":
-        return 1.0  # Terminal, type match is enough
-
-    # Compare field values
-    expected = example.next_node_data
-    predicted = prediction.next_node_data
-
-    matching_fields = sum(
-        1 for k in expected if predicted.get(k) == expected[k]
-    )
-    return matching_fields / len(expected) if expected else 1.0
-```
-
-## Patterns to Follow
-
-### Pattern 1: Lazy Optimization
-
-**What:** Don't optimize all nodes upfront; optimize on-demand based on usage patterns.
-
-**When:** Large graphs where only some paths are hot.
-
-**Example:**
-```python
-class CompiledGraph:
-    def optimize_node(self, node_cls: type[Node], examples: list) -> None:
-        """Optimize a single node's prompts."""
-        sig = node_to_dspy_signature(node_cls)
-        module = dspy.ChainOfThought(sig)
-
-        optimizer = dspy.BootstrapFewShot(metric=node_transition_metric)
-        optimized = optimizer.compile(module, trainset=examples)
-
-        self._optimized_modules[node_cls] = optimized
-```
-
-### Pattern 2: Adapter Preservation
-
-**What:** Keep Bae's existing prompt generation as a fallback adapter.
-
-**When:** DSPy optimization fails or isn't available.
-
-**Example:**
-```python
-class BaeAdapter(dspy.Adapter):
-    """Adapter that uses Bae's existing prompt generation."""
-
-    def format(self, signature, demos, inputs):
-        # Use Bae's _node_to_prompt() style
-        ...
-
-    def parse(self, signature, completion):
-        # Use Bae's existing parsing
-        ...
-```
-
-### Pattern 3: Trace-Based Bootstrapping
-
-**What:** Collect real execution traces as training data, not synthetic examples.
-
-**When:** You have production traffic to learn from.
-
-**Example:**
-```python
-class TracingLM:
-    """LM wrapper that records execution traces for later optimization."""
-
-    def __init__(self, base_lm: LM, trace_store: TraceStore):
-        self.base_lm = base_lm
-        self.trace_store = trace_store
-
-    def decide(self, node: Node) -> Node | None:
-        result = self.base_lm.decide(node)
-
-        # Record trace
-        self.trace_store.record(
-            input_node=node,
-            output_node=result,
-            timestamp=datetime.now()
-        )
-
-        return result
-```
-
-## Anti-Patterns to Avoid
-
-### Anti-Pattern 1: Full Graph as Single Module
-
-**What:** Trying to optimize the entire graph as one DSPy module.
-
-**Why bad:** DSPy modules work best as atomic units. Whole-graph optimization loses granularity and makes debugging impossible.
-
-**Instead:** One DSPy module per Node type. Each optimizes independently.
-
-### Anti-Pattern 2: Replacing Pydantic with DSPy Types
-
-**What:** Converting all Node fields to DSPy's built-in types.
-
-**Why bad:** Loses Pydantic's validation, type coercion, and JSON schema generation.
-
-**Instead:** Keep Pydantic for Node definitions. Extract to DSPy Signatures only for optimization.
-
-### Anti-Pattern 3: Synchronous Optimization in Hot Path
-
-**What:** Running `optimizer.compile()` during graph execution.
-
-**Why bad:** Optimization is expensive (many LLM calls). Blocks execution for minutes.
-
-**Instead:** Optimize offline. Load optimized modules at startup.
-
-### Anti-Pattern 4: Ignoring DSPy's Caching
-
-**What:** Disabling DSPy's LM cache or not considering it.
-
-**Why bad:** Optimization makes many repeated calls. Without cache, costs explode.
-
-**Instead:** Ensure cache is enabled during optimization. Clear only when needed.
-
-## Phased Integration Roadmap
-
-### Phase 1: Signature Extraction (Foundation)
-- Implement `node_to_dspy_signature()` for all Node classes
-- Validate signatures match Bae's type system
-- **Deliverable:** Signatures for all nodes, no behavior change
-
-### Phase 2: DSPy Module Creation
-- Create `dspy.Predict` or `dspy.ChainOfThought` for each node
-- Wire modules to use existing LM backend via custom adapter
-- **Deliverable:** Modules that can be called but aren't optimized
-
-### Phase 3: Training Data Pipeline
-- Define `bae_trace_to_dspy_example()` conversion
-- Implement `TraceStore` for collecting execution traces
-- Define `node_transition_metric()`
-- **Deliverable:** Ability to collect and score training data
-
-### Phase 4: Optimization Loop
-- Integrate `BootstrapFewShot` optimizer
-- Implement save/load for optimized modules
-- Create `OptimizedLM` wrapper
-- **Deliverable:** End-to-end optimization working
-
-### Phase 5: Production Integration
-- Add `CompiledGraph.load()` for startup
-- Implement fallback behavior for unoptimized nodes
-- Add observability (which nodes optimized, cache hit rates)
-- **Deliverable:** Production-ready compiled graphs
+This means terminal detection should happen AFTER the node is constructed, not before. The loop should check if the newly constructed node's `__call__` returns None.
 
 ## Sources
 
-**HIGH confidence (official documentation):**
-- [DSPy Signatures](https://dspy.ai/learn/programming/signatures/) - Input/output contract definitions
-- [DSPy Modules](https://dspy.ai/learn/programming/modules/) - Module architecture and composition
-- [DSPy Adapters](https://dspy.ai/learn/programming/adapters/) - Adapter system for LM formatting
-- [DSPy Optimizers](https://dspy.ai/learn/optimization/optimizers/) - Optimization algorithms
-- [DSPy Language Models](https://dspy.ai/learn/programming/language_models/) - LM configuration
+- Bae codebase analysis: `bae/node.py`, `bae/graph.py`, `bae/lm.py`, `bae/compiler.py`, `bae/markers.py`
+- v2 reference implementation: `examples/ootd.py`
+- v2 design decisions: `.planning/PROJECT.md` (v2 Design Decisions section)
+- v1 architecture: `.planning/codebase/ARCHITECTURE.md`
+- v1 research: `.planning/research/ARCHITECTURE.md` (DSPy integration)
 
-**MEDIUM confidence (verified secondary sources):**
-- [DSPydantic](https://github.com/davidberenstein1957/dspydantic) - Pydantic-to-DSPy bridge pattern
-- [DeepWiki DSPy Architecture](https://deepwiki.com/stanfordnlp/dspy) - Internal architecture details
-- [MLflow DSPy Tracing](https://mlflow.org/docs/latest/genai/tracing/integrations/listing/dspy/) - Trace capture mechanisms
-
-**LOW confidence (community patterns, needs validation):**
-- Custom adapter implementation details - official docs thin on this
-- Multi-successor node handling - Bae-specific, no DSPy examples found
+---
+*Architecture research: 2026-02-07 -- v2 context frames integration*

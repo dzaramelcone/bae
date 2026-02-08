@@ -14,11 +14,10 @@ import ast
 import inspect
 import textwrap
 import types
-from typing import TYPE_CHECKING, ClassVar, get_type_hints, get_args
+from typing import ClassVar, TypedDict, get_type_hints, get_args
 from pydantic import BaseModel, ConfigDict
 
-if TYPE_CHECKING:
-    from bae.lm import LM
+from bae.lm import LM
 
 
 def _has_ellipsis_body(method) -> bool:
@@ -106,20 +105,39 @@ def _hint_includes_none(hint) -> bool:
     return False
 
 
-class NodeConfig(ConfigDict, total=False):
-    """Per-node configuration.
+def _wants_lm(method) -> bool:
+    """Check if __call__ has a parameter type-hinted as LM protocol.
 
-    Extends Pydantic's ConfigDict with node-specific settings.
+    Used to detect whether a node's __call__ opts in to LM injection.
+    Checks type hints (not parameter names) so any name works.
+
+    Args:
+        method: A method (function) to inspect.
+
+    Returns:
+        True if any parameter has LM type hint, False otherwise.
+    """
+    hints = get_type_hints(method)
+    for name, hint in hints.items():
+        if name == "return" or name == "self":
+            continue
+        if hint is LM:
+            return True
+    return False
+
+
+class NodeConfig(TypedDict, total=False):
+    """Per-node configuration for bae-specific settings.
+
+    Standalone TypedDict -- NOT extending Pydantic's ConfigDict.
+    Pydantic config lives in model_config; node behavior config lives here.
     """
 
-    model: str
-    """LLM model to use for this node (e.g., 'sonnet', 'opus', 'haiku')."""
-
-    temperature: float
-    """Temperature for LLM generation."""
+    lm: LM
+    """LM instance pinned to this node class (overrides graph-level LM)."""
 
 
-class Node(BaseModel, arbitrary_types_allowed=True):
+class Node(BaseModel):
     """Base class for graph nodes.
 
     Subclass this to define nodes in your agent graph:
@@ -148,9 +166,10 @@ class Node(BaseModel, arbitrary_types_allowed=True):
     - Return `None` = terminal node
     """
 
-    model_config: ClassVar[NodeConfig] = NodeConfig()
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    node_config: ClassVar[NodeConfig] = NodeConfig()
 
-    def __call__(self, lm: LM) -> Node | None:
+    def __call__(self, lm: LM, *_args: object, **_kwargs: object) -> Node | None:
         """Execute node logic and return next node.
 
         Override this to implement custom routing logic.

@@ -1,64 +1,40 @@
 """Annotation markers for bae Node fields.
 
-These markers are used with typing.Annotated to add metadata to Node fields.
-The compiler uses these markers to generate DSPy Signatures.
+Dep and Recall markers for annotating Node fields with typing.Annotated.
+The resolver uses these markers to classify fields for dependency injection
+and trace recall.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class Context:
-    """Marker for Node fields that should become DSPy InputFields.
-
-    Usage:
-        class MyNode(Node):
-            data: Annotated[str, Context(description="The data to process")]
-    """
-
-    description: str
-
-
-@dataclass(frozen=True)
 class Dep:
-    """Marker for __call__ parameters that are injected dependencies.
+    """Marker for field-level dependency injection.
 
-    Dep-annotated parameters become InputFields in the DSPy Signature,
-    making them visible to the LLM during optimization.
+    Dep(callable) stores a callable whose return value populates the
+    field before node execution. The resolver calls fn() during
+    resolve_fields and caches the result per graph run.
 
     Usage:
         class MyNode(Node):
-            def __call__(
-                self,
-                lm,
-                db: Annotated[str, Dep(description="Database connection")],
-            ) -> NextNode | None:
-                ...
+            data: Annotated[str, Dep(get_data)]
     """
 
-    description: str
+    fn: Callable | None = None
 
 
 @dataclass(frozen=True)
-class Bind:
-    """Marker for Node fields that should be available to downstream nodes.
+class Recall:
+    """Marker for fields populated from the execution trace.
 
-    Bind-annotated fields expose their values for downstream type-based
-    dependency injection. Only one Bind per type is allowed across the
-    entire graph (enforced by Graph.validate()).
+    Recall() searches backward through the execution trace for the most
+    recent node whose type matches (via MRO) and copies the field value.
 
     Usage:
-        class MyNode(Node):
-            conn: Annotated[DatabaseConn, Bind()]
-
-        class DownstreamNode(Node):
-            def __call__(
-                self,
-                lm,
-                conn: Annotated[DatabaseConn, Dep(description="DB connection")],
-            ) -> None:
-                # conn will be injected from MyNode's Bind field
-                ...
+        class ReviewCode(Node):
+            prev_analysis: Annotated[str, Recall()]
     """
 
     pass

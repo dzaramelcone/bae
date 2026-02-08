@@ -8,13 +8,11 @@ Tests:
 
 import ast
 import inspect
-from typing import Annotated
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bae.lm import LM
-from bae.markers import Context
 from bae.graph import Graph, _get_routing_strategy
 from bae.node import Node, _has_ellipsis_body
 from bae.result import GraphResult
@@ -47,7 +45,7 @@ class TargetB(Node):
 class EllipsisUnionNode(Node):
     """Node with ellipsis body and union return type."""
 
-    content: Annotated[str, Context(description="Content")]
+    content: str
 
     def __call__(self, lm: LM) -> TargetA | TargetB:
         ...
@@ -56,7 +54,7 @@ class EllipsisUnionNode(Node):
 class EllipsisSingleNode(Node):
     """Node with ellipsis body and single return type."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
 
     def __call__(self, lm: LM) -> TargetA:
         ...
@@ -65,7 +63,7 @@ class EllipsisSingleNode(Node):
 class EllipsisOptionalSingleNode(Node):
     """Node with ellipsis body and optional single return type (A | None)."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
 
     def __call__(self, lm: LM) -> TargetA | None:
         ...
@@ -74,7 +72,7 @@ class EllipsisOptionalSingleNode(Node):
 class EllipsisOptionalUnionNode(Node):
     """Node with ellipsis body and optional union return type (A | B | None)."""
 
-    content: Annotated[str, Context(description="Content")]
+    content: str
 
     def __call__(self, lm: LM) -> TargetA | TargetB | None:
         ...
@@ -83,7 +81,7 @@ class EllipsisOptionalUnionNode(Node):
 class EllipsisTerminalNode(Node):
     """Node with ellipsis body and pure None return type."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
 
     def __call__(self, lm: LM) -> None:
         ...
@@ -93,7 +91,7 @@ class EllipsisTerminalNode(Node):
 class CustomLogicNode(Node):
     """Node with custom __call__ logic."""
 
-    content: Annotated[str, Context(description="Content")]
+    content: str
 
     def __call__(self, lm: LM) -> TargetA | TargetB:
         return lm.decide(self)
@@ -102,7 +100,7 @@ class CustomLogicNode(Node):
 class CustomMakeNode(Node):
     """Node with custom logic using lm.make."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
 
     def __call__(self, lm: LM) -> TargetA:
         return lm.make(self, TargetA)
@@ -111,7 +109,7 @@ class CustomMakeNode(Node):
 class CustomConditionNode(Node):
     """Node with custom conditional logic."""
 
-    query: Annotated[str, Context(description="Query")]
+    query: str
 
     def __call__(self, lm: LM) -> TargetA | TargetB:
         if "special" in self.query:
@@ -133,7 +131,7 @@ class TerminalTarget(Node):
 class StartUnionNode(Node):
     """Start node with union return type and ellipsis body."""
 
-    content: Annotated[str, Context(description="Content")]
+    content: str
 
     def __call__(self, lm: LM) -> TerminalTarget | TargetB:
         ...
@@ -143,7 +141,7 @@ class StartUnionNode(Node):
 class StartSingleNode(Node):
     """Start node with single return type and ellipsis body."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
 
     def __call__(self, lm: LM) -> TerminalTarget:
         ...
@@ -153,7 +151,7 @@ class StartSingleNode(Node):
 class StartCustomNode(Node):
     """Start node with custom logic (escape hatch)."""
 
-    data: Annotated[str, Context(description="Data")]
+    data: str
     call_count: int = 0
 
     def __call__(self, lm: LM) -> TerminalTarget:
@@ -273,14 +271,31 @@ class TestGetRoutingStrategy:
 
 
 class MockLM:
-    """Mock LM that returns nodes from a sequence."""
+    """Mock LM implementing v2 API (choose_type/fill) for ellipsis-body nodes,
+    plus v1 stubs (make/decide) for custom __call__ nodes that call them directly.
+    """
 
     def __init__(self, sequence: list[Node | None] | None = None):
         self.sequence = sequence or []
         self.index = 0
+        self.fill_calls: list[tuple[type, dict, str]] = []
+        self.choose_type_calls: list[tuple[list, dict]] = []
         self.make_calls: list[tuple[Node, type]] = []
-        self.decide_calls: list[Node] = []
 
+    def choose_type(self, types, context):
+        self.choose_type_calls.append((types, context))
+        next_node = self.sequence[self.index]
+        if next_node is None:
+            return types[0]
+        return type(next_node)
+
+    def fill(self, target, resolved, instruction, source=None):
+        self.fill_calls.append((target, resolved, instruction))
+        result = self.sequence[self.index]
+        self.index += 1
+        return result
+
+    # v1 stubs for custom __call__ nodes that still call lm.make/decide
     def make(self, node: Node, target: type) -> Node:
         self.make_calls.append((node, target))
         result = self.sequence[self.index]
@@ -288,7 +303,6 @@ class MockLM:
         return result
 
     def decide(self, node: Node) -> Node | None:
-        self.decide_calls.append(node)
         result = self.sequence[self.index]
         self.index += 1
         return result
@@ -297,26 +311,28 @@ class MockLM:
 class TestGraphRunAutoRouting:
     """Tests for Graph.run() auto-routing based on ellipsis body."""
 
-    def test_ellipsis_union_calls_lm_decide(self):
-        """Ellipsis body with union return type calls lm.decide."""
+    def test_ellipsis_union_calls_choose_type_and_fill(self):
+        """Ellipsis body with union return type calls choose_type then fill."""
         graph = Graph(start=StartUnionNode)
         lm = MockLM(sequence=[TerminalTarget(), None])
 
         result = graph.run(StartUnionNode(content="test"), lm=lm)
 
-        # Should have called decide for StartNode
-        assert len(lm.decide_calls) == 1
+        # v2: decide strategy calls choose_type then fill
+        assert len(lm.choose_type_calls) == 1
+        assert len(lm.fill_calls) == 1
 
-    def test_ellipsis_single_calls_lm_make(self):
-        """Ellipsis body with single return type calls lm.make."""
+    def test_ellipsis_single_calls_lm_fill(self):
+        """Ellipsis body with single return type calls lm.fill directly."""
         graph = Graph(start=StartSingleNode)
         lm = MockLM(sequence=[TerminalTarget(), None])
 
         result = graph.run(StartSingleNode(data="test"), lm=lm)
 
-        # Should have called make for StartNode
-        assert len(lm.make_calls) == 1
-        assert lm.make_calls[0][1] is TerminalTarget
+        # v2: make strategy calls fill directly (no choose_type)
+        assert len(lm.fill_calls) == 1
+        assert lm.fill_calls[0][0] is TerminalTarget
+        assert len(lm.choose_type_calls) == 0
 
     def test_custom_logic_called_directly(self):
         """Node with custom logic is called directly (escape hatch)."""
@@ -325,9 +341,11 @@ class TestGraphRunAutoRouting:
 
         result = graph.run(StartCustomNode(data="test"), lm=lm)
 
-        # Custom __call__ was invoked via make()
-        # (StartCustomNode calls lm.make internally)
+        # Custom __call__ calls lm.make internally (v1 method)
         assert len(lm.make_calls) == 1
+        # No v2 auto-routing calls (not auto-routed)
+        assert len(lm.choose_type_calls) == 0
+        assert len(lm.fill_calls) == 0
 
     def test_ellipsis_terminal_returns_graph_result_with_none(self):
         """Ellipsis body with pure None return type returns GraphResult with node=None."""
@@ -342,7 +360,8 @@ class TestGraphRunAutoRouting:
         assert len(result.trace) == 1  # Just the start node
         # No LM calls should have been made
         assert len(lm.make_calls) == 0
-        assert len(lm.decide_calls) == 0
+        assert len(lm.choose_type_calls) == 0
+        assert len(lm.fill_calls) == 0
 
     def test_graph_run_returns_graph_result(self):
         """Graph.run() returns GraphResult with node and trace."""

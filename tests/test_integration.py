@@ -123,7 +123,7 @@ class TestPydanticAIBackend:
         graph = Graph(start=Question)
 
         question = Question(text="What is 2 + 2?")
-        result = graph.run(question, lm=lm, max_steps=5)
+        result = graph.run(question, lm=lm, max_iters=5)
 
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminated successfully
@@ -133,7 +133,7 @@ class TestPydanticAIBackend:
         graph = Graph(start=Task)
 
         task = Task(description="Make a peanut butter sandwich")
-        result = graph.run(task, lm=lm, max_steps=10)
+        result = graph.run(task, lm=lm, max_iters=10)
 
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminated successfully
@@ -167,7 +167,7 @@ class TestClaudeCLIBackend:
         graph = Graph(start=Question)
 
         question = Question(text="What is the capital of France?")
-        result = graph.run(question, lm=lm, max_steps=5)
+        result = graph.run(question, lm=lm, max_iters=5)
 
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminated successfully
@@ -187,7 +187,7 @@ class TestClaudeCLIBackend:
         graph = Graph(start=Task)
 
         task = Task(description="Make a peanut butter sandwich")
-        result = graph.run(task, lm=lm, max_steps=10)
+        result = graph.run(task, lm=lm, max_iters=10)
 
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminated successfully

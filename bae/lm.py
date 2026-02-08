@@ -5,10 +5,24 @@ Provides a clean interface for LLM backends to produce typed node instances.
 
 from __future__ import annotations
 
-import types
-from typing import TYPE_CHECKING, Protocol, TypeVar, get_args
+import enum
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Protocol,
+    TypeVar,
+    get_args,
+    get_origin,
+    get_type_hints,
+    runtime_checkable,
+)
 
+from anthropic import transform_schema
+from pydantic import BaseModel, create_model
 from pydantic_ai import Agent
+
+from bae.resolver import classify_fields
 
 if TYPE_CHECKING:
     from bae.node import Node
@@ -16,12 +30,170 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="Node")
 
 
+# ── Fill helpers ─────────────────────────────────────────────────────────
+
+
+def _get_base_type(hint: Any) -> Any:
+    """Extract base type from Annotated wrapper."""
+    if get_origin(hint) is Annotated:
+        return get_args(hint)[0]
+    return hint
+
+
+def _build_plain_model(target_cls: type) -> type[BaseModel]:
+    """Create a dynamic Pydantic model with only plain fields from target.
+
+    Used to constrain LLM output to only the fields it should generate
+    (not dep/recall fields). Works for both JSON schema generation and
+    pydantic-ai output_type.
+    """
+    fields = classify_fields(target_cls)
+    hints = get_type_hints(target_cls, include_extras=True)
+
+    # Collect plain fields with their types
+    plain_fields: dict[str, Any] = {}
+    for name in target_cls.model_fields:
+        if fields.get(name, "plain") == "plain":
+            base_type = _get_base_type(hints.get(name))
+            field_info = target_cls.model_fields[name]
+            if field_info.default is not None:
+                plain_fields[name] = (base_type, field_info.default)
+            else:
+                plain_fields[name] = (base_type, ...)
+
+    return create_model(
+        f"{target_cls.__name__}Plain",
+        **plain_fields,
+    )
+
+
+def validate_plain_fields(
+    raw: dict[str, Any],
+    target_cls: type,
+) -> dict[str, Any]:
+    """Validate only LLM-generated plain fields through Pydantic.
+
+    Builds a dynamic model from target_cls's plain fields, validates the raw
+    dict through it, and returns the validated+coerced values as a dict.
+
+    This is the LLM validation boundary — dep/recall fields are validated
+    separately at resolve time. Errors here are FillError, not DepError.
+
+    Args:
+        raw: Dict of raw parsed values for plain fields only.
+        target_cls: The target Node class (used to build the plain model).
+
+    Returns:
+        Dict of validated, type-coerced plain field values.
+
+    Raises:
+        FillError: If any plain field fails Pydantic validation.
+    """
+    from bae.exceptions import FillError
+
+    PlainModel = _build_plain_model(target_cls)
+
+    try:
+        validated = PlainModel.model_validate(raw)
+        return validated.model_dump()
+    except Exception as e:
+        raise FillError(
+            f"Plain field validation failed for {target_cls.__name__}",
+            node_type=target_cls,
+            validation_errors=str(e),
+            attempts=0,
+            cause=e,
+        ) from e
+
+
+def _build_fill_prompt(
+    target: type,
+    resolved: dict[str, object],
+    instruction: str,
+    source: "Node | None" = None,
+) -> str:
+    """Build the prompt for fill() — shared across backends.
+
+    Prompt structure (all JSON):
+    1. Input schema (transform_schema of source class, so LLM understands structure)
+    2. Source node data (previous node as JSON)
+    3. Resolved dep/recall values (as JSON under "context" key)
+    4. Instruction (class name + optional docstring)
+
+    Output schema is NOT included in the prompt — it's passed separately via
+    --json-schema for constrained decoding (ClaudeCLIBackend) or as output_type
+    (PydanticAIBackend). Including it would send it twice.
+    """
+    import json
+
+    parts: list[str] = []
+
+    if source is not None:
+        source_schema = transform_schema(type(source))
+        parts.append(f"Input schema:\n{json.dumps(source_schema, indent=2)}")
+
+        source_data = source.model_dump(mode="json")
+        parts.append(f"Input data:\n{json.dumps(source_data, indent=2)}")
+
+    if resolved:
+        context: dict[str, object] = {}
+        for k, v in resolved.items():
+            context[k] = v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+        parts.append(f"Context:\n{json.dumps(context, indent=2)}")
+
+    parts.append(instruction)
+
+    return "\n\n".join(parts)
+
+
+def _strip_format(schema: dict) -> dict:
+    """Recursively move 'format' from JSON schema into 'description'.
+
+    Claude CLI silently rejects --json-schema when the schema contains
+    'format' constraints (e.g. 'format': 'uri' from HttpUrl). The API
+    supports it, but the CLI doesn't create the structured output tool.
+
+    Instead of dropping format entirely, we append it to the description
+    so the LLM still knows the semantic type (e.g. "format: uri").
+    """
+    out: dict = {}
+    fmt = schema.get("format")
+    for k, v in schema.items():
+        if k == "format":
+            continue
+        if isinstance(v, dict):
+            out[k] = _strip_format(v)
+        elif isinstance(v, list):
+            out[k] = [_strip_format(i) if isinstance(i, dict) else i for i in v]
+        else:
+            out[k] = v
+    if fmt:
+        existing = out.get("description", "")
+        hint = f"format: {fmt}"
+        out["description"] = f"{existing}, {hint}" if existing else hint
+    return out
+
+
+def _build_choice_schema(type_names: list[str]) -> dict:
+    """Build a JSON schema for picking one of N type names.
+
+    Uses a dynamic Pydantic model + transform_schema for constrained decoding.
+    """
+    ChoiceEnum = enum.Enum("ChoiceEnum", {n: n for n in type_names})
+    ChoiceModel = create_model("Choice", choice=(ChoiceEnum, ...))
+    return transform_schema(ChoiceModel)
+
+
+@runtime_checkable
 class LM(Protocol):
     """Protocol for language model backends.
 
     The LM produces typed node instances based on:
     - Current node state (fields)
     - Target type(s) to produce
+
+    v1 methods (make/decide): node-centric, kept for custom __call__ escape-hatch nodes.
+    v2 methods (choose_type/fill): context-dict-centric, used by the graph runtime.
     """
 
     def make(self, node: Node, target: type[T]) -> T:
@@ -30,6 +202,31 @@ class LM(Protocol):
 
     def decide(self, node: Node) -> Node | None:
         """Let LLM decide which successor to produce based on return type hint."""
+        ...
+
+    def choose_type(
+        self,
+        types: list[type[Node]],
+        context: dict[str, object],
+    ) -> type[Node]:
+        """Pick successor type from candidates, given resolved context fields."""
+        ...
+
+    def fill(
+        self,
+        target: type[T],
+        resolved: dict[str, object],
+        instruction: str,
+        source: Node | None = None,
+    ) -> T:
+        """Populate a node's plain fields given resolved dep/recall values.
+
+        Args:
+            target: The Node type to populate.
+            resolved: Only the target's resolved dep/recall values.
+            instruction: Class name + optional docstring.
+            source: The previous node (context frame), serialized in prompt.
+        """
         ...
 
 
@@ -56,16 +253,16 @@ class PydanticAIBackend:
         return self._agents[cache_key]
 
     def _node_to_prompt(self, node: Node) -> str:
-        """Convert node state to a prompt string."""
-        lines = [f"Current state ({node.__class__.__name__}):"]
-        for name, value in node.model_dump().items():
-            lines.append(f"  {name}: {value!r}")
+        """Convert node state to JSON prompt string."""
+        import json
 
-        # Add docstring as context
+        data = {node.__class__.__name__: node.model_dump(mode="json")}
+        prompt = json.dumps(data, indent=2)
+
         if node.__class__.__doc__:
-            lines.append(f"\nContext: {node.__class__.__doc__}")
+            return f"{prompt}\n\nContext: {node.__class__.__doc__}"
 
-        return "\n".join(lines)
+        return prompt
 
     def make(self, node: Node, target: type[T]) -> T:
         """Produce an instance of target type using pydantic-ai."""
@@ -109,6 +306,67 @@ class PydanticAIBackend:
         result = agent.run_sync(full_prompt)
         return result.output
 
+    def choose_type(
+        self,
+        types: list[type[Node]],
+        context: dict[str, object],
+    ) -> type[Node]:
+        """Pick successor type from candidates using pydantic-ai."""
+        if len(types) == 1:
+            return types[0]
+
+        # Ask agent to pick a type name
+        agent = self._get_agent((str,), allow_none=False)
+        type_names = [t.__name__ for t in types]
+
+        import json
+
+        context_json = json.dumps({"context": {
+            k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+            for k, v in context.items()
+        }}, indent=2)
+        prompt = f"{context_json}\n\nPick one type: {', '.join(type_names)}"
+
+        for t in types:
+            if t.__doc__:
+                prompt += f"\n- {t.__name__}: {t.__doc__}"
+
+        result = agent.run_sync(prompt)
+        chosen = result.output.strip()
+
+        # Map name back to type
+        for t in types:
+            if t.__name__ == chosen:
+                return t
+
+        # Fallback: partial match
+        for t in types:
+            if t.__name__.lower() in chosen.lower():
+                return t
+
+        return types[0]
+
+    def fill(
+        self,
+        target: type[T],
+        resolved: dict[str, object],
+        instruction: str,
+        source: Node | None = None,
+    ) -> T:
+        """Populate target node fields using pydantic-ai with JSON output."""
+        plain_model = _build_plain_model(target)
+        agent = self._get_agent((plain_model,), allow_none=False)
+
+        prompt = _build_fill_prompt(target, resolved, instruction, source)
+
+        result = agent.run_sync(prompt)
+        # Merge LLM output with resolved deps
+        all_fields = dict(resolved)
+        plain_output = result.output
+        if isinstance(plain_output, BaseModel):
+            all_fields.update(plain_output.model_dump())
+        return target.model_construct(**all_fields)
+
 
 class ClaudeCLIBackend:
     """LLM backend using Claude CLI subprocess."""
@@ -118,28 +376,16 @@ class ClaudeCLIBackend:
         self.timeout = timeout
 
     def _node_to_prompt(self, node: Node) -> str:
-        """Convert node state to a prompt string."""
-        lines = [f"Current state ({node.__class__.__name__}):"]
-        for name, value in node.model_dump().items():
-            lines.append(f"  {name}: {value!r}")
+        """Convert node state to JSON prompt string."""
+        import json
+
+        data = {node.__class__.__name__: node.model_dump(mode="json")}
+        prompt = json.dumps(data, indent=2)
+
         if node.__class__.__doc__:
-            lines.append(f"\nContext: {node.__class__.__doc__}")
-        return "\n".join(lines)
+            return f"{prompt}\n\nContext: {node.__class__.__doc__}"
 
-    def _build_schema(self, types: tuple[type, ...], allow_none: bool) -> dict:
-        """Build JSON schema for union of types."""
-        schemas = []
-        for t in types:
-            schema = t.model_json_schema()
-            schema["title"] = t.__name__
-            schemas.append(schema)
-
-        if allow_none:
-            schemas.append({"type": "null", "title": "None"})
-
-        if len(schemas) == 1:
-            return schemas[0]
-        return {"oneOf": schemas}
+        return prompt
 
     def make(self, node: Node, target: type[T]) -> T:
         """Produce an instance of target type using Claude CLI."""
@@ -148,21 +394,30 @@ class ClaudeCLIBackend:
         if target.__doc__:
             full_prompt += f"\n{target.__name__}: {target.__doc__}"
 
-        schema = target.model_json_schema()
-        data = self._run_cli(full_prompt, schema)
+        schema = transform_schema(target)
+        data = self._run_cli_json(full_prompt, schema)
         return target.model_validate(data)
 
-    def _run_cli(self, prompt: str, schema: dict) -> dict | None:
-        """Run Claude CLI and extract structured output."""
+    def _run_cli_json(self, prompt: str, schema: dict) -> dict | None:
+        """Run Claude CLI with JSON schema and extract structured output."""
         import json
         import subprocess
 
+        # Strip 'format' fields — CLI silently rejects schemas containing them
+        # (e.g. format:uri from HttpUrl). The API supports format but the CLI
+        # doesn't create the structured output tool when it's present.
+        clean_schema = _strip_format(schema)
+
         cmd = [
             "claude",
-            "-p", prompt,
+            "-p", prompt,                               # single-shot prompt mode
             "--model", self.model,
-            "--output-format", "json",
-            "--json-schema", json.dumps(schema),
+            "--output-format", "json",                   # return conversation as JSON stream
+            "--json-schema", json.dumps(clean_schema),   # constrained decoding via structured output tool
+            "--no-session-persistence",                  # don't save to CLI session history
+            "--tools", "",                               # disable built-in tools (Bash, Edit, etc.)
+            "--strict-mcp-config",                       # disable MCP servers (no --mcp-config = none)
+            "--setting-sources", "",                     # skip loading project/user settings
         ]
 
         try:
@@ -180,7 +435,9 @@ class ClaudeCLIBackend:
             for item in reversed(data):
                 if item.get("type") == "result" and "structured_output" in item:
                     return item["structured_output"]
-            raise RuntimeError("No structured_output in Claude CLI response")
+            raise RuntimeError(
+                f"No structured_output in Claude CLI response: {json.dumps(data, indent=2)[:2000]}"
+            )
 
         return data
 
@@ -212,13 +469,9 @@ class ClaudeCLIBackend:
         if is_terminal:
             choice_prompt += "\n- None: Terminate processing"
 
-        choice_schema = {
-            "type": "object",
-            "properties": {"choice": {"type": "string", "enum": type_names}},
-            "required": ["choice"],
-        }
+        choice_schema = _build_choice_schema(type_names)
 
-        choice_data = self._run_cli(choice_prompt, choice_schema)
+        choice_data = self._run_cli_json(choice_prompt, choice_schema)
         chosen = choice_data["choice"]
 
         if chosen == "None":
@@ -227,3 +480,71 @@ class ClaudeCLIBackend:
         # Step 2: Fill the chosen type
         target = next(t for t in successors if t.__name__ == chosen)
         return self.make(node, target)
+
+    def choose_type(
+        self,
+        types: list[type[Node]],
+        context: dict[str, object],
+    ) -> type[Node]:
+        """Pick successor type from candidates using Claude CLI."""
+        if len(types) == 1:
+            return types[0]
+
+        type_names = [t.__name__ for t in types]
+
+        import json
+
+        context_json = json.dumps({"context": {
+            k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+            for k, v in context.items()
+        }}, indent=2)
+        prompt = f"{context_json}\n\nPick one type: {', '.join(type_names)}"
+
+        for t in types:
+            if t.__doc__:
+                prompt += f"\n- {t.__name__}: {t.__doc__}"
+
+        choice_schema = _build_choice_schema(type_names)
+
+        choice_data = self._run_cli_json(prompt, choice_schema)
+        chosen = choice_data["choice"]
+
+        # Map name back to type
+        for t in types:
+            if t.__name__ == chosen:
+                return t
+
+        return types[0]
+
+    def fill(
+        self,
+        target: type[T],
+        resolved: dict[str, object],
+        instruction: str,
+        source: Node | None = None,
+    ) -> T:
+        """Populate target node fields via JSON structured output.
+
+        Builds prompt with source context + resolved deps + instruction.
+        Output constrained by JSON schema from plain fields model.
+        """
+        plain_model = _build_plain_model(target)
+        plain_fields = list(plain_model.model_fields.keys())
+
+        if not plain_fields:
+            # No plain fields — nothing to fill, construct from resolved
+            return target.model_construct(**resolved)
+
+        prompt = _build_fill_prompt(target, resolved, instruction, source)
+
+        # Call CLI with JSON schema constraining output to plain fields only
+        schema = transform_schema(plain_model)
+        data = self._run_cli_json(prompt, schema)
+
+        # Validate plain fields (LLM boundary — FillError on failure)
+        validated = validate_plain_fields(data, target)
+
+        # Merge independently-validated halves via model_construct
+        all_fields = dict(resolved)
+        all_fields.update(validated)
+        return target.model_construct(**all_fields)

@@ -15,7 +15,7 @@
 
 ### Graph Routing
 
-- [x] **ROUTE-01**: Graph.run() auto-routes based on return type (union → decide, single → make)
+- [x] **ROUTE-01**: Graph.run() auto-routes based on return type (union -> decide, single -> make)
 - [x] **ROUTE-02**: `__call__` body `...` signals automatic routing
 - [x] **ROUTE-03**: Custom `__call__` logic still works as escape hatch
 
@@ -44,27 +44,64 @@
 - [x] **RUN-01**: OptimizedLM wrapper uses compiled prompts when available
 - [x] **RUN-02**: Fallback to naive prompts if no compiled version exists
 
-## v2 Requirements
+## v2.0 Requirements — Context Frames
 
-### Advanced Optimization
+### Dependency Injection
+
+- [x] **DEP2-01**: Dep(callable) resolves fields — `Annotated[T, Dep(fn)]` causes bae to call `fn` and inject the result into the field
+- [x] **DEP2-02**: Dep chaining resolves recursively — dep functions with dep-typed params are resolved bottom-up via topological sort
+- [x] **DEP2-03**: Circular dep chains detected at graph build time with clear error naming the cycle
+- [x] **DEP2-04**: Per-run dep caching — same dep function with same resolved args returns cached result within a single graph run
+- [x] **DEP2-05**: Clear error when dep callable fails — error names the dep function, the node, and the underlying exception
+- [x] **DEP2-06**: Dep fields on start node are auto-resolved before graph execution begins
+
+### Trace & Recall
+
+- [x] **RCL-01**: Recall() searches execution trace backward for most recent node with matching field type
+- [x] **RCL-02**: Clear error when Recall target type is not found in trace
+- [x] **RCL-03**: Recall on start node raises error at graph build time (no trace exists yet)
+
+### Node Semantics
+
+- [x] **NODE-01**: Node fields without Dep/Recall annotations are filled by the LLM
+- [x] **NODE-02**: Start node fields (without Dep) are caller-provided via constructor
+- [x] **NODE-03**: Terminal node (returns None) fields ARE the response schema
+- [x] **NODE-04**: Class name is the LLM instruction (docstrings are optional hints)
+
+### LM Protocol
+
+- [x] **LM-01**: LM is implicit — configured at graph level, removed from node `__call__` signature
+- [x] **LM-02**: Per-node LM override via NodeConfig (optional, graph-level is default)
+- [x] **LM-03**: New protocol: choose_type() picks successor type from union, fill() populates plain fields given resolved context
+- [x] **LM-04**: Dep/Recall fields are passed to LLM as context (InputFields), plain fields are LLM output (OutputFields)
+
+### Cleanup
+
+- [x] **CLN-01**: Remove Context marker from codebase and exports
+- [x] **CLN-02**: Remove Bind marker from codebase and exports
+- [x] **CLN-03**: Remove incant dependency
+- [x] **CLN-04**: All tests updated to v2 patterns
+- [x] **CLN-05**: examples/ootd.py runs end-to-end with v2 runtime
+
+## Future Requirements
 
 - **OPT-05**: MIPROv2 optimizer (needs 50-200+ examples)
 - **OPT-06**: Graph-aware optimization (optimize with topology awareness)
 - **OPT-07**: Incremental compilation (update prompts without full retrain)
-
-### Developer Experience
-
 - **DX-01**: CLI for compilation (`bae compile`)
-- **DX-02**: Compilation metrics/reporting
-- **DX-03**: A/B testing compiled vs naive prompts
+- **Cross-source chaining** — dep callable taking Recall param
+- **Recall with filters** — recall from specific node by name
+- **BindFor explicit writes** — targeted publishing to specific recallers (YAGNI)
+- **Parallel fan-out** — `tuple[A, B]` for producing multiple nodes (YAGNI)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Async interface | DSPy recommends starting sync; revisit if needed |
-| Validation retry loops | DSPy optimization may solve validation issues |
-| Custom adapters | Use DSPy's ChatAdapter (default) for now |
+| Async dep resolution | Bae is sync-only |
+| Custom resolution strategies / plugin system | Three sources (Dep, Recall, LLM) are sufficient |
+| Validation error retry loops | DSPy optimization may solve this |
+| Dep result mutation | Dep results treated as immutable snapshots |
 
 ## Traceability
 
@@ -91,12 +128,35 @@
 | OPT-04 | Phase 3 | Complete |
 | RUN-01 | Phase 4 | Complete |
 | RUN-02 | Phase 4 | Complete |
+| DEP2-01 | Phase 5 | Complete |
+| DEP2-02 | Phase 5 | Complete |
+| DEP2-03 | Phase 5 | Complete |
+| DEP2-04 | Phase 5 | Complete |
+| DEP2-05 | Phase 5 | Complete |
+| RCL-01 | Phase 5 | Complete |
+| RCL-02 | Phase 5 | Complete |
+| RCL-03 | Phase 5 | Complete |
+| NODE-01 | Phase 6 | Complete |
+| NODE-02 | Phase 6 | Complete |
+| NODE-03 | Phase 6 | Complete |
+| NODE-04 | Phase 6 | Complete |
+| LM-01 | Phase 6 | Complete |
+| LM-02 | Phase 6 | Complete |
+| LM-03 | Phase 6 | Complete |
+| LM-04 | Phase 6 | Complete |
+| DEP2-06 | Phase 7 | Complete |
+| CLN-03 | Phase 7 | Complete |
+| CLN-01 | Phase 8 | Complete |
+| CLN-02 | Phase 8 | Complete |
+| CLN-04 | Phase 8 | Complete |
+| CLN-05 | Phase 8 | Complete |
 
 **Coverage:**
-- v1 requirements: 19 total (3 new routing/dep reqs)
-- Mapped to phases: 19
+- v1 requirements: 19 mapped, 19 complete
+- v2.0 requirements: 22 total
+- Mapped to phases: 22
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-04*
-*Traceability updated: 2026-02-04*
+*v2.0 traceability updated: 2026-02-07*

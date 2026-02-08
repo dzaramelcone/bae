@@ -527,8 +527,8 @@ class TestSaveLoadRoundTrip:
         loaded_predictor = loaded[StartNode]
         expected_sig = node_to_signature(StartNode)
 
-        # Both should have the same instruction (class name)
-        assert expected_sig.__doc__ == "StartNode"
+        # Both should have the same instruction (class name + docstring)
+        assert expected_sig.__doc__ == "StartNode: A starting node."
 
 
 # --- optimize_node Tests ---
@@ -899,11 +899,9 @@ class TestOptimizeNodeReturnsOptimizedPredictor:
 
 
 import pytest
-from typing import Annotated
 
 from bae import Graph, compile_graph, LM
 from bae.compiler import CompiledGraph
-from bae.markers import Context
 
 
 # Test nodes for CompiledGraph tests - need __call__ with proper type hints
@@ -919,7 +917,7 @@ class CompiledEndNode(Node):
 class CompiledStartNode(Node):
     """Starting node for compiled graph tests."""
 
-    text: Annotated[str, Context(description="The text")]
+    text: str
 
     def __call__(self, lm: LM) -> CompiledEndNode:
         ...
