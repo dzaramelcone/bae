@@ -109,21 +109,31 @@ def _build_xml_schema(target_cls: type) -> str:
 def _serialize_value(tag: str, value: Any, indent: int = 2) -> str:
     """Serialize a value as XML elements.
 
-    Handles Pydantic models (recursive), lists (<item> tags), and scalars.
+    Walks BaseModel fields directly (preserving types for nested models
+    in lists). Uses typed tags for BaseModel list items, <item> for scalars.
     """
     prefix = " " * indent
 
     if isinstance(value, BaseModel):
-        data = value.model_dump()
-        inner = _serialize_dict(data, indent + 2)
+        # Walk fields directly — don't model_dump(), which loses class info
+        inner_lines = []
+        for field_name in value.__class__.model_fields:
+            field_val = getattr(value, field_name)
+            inner_lines.append(_serialize_value(field_name, field_val, indent + 2))
+        inner = "\n".join(inner_lines)
         return f"{prefix}<{tag}>\n{inner}\n{prefix}</{tag}>"
     elif isinstance(value, list):
         lines = [f"{prefix}<{tag}>"]
         for item in value:
             if isinstance(item, BaseModel):
-                item_data = item.model_dump()
-                inner = _serialize_dict(item_data, indent + 4)
                 item_cls = item.__class__.__name__
+                inner_lines = []
+                for field_name in item.__class__.model_fields:
+                    field_val = getattr(item, field_name)
+                    inner_lines.append(
+                        _serialize_value(field_name, field_val, indent + 4)
+                    )
+                inner = "\n".join(inner_lines)
                 lines.append(f"{prefix}    <{item_cls}>")
                 lines.append(inner)
                 lines.append(f"{prefix}    </{item_cls}>")
@@ -144,7 +154,7 @@ def _serialize_value(tag: str, value: Any, indent: int = 2) -> str:
 
 
 def _serialize_dict(data: dict, indent: int = 2) -> str:
-    """Serialize a dict as XML elements."""
+    """Serialize a dict as XML elements (fallback for raw dicts)."""
     lines = []
     for key, value in data.items():
         lines.append(_serialize_value(key, value, indent))

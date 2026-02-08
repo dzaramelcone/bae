@@ -317,6 +317,39 @@ class TestSerializeValue:
         assert "<item>a</item>" in xml
         assert "<item>b</item>" in xml
 
+    def test_list_of_models_uses_typed_tags(self):
+        """Serializes list of BaseModel instances with class name as tag."""
+        from bae.lm import _serialize_value
+
+        conditions = [
+            Weather(temp=72.0, conditions="sunny"),
+            Weather(temp=50.0, conditions="cloudy"),
+        ]
+        xml = _serialize_value("conditions", conditions, indent=2)
+
+        assert "<Weather>" in xml
+        assert "</Weather>" in xml
+        assert "<item>" not in xml
+
+    def test_nested_model_with_list_preserves_types(self):
+        """Model containing list of models serializes with typed tags throughout."""
+        from bae.lm import _serialize_value
+
+        class Inner(BaseModel):
+            x: int
+
+        class Outer(BaseModel):
+            name: str
+            items: list[Inner]
+
+        outer = Outer(name="test", items=[Inner(x=1), Inner(x=2)])
+        xml = _serialize_value("outer", outer, indent=2)
+
+        assert "<Inner>" in xml
+        assert "</Inner>" in xml
+        assert "<x>1</x>" in xml
+        assert "<item>" not in xml
+
 
 # ── validate_plain_fields ──────────────────────────────────────────────
 
