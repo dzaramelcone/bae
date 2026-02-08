@@ -273,14 +273,31 @@ class TestGetRoutingStrategy:
 
 
 class MockLM:
-    """Mock LM that returns nodes from a sequence."""
+    """Mock LM implementing v2 API (choose_type/fill) for ellipsis-body nodes,
+    plus v1 stubs (make/decide) for custom __call__ nodes that call them directly.
+    """
 
     def __init__(self, sequence: list[Node | None] | None = None):
         self.sequence = sequence or []
         self.index = 0
+        self.fill_calls: list[tuple[type, dict, str]] = []
+        self.choose_type_calls: list[tuple[list, dict]] = []
         self.make_calls: list[tuple[Node, type]] = []
-        self.decide_calls: list[Node] = []
 
+    def choose_type(self, types, context):
+        self.choose_type_calls.append((types, context))
+        next_node = self.sequence[self.index]
+        if next_node is None:
+            return types[0]
+        return type(next_node)
+
+    def fill(self, target, context, instruction):
+        self.fill_calls.append((target, context, instruction))
+        result = self.sequence[self.index]
+        self.index += 1
+        return result
+
+    # v1 stubs for custom __call__ nodes that still call lm.make/decide
     def make(self, node: Node, target: type) -> Node:
         self.make_calls.append((node, target))
         result = self.sequence[self.index]
@@ -288,7 +305,6 @@ class MockLM:
         return result
 
     def decide(self, node: Node) -> Node | None:
-        self.decide_calls.append(node)
         result = self.sequence[self.index]
         self.index += 1
         return result
@@ -297,26 +313,28 @@ class MockLM:
 class TestGraphRunAutoRouting:
     """Tests for Graph.run() auto-routing based on ellipsis body."""
 
-    def test_ellipsis_union_calls_lm_decide(self):
-        """Ellipsis body with union return type calls lm.decide."""
+    def test_ellipsis_union_calls_choose_type_and_fill(self):
+        """Ellipsis body with union return type calls choose_type then fill."""
         graph = Graph(start=StartUnionNode)
         lm = MockLM(sequence=[TerminalTarget(), None])
 
         result = graph.run(StartUnionNode(content="test"), lm=lm)
 
-        # Should have called decide for StartNode
-        assert len(lm.decide_calls) == 1
+        # v2: decide strategy calls choose_type then fill
+        assert len(lm.choose_type_calls) == 1
+        assert len(lm.fill_calls) == 1
 
-    def test_ellipsis_single_calls_lm_make(self):
-        """Ellipsis body with single return type calls lm.make."""
+    def test_ellipsis_single_calls_lm_fill(self):
+        """Ellipsis body with single return type calls lm.fill directly."""
         graph = Graph(start=StartSingleNode)
         lm = MockLM(sequence=[TerminalTarget(), None])
 
         result = graph.run(StartSingleNode(data="test"), lm=lm)
 
-        # Should have called make for StartNode
-        assert len(lm.make_calls) == 1
-        assert lm.make_calls[0][1] is TerminalTarget
+        # v2: make strategy calls fill directly (no choose_type)
+        assert len(lm.fill_calls) == 1
+        assert lm.fill_calls[0][0] is TerminalTarget
+        assert len(lm.choose_type_calls) == 0
 
     def test_custom_logic_called_directly(self):
         """Node with custom logic is called directly (escape hatch)."""
@@ -325,9 +343,11 @@ class TestGraphRunAutoRouting:
 
         result = graph.run(StartCustomNode(data="test"), lm=lm)
 
-        # Custom __call__ was invoked via make()
-        # (StartCustomNode calls lm.make internally)
+        # Custom __call__ calls lm.make internally (v1 method)
         assert len(lm.make_calls) == 1
+        # No v2 auto-routing calls (not auto-routed)
+        assert len(lm.choose_type_calls) == 0
+        assert len(lm.fill_calls) == 0
 
     def test_ellipsis_terminal_returns_graph_result_with_none(self):
         """Ellipsis body with pure None return type returns GraphResult with node=None."""
@@ -342,7 +362,8 @@ class TestGraphRunAutoRouting:
         assert len(result.trace) == 1  # Just the start node
         # No LM calls should have been made
         assert len(lm.make_calls) == 0
-        assert len(lm.decide_calls) == 0
+        assert len(lm.choose_type_calls) == 0
+        assert len(lm.fill_calls) == 0
 
     def test_graph_run_returns_graph_result(self):
         """Graph.run() returns GraphResult with node and trace."""

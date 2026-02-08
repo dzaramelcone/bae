@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from bae.exceptions import BaeError
 from bae.graph import Graph
 from bae.node import Node
 from bae.lm import LM
@@ -11,7 +12,11 @@ from bae.result import GraphResult
 
 # Mock LM for testing
 class MockLM:
-    """Mock LM that returns nodes from a sequence."""
+    """Mock LM that returns nodes from a sequence.
+
+    Supports v1 methods (make/decide) for custom __call__ nodes that invoke
+    them directly, plus v2 stubs (choose_type/fill) for Protocol shape.
+    """
 
     def __init__(self, sequence: list[Node | None]):
         self.sequence = sequence
@@ -26,6 +31,12 @@ class MockLM:
         result = self.sequence[self.index]
         self.index += 1
         return result
+
+    def choose_type(self, types, context):
+        raise NotImplementedError("v1 test mock -- custom nodes don't use choose_type")
+
+    def fill(self, target, context, instruction):
+        raise NotImplementedError("v1 test mock -- custom nodes don't use fill")
 
 
 # Test nodes
@@ -156,11 +167,11 @@ class TestGraphRun:
         assert result.node is None
         assert len(result.trace) == 3  # Start, Process, Review
 
-    def test_run_max_steps(self):
+    def test_run_max_iters(self):
         graph = Graph(start=Infinite)
 
         # Infinite doesn't use LM, just returns new Infinite
         lm = MockLM(sequence=[])
 
-        with pytest.raises(RuntimeError, match="exceeded"):
-            graph.run(Infinite(), lm=lm, max_steps=10)
+        with pytest.raises(BaeError, match="exceeded"):
+            graph.run(Infinite(), lm=lm, max_iters=10)
