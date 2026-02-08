@@ -214,22 +214,35 @@ def _parse_xml_completion(
         if found_start and fields.get(name, "plain") == "plain":
             plain_fields.append(name)
 
-    # Reconstruct full XML by wrapping the response
-    # The response starts inside <from_field> and continues to </target_cls>
-    full_xml = f"<{target_cls.__name__}><{from_field}>{response}"
-
-    # Ensure we have a closing root tag
+    # Detect response shape:
+    # - Continuation: "value text</from_field>\n<next>..." (ideal)
+    # - Re-opened tags: possibly preamble + "<from_field>value</from_field>..."
     root_tag = target_cls.__name__
-    if f"</{root_tag}>" not in full_xml:
-        full_xml += f"\n</{root_tag}>"
+    close_root = f"</{root_tag}>"
+
+    if f"<{from_field}>" in response:
+        # LLM re-opened the tag — strip preamble, wrap in root only
+        tag_start = response.index(f"<{from_field}>")
+        xml_body = response[tag_start:]
+        # Truncate at closing root tag
+        close_idx = xml_body.find(close_root)
+        if close_idx != -1:
+            xml_body = xml_body[: close_idx]
+        full_xml = f"<{root_tag}>{xml_body}{close_root}"
+    else:
+        # True continuation — wrap in root + from_field open tag
+        full_xml = f"<{root_tag}><{from_field}>{response}"
+        close_idx = full_xml.find(close_root)
+        if close_idx != -1:
+            full_xml = full_xml[: close_idx + len(close_root)]
+        else:
+            full_xml += f"\n{close_root}"
+
+    # Clean up common XML issues
+    full_xml = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;)", "&amp;", full_xml)
 
     # Parse the XML
-    try:
-        root = ET.fromstring(full_xml)
-    except ET.ParseError:
-        # Try to clean up common issues
-        full_xml = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;)", "&amp;", full_xml)
-        root = ET.fromstring(full_xml)
+    root = ET.fromstring(full_xml)
 
     result: dict[str, Any] = {}
 
@@ -605,6 +618,13 @@ class ClaudeCLIBackend:
 
         return data
 
+    _FILL_SYSTEM_PROMPT = (
+        "You are an XML completion engine. "
+        "The user provides an incomplete XML document that ends at an open tag. "
+        "Continue the document from exactly where it left off. "
+        "Output ONLY the XML continuation — no commentary, no markdown, no explanation."
+    )
+
     def _run_cli_text(self, prompt: str) -> str:
         """Run Claude CLI in text mode and return raw output."""
         import subprocess
@@ -615,6 +635,7 @@ class ClaudeCLIBackend:
             "--model", self.model,
             "--output-format", "text",
             "--no-session-persistence",
+            "--system-prompt", self._FILL_SYSTEM_PROMPT,
         ]
 
         try:
@@ -729,9 +750,9 @@ class ClaudeCLIBackend:
         # Build prompt parts
         parts: list[str] = []
         if source is not None:
-            parts.append(format_as_xml(
-                source.model_dump(), root_tag=source.__class__.__name__
-            ))
+            parts.append(
+                _serialize_value(source.__class__.__name__, source)
+            )
         parts.append(_build_xml_schema(target))
         parts.append(_build_partial_xml(target, resolved))
 
