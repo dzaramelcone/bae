@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 ## Current Position
 
 Phase: 5 of 8 (Markers & Resolver)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-02-07 — v2.0 roadmap created
+Plan: 1 of 4 in current phase
+Status: In progress
+Last activity: 2026-02-07 — Completed 05-01-PLAN.md
 
-Progress: [##########..........] 50% (v1.0 complete, v2.0 starting)
+Progress: [###########.........] 54% (14/26 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 13 (v1.0)
+- Total plans completed: 14 (13 v1.0 + 1 v2.0)
 - Average duration: —
 - Total execution time: —
 
@@ -32,6 +32,7 @@ Progress: [##########..........] 50% (v1.0 complete, v2.0 starting)
 | 2. DSPy Integration | 5 | — | — |
 | 3. Optimization | 4 | — | — |
 | 4. Production Runtime | 2 | — | — |
+| 5. Markers & Resolver | 1/4 | ~8min | ~8min |
 
 *Updated after each plan completion*
 
@@ -47,6 +48,8 @@ Key v2 decisions affecting Phase 5:
 - `graphlib.TopologicalSorter` for dep chain resolution and cycle detection
 - Dep on start node is allowed (auto-resolved); Recall on start node is an error
 - Per-run dep caching (same dep function + args = cached result within one graph run)
+- Dep.fn is first positional field so `Dep(callable)` works without keyword; v1 compat preserved via `description` kwarg
+- classify_fields() skips "return" key from get_type_hints
 
 ### Pending Todos
 
@@ -59,5 +62,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-07
-Stopped at: v2.0 roadmap created
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None
