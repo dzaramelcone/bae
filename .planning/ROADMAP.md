@@ -179,18 +179,20 @@ Plans:
   3. All tests use v2 patterns (Dep(callable) on fields, Recall(), implicit LM) — no v1 marker usage remains
   4. `examples/ootd.py` runs end-to-end with the v2 runtime and produces a valid outfit recommendation
 
-### v3.0 XML Fill & Prompt Quality (Planned)
+### v3.0 JSON Structured Fill & Prompt Quality (Planned)
 
-#### Phase 9: XML Next-Token Fill
-**Goal**: fill() uses XML completion protocol — source node + schema + partial XML prompt, LLM continues the document
+#### Phase 9: JSON Structured Fill
+**Goal**: fill() uses JSON structured output with constrained decoding — source JSON + instruction prompt, schema-validated response
 **Depends on**: Phase 8 (v2.0 complete)
 **Status**: In progress on spike/e2e-cli branch
 
+**Design**: Claude CLI's `--json-schema` flag enables constrained decoding (Anthropic structured outputs). `transform_schema()` from the Anthropic SDK prepares Pydantic models for this — strips unsupported constraints, adds `additionalProperties: false`. Prompt is JSON (source node + resolved deps + instruction). Response is guaranteed schema-conformant.
+
 **Success Criteria** (what must be TRUE):
-  1. fill() prompt is structured as: source XML + target schema + partial XML ending at first plain field's open tag
-  2. LLM continues the XML document; response is parsed and validated through Pydantic
+  1. fill() prompt is structured as: source node JSON + resolved deps JSON + instruction text
+  2. JSON schema for plain fields generated via `_build_plain_model()` + `transform_schema()`; LLM response guaranteed conformant by constrained decoding
   3. Dep/recall fields validated at resolve time (DepError); plain fields validated separately (FillError) — clear boundary
-  4. ClaudeCLIBackend uses text mode (_run_cli_text) for fill, JSON mode for choose_type
+  4. ClaudeCLIBackend uses JSON mode (`--json-schema` + `--output-format json`) for both fill and choose_type
   5. `examples/ootd.py` runs end-to-end producing valid OOTD recommendation
 
 #### Phase 10: AdditionalContext Annotation
@@ -201,14 +203,14 @@ Plans:
 
 **Success Criteria** (what must be TRUE):
   1. `AdditionalContext(str)` annotation marker exists in bae/markers.py
-  2. `_build_instruction()` and `_build_xml_schema()` use AdditionalContext instead of `__doc__`
+  2. `_build_instruction()` uses AdditionalContext instead of `__doc__`
   3. Docstrings on Node subclasses are NOT automatically included in LLM prompts
   4. Nodes without AdditionalContext annotation use only class name as instruction
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 5 -> 6 -> 7 -> 8
+Phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9 -> 10
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -221,6 +223,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8
 | 6. Node & LM Protocol | v2.0 | 5/5 | Complete | 2026-02-08 |
 | 7. Integration | v2.0 | 4/4 | Complete | 2026-02-08 |
 | 8. Cleanup & Migration | v2.0 | 4/4 | Complete | 2026-02-08 |
+| 9. JSON Structured Fill | v3.0 | —/— | In Progress | — |
 
 ---
 *Roadmap created: 2026-02-04*

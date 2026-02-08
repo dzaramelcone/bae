@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** ALL PHASES COMPLETE
+**Current focus:** v3.0 Phase 9 — JSON Structured Fill
 
 ## Current Position
 
-Phase: 8 of 8 (Cleanup & Migration) — COMPLETE
-Plan: 04 of 04 complete
-Status: Complete
-Last activity: 2026-02-08 — Completed 08-04-PLAN.md (phase gate: fix CompiledGraph.run(), full suite, E2E validation)
+Phase: 9 (JSON Structured Fill) — IN PROGRESS
+Plan: spike/e2e-cli branch (pre-plan exploration)
+Status: In Progress — pivoted from XML to JSON, updating planning docs
+Last activity: 2026-02-08 — JSON pivot complete in code, planning docs catching up
 
-Progress: [##############################] 100% (30/30 plans complete)
+Progress: [##############################] 100% v2.0 (30/30 plans) | Phase 9 in progress
 
 ## Performance Metrics
 
@@ -88,9 +88,20 @@ Key decisions from Phase 8:
 - E2E tests gated behind --run-e2e flag to avoid CI failures without API keys
 - Structural validation sufficient for phase gate when no LLM key available
 
+Key decisions from Phase 9 (JSON Structured Fill):
+- Pivoted from XML completion to JSON structured output — Claude CLI's `--json-schema` provides constrained decoding (guaranteed schema-conformant responses)
+- `transform_schema()` from Anthropic SDK prepares Pydantic models for constrained decoding (strips unsupported constraints, adds additionalProperties: false)
+- `_build_plain_model()` creates dynamic Pydantic model with only plain fields for LLM output schema
+- `_build_choice_schema()` uses dynamic Pydantic enum + transform_schema for choose_type constrained decoding
+- `_build_fill_prompt()` serializes source node and resolved deps as JSON (not XML)
+- `--setting-sources ""` BREAKS structured output in Claude CLI — removes StructuredOutput internal tool. Must NOT be used.
+- `validate_plain_fields()` validates LLM-generated plain fields through Pydantic (FillError on failure)
+
 ### Pending Todos
 
-None.
+- Real CLI E2E Turn 2 still fails — need to debug after JSON pivot changes are solid
+- `format_as_xml` still used in v1 methods (_node_to_prompt) and choose_type (PydanticAIBackend) — clean up or keep for v1 compat
+- Tests need verification after _build_fill_prompt JSON change (311 passed before this edit)
 
 ### Blockers/Concerns
 
@@ -99,5 +110,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 08-04-PLAN.md — ALL PHASES COMPLETE (30/30 plans)
+Stopped at: Phase 9 in progress — JSON pivot code done, planning docs updated, need to run tests and real CLI E2E
+Branch: spike/e2e-cli
 Resume file: None
