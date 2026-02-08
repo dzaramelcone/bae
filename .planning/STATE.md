@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 Phase: 8 of 8 (Cleanup & Migration) — IN PROGRESS
 Plan: 03 of 04 complete
 Status: In progress
-Last activity: 2026-02-08 — Completed 08-03-PLAN.md (runtime-adjacent test migration)
+Last activity: 2026-02-08 — Completed 08-02-PLAN.md (compiler-adjacent test migration)
 
 Progress: [############################.] 96% (29/30 plans complete)
 
@@ -98,5 +98,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 08-03-PLAN.md (runtime-adjacent test migration)
+Stopped at: Completed 08-02-PLAN.md (compiler-adjacent test migration)
 Resume file: None
