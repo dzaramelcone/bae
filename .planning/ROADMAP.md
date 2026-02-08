@@ -165,7 +165,13 @@ Plans:
 **Goal**: v1 markers are gone, all tests use v2 patterns, reference example works end-to-end
 **Depends on**: Phase 7
 **Requirements**: CLN-01, CLN-02, CLN-04, CLN-05
-**Plans**: TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Source-side v1 marker removal (Context, Bind, Dep.description)
+- [ ] 08-02-PLAN.md — Test migration batch 1 (compiler, dspy_backend, signature_v2)
+- [ ] 08-03-PLAN.md — Test migration batch 2 (auto_routing, optimized_lm, optimizer, integration_dspy, resolver)
+- [ ] 08-04-PLAN.md — Phase gate: CompiledGraph fix, full suite, ootd.py E2E
 
 **Success Criteria** (what must be TRUE):
   1. Context marker is removed from codebase and package exports — importing it raises ImportError
@@ -188,7 +194,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8
 | 5. Markers & Resolver | v2.0 | 4/4 | Complete | 2026-02-08 |
 | 6. Node & LM Protocol | v2.0 | 5/5 | Complete | 2026-02-08 |
 | 7. Integration | v2.0 | 4/4 | Complete | 2026-02-08 |
-| 8. Cleanup & Migration | v2.0 | 0/TBD | Not started | - |
+| 8. Cleanup & Migration | v2.0 | 0/4 | Not started | - |
 
 ---
 *Roadmap created: 2026-02-04*
