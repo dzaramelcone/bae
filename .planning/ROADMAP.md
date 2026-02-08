@@ -127,7 +127,14 @@ Plans:
 **Goal**: Nodes declare field sources through annotations; LM fills only what it should, configured at graph level
 **Depends on**: Phase 5
 **Requirements**: NODE-01, NODE-02, NODE-03, NODE-04, LM-01, LM-02, LM-03, LM-04
-**Plans**: TBD
+**Plans:** 5 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — TDD: NodeConfig standalone TypedDict + node_config ClassVar + _wants_lm
+- [ ] 06-02-PLAN.md — TDD: node_to_signature() v2 with classify_fields integration
+- [ ] 06-03-PLAN.md — TDD: GraphResult.result property + Graph[T] optional generic
+- [ ] 06-04-PLAN.md — TDD: LM Protocol choose_type/fill methods + backend implementations
+- [ ] 06-05-PLAN.md — Package exports + full regression verification
 
 **Success Criteria** (what must be TRUE):
   1. Node fields without Dep/Recall annotations are identified as LLM-filled; fields with Dep/Recall are identified as context
@@ -173,7 +180,7 @@ Phases execute in numeric order: 5 -> 6 -> 7 -> 8
 | 3. Optimization | v1.0 | 4/4 | Complete | 2026-02-05 |
 | 4. Production Runtime | v1.0 | 2/2 | Complete | 2026-02-05 |
 | 5. Markers & Resolver | v2.0 | 4/4 | Complete | 2026-02-08 |
-| 6. Node & LM Protocol | v2.0 | 0/TBD | Not started | - |
+| 6. Node & LM Protocol | v2.0 | 0/5 | Not started | - |
 | 7. Integration | v2.0 | 0/TBD | Not started | - |
 | 8. Cleanup & Migration | v2.0 | 0/TBD | Not started | - |
 
