@@ -77,11 +77,11 @@
 
 ### Cleanup
 
-- [ ] **CLN-01**: Remove Context marker from codebase and exports
-- [ ] **CLN-02**: Remove Bind marker from codebase and exports
+- [x] **CLN-01**: Remove Context marker from codebase and exports
+- [x] **CLN-02**: Remove Bind marker from codebase and exports
 - [x] **CLN-03**: Remove incant dependency
-- [ ] **CLN-04**: All tests updated to v2 patterns
-- [ ] **CLN-05**: examples/ootd.py runs end-to-end with v2 runtime
+- [x] **CLN-04**: All tests updated to v2 patterns
+- [x] **CLN-05**: examples/ootd.py runs end-to-end with v2 runtime
 
 ## Future Requirements
 
@@ -146,10 +146,10 @@
 | LM-04 | Phase 6 | Complete |
 | DEP2-06 | Phase 7 | Complete |
 | CLN-03 | Phase 7 | Complete |
-| CLN-01 | Phase 8 | Pending |
-| CLN-02 | Phase 8 | Pending |
-| CLN-04 | Phase 8 | Pending |
-| CLN-05 | Phase 8 | Pending |
+| CLN-01 | Phase 8 | Complete |
+| CLN-02 | Phase 8 | Complete |
+| CLN-04 | Phase 8 | Complete |
+| CLN-05 | Phase 8 | Complete |
 
 **Coverage:**
 - v1 requirements: 19 mapped, 19 complete
