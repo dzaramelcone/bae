@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Phase 5 — Markers & Resolver
+**Current focus:** Phase 5 complete -- ready for Phase 6 (Graph Engine v2)
 
 ## Current Position
 
 Phase: 5 of 8 (Markers & Resolver)
-Plan: 3 of 4 in current phase
-Status: In progress
-Last activity: 2026-02-08 — Completed 05-03-PLAN.md
+Plan: 4 of 4 in current phase
+Status: Phase complete
+Last activity: 2026-02-08 — Completed 05-04-PLAN.md
 
-Progress: [############........] 62% (16/26 plans complete)
+Progress: [#############.......] 65% (17/26 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 16 (13 v1.0 + 3 v2.0)
+- Total plans completed: 17 (13 v1.0 + 4 v2.0)
 - Average duration: —
 - Total execution time: —
 
@@ -32,7 +32,7 @@ Progress: [############........] 62% (16/26 plans complete)
 | 2. DSPy Integration | 5 | — | — |
 | 3. Optimization | 4 | — | — |
 | 4. Production Runtime | 2 | — | — |
-| 5. Markers & Resolver | 3/4 | ~20min | ~7min |
+| 5. Markers & Resolver | 4/4 | ~25min | ~6min |
 
 *Updated after each plan completion*
 
@@ -55,6 +55,9 @@ Key v2 decisions affecting Phase 5:
 - Only first marker per field processed in validation (consistent with classify_fields)
 - recall_from_trace uses issubclass(field_type, target_type) direction for MRO matching
 - recall_from_trace skips Dep and Recall annotated fields (infrastructure, not LLM-filled)
+- resolve_dep cache keyed by callable identity (fn object), not function name
+- Dep function exceptions propagate raw (no BaeError wrapping)
+- resolve_fields returns only Dep and Recall field values, not plain fields
 
 ### Pending Todos
 
@@ -67,5 +70,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 05-03-PLAN.md
+Stopped at: Completed 05-04-PLAN.md (Phase 5 complete)
 Resume file: None
