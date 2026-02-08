@@ -23,12 +23,6 @@
 - [ ] **PDEP-04**: Per-run dep caching works correctly with concurrent resolution (no race conditions)
 - [ ] **PDEP-05**: resolve_fields() and resolve_dep() are async
 
-## Subgraph Composition
-
-- [ ] **SUB-01**: A Dep callable can execute another Graph (`async def sub(input): return await other_graph.run(start).result`)
-- [ ] **SUB-02**: Subgraph traces are accessible from the parent GraphResult
-- [ ] **SUB-03**: Subgraph errors propagate cleanly as DepError in parent graph
-
 ## Migration
 
 - [ ] **MIG-01**: All existing tests pass with async (pytest-asyncio, asyncio_mode="auto")
@@ -53,14 +47,11 @@
 | PDEP-03 | 12 | Pending |
 | PDEP-04 | 12 | Pending |
 | PDEP-05 | 12 | Pending |
-| SUB-01 | 13 | Pending |
-| SUB-02 | 13 | Pending |
-| SUB-03 | 13 | Pending |
-| MIG-01 | 11-13 | Pending |
-| MIG-02 | 13 | Pending |
-| MIG-03 | 13 | Pending |
+| MIG-01 | 12 | Pending |
+| MIG-02 | 12 | Pending |
+| MIG-03 | 12 | Pending |
 
-**Coverage:** 20 requirements, 0 complete
+**Coverage:** 17 requirements, 0 complete
 
 ---
 *Created: 2026-02-08 for v3.0 Async Graphs*

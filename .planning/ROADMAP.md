@@ -1,19 +1,21 @@
 # Milestone v3.0: Async Graphs
 
 **Status:** Active
-**Phases:** 11-13
+**Phases:** 11-12
 **Total Plans:** TBD (created during plan-phase)
 
 ## Overview
 
-Async interface with parallel dep resolution and subgraph composition. Dep(callable) is already the fan-out/join primitive — this milestone makes it concurrent. DSPy has native async (`Predict.acall()`), PydanticAI is async-native, pytest-asyncio is already configured.
+Async interface with parallel dep resolution. Dep(callable) is already the fan-out/join primitive — this milestone makes it concurrent. Subgraph composition (Dep that runs another graph) falls out for free via async __call__ and async dep functions — no special framework support needed.
+
+DSPy has native async (`Predict.acall()`), PydanticAI is async-native, pytest-asyncio is already configured.
 
 ## Phases
 
 ### Phase 11: Async Core
 **Goal**: All LM backends, Graph.run(), and Node.__call__() are async. Existing tests pass.
 **Depends on**: v2.0 complete
-**Requirements**: ASYNC-01 through ASYNC-09, MIG-01
+**Requirements**: ASYNC-01 through ASYNC-09
 
 **Success Criteria:**
 1. `Graph.run()` is `async def` and awaits LM calls
@@ -23,29 +25,19 @@ Async interface with parallel dep resolution and subgraph composition. Dep(calla
 5. DSPy uses `await predictor.acall()` (native async)
 6. All existing tests pass with pytest-asyncio
 
-### Phase 12: Parallel Deps
-**Goal**: Independent deps on the same node resolve concurrently. Sync and async dep callables both work.
+### Phase 12: Parallel Deps + Migration
+**Goal**: Independent deps on the same node resolve concurrently. Full test suite, ootd.py, and E2E pass.
 **Depends on**: Phase 11
-**Requirements**: PDEP-01 through PDEP-05
+**Requirements**: PDEP-01 through PDEP-05, MIG-01 through MIG-03
 
 **Success Criteria:**
 1. `resolve_fields()` and `resolve_dep()` are async
-2. Independent deps on the same node fire via `asyncio.gather()` — measurable speedup for multi-dep nodes
+2. Independent deps on the same node fire via `asyncio.gather()`
 3. `Dep(sync_fn)` and `Dep(async_fn)` both work (runtime detection via `inspect.iscoroutinefunction`)
 4. Dep DAG topological ordering still enforced — dependent deps resolve in order, independent deps resolve in parallel
 5. Per-run dep caching is race-condition-free under concurrent resolution
-
-### Phase 13: Subgraph Composition
-**Goal**: A Dep can execute another Graph. Subgraph traces and errors integrate cleanly with parent graph.
-**Depends on**: Phase 12
-**Requirements**: SUB-01 through SUB-03, MIG-02, MIG-03
-
-**Success Criteria:**
-1. A Dep callable that runs `await graph.run(start)` works end-to-end
-2. Subgraph trace nodes are accessible from the parent GraphResult (nested or flattened)
-3. Subgraph exceptions become DepError in the parent graph with clear error naming the subgraph
-4. examples/ootd.py works with async graph.run()
-5. E2E tests pass with async backends
+6. examples/ootd.py works with async graph.run()
+7. E2E tests pass with async backends
 
 ---
 
@@ -58,6 +50,9 @@ Async interface with parallel dep resolution and subgraph composition. Dep(calla
 - Dep(callable) supports both sync and async — detect at runtime
 - Node.__call__() becomes async — user custom __call__ must also be async
 - CLI boundary: asyncio.run() wraps async graph.run() in Typer commands
+- Subgraph composition is emergent — Dep(fn) where fn runs a graph, no special support
+- Dynamic fan-out (runtime N) punted — async __call__ with manual gather is the escape hatch
+- Declarative fan-out (DepMap etc) deferred until real use case demands it
 
 ## Conversion Scope
 
