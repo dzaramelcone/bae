@@ -227,6 +227,13 @@ def validate_node_deps(node_cls: type, *, is_start: bool) -> list[str]:
 def resolve_dep(fn: object, cache: dict) -> object:
     """Resolve a single dep function, recursively resolving transitive deps.
 
+    If ``fn`` is already in ``cache``, returns the cached value immediately.
+    Otherwise, inspects ``fn``'s type hints for ``Dep``-annotated parameters,
+    recursively resolves those first, then calls ``fn`` with the resolved kwargs.
+    The result is stored in ``cache`` before returning.
+
+    Exceptions from dep functions propagate raw (no wrapping).
+
     Args:
         fn: The dep callable to invoke.
         cache: Per-run cache dict keyed by callable identity.
@@ -234,11 +241,32 @@ def resolve_dep(fn: object, cache: dict) -> object:
     Returns:
         The result of calling fn with its resolved dep kwargs.
     """
-    raise NotImplementedError("resolve_dep not yet implemented")
+    if fn in cache:
+        return cache[fn]
+
+    hints = get_type_hints(fn, include_extras=True)
+    kwargs: dict[str, object] = {}
+
+    for param_name, hint in hints.items():
+        if param_name == "return":
+            continue
+        if get_origin(hint) is Annotated:
+            for m in get_args(hint)[1:]:
+                if isinstance(m, Dep) and m.fn is not None:
+                    kwargs[param_name] = resolve_dep(m.fn, cache)
+                    break
+
+    result = fn(**kwargs)
+    cache[fn] = result
+    return result
 
 
 def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[str, object]:
     """Resolve all Dep and Recall fields on a Node subclass.
+
+    Iterates fields in declaration order. For each ``Dep``-annotated field,
+    delegates to :func:`resolve_dep`. For each ``Recall``-annotated field,
+    delegates to :func:`recall_from_trace`. Plain fields are skipped.
 
     Args:
         node_cls: A Node subclass whose annotated fields to resolve.
@@ -248,4 +276,26 @@ def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[str, ob
     Returns:
         Dict mapping field name to resolved value for Dep and Recall fields only.
     """
-    raise NotImplementedError("resolve_fields not yet implemented")
+    resolved: dict[str, object] = {}
+    hints = get_type_hints(node_cls, include_extras=True)
+
+    for field_name, hint in hints.items():
+        if field_name == "return":
+            continue
+
+        if get_origin(hint) is not Annotated:
+            continue
+
+        args = get_args(hint)
+        base_type = args[0]
+        metadata = args[1:]
+
+        for m in metadata:
+            if isinstance(m, Dep) and m.fn is not None:
+                resolved[field_name] = resolve_dep(m.fn, dep_cache)
+                break
+            if isinstance(m, Recall):
+                resolved[field_name] = recall_from_trace(trace, base_type)
+                break
+
+    return resolved
