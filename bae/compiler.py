@@ -30,7 +30,7 @@ class CompiledGraph:
         self.signatures = signatures
         self.optimized: dict[type[Node], dspy.Predict] = {}
 
-    def run(self, start_node: Node, **deps) -> "GraphResult":
+    def run(self, start_node: Node) -> "GraphResult":
         """Run the compiled graph using optimized predictors.
 
         Creates an OptimizedLM from loaded predictors and delegates
@@ -39,7 +39,6 @@ class CompiledGraph:
 
         Args:
             start_node: The initial node to start execution.
-            **deps: External dependencies to inject.
 
         Returns:
             GraphResult with final node and execution trace.
@@ -48,7 +47,7 @@ class CompiledGraph:
         from bae.result import GraphResult
 
         lm = OptimizedLM(optimized=self.optimized)
-        return self.graph.run(start_node, lm=lm, **deps)
+        return self.graph.run(start_node, lm=lm)
 
     def optimize(
         self,
