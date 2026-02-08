@@ -168,10 +168,10 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — Source-side v1 marker removal (Context, Bind, Dep.description)
-- [ ] 08-02-PLAN.md — Test migration batch 1 (compiler, dspy_backend, signature_v2)
-- [ ] 08-03-PLAN.md — Test migration batch 2 (auto_routing, optimized_lm, optimizer, integration_dspy, resolver)
-- [ ] 08-04-PLAN.md — Phase gate: CompiledGraph fix, full suite, ootd.py E2E
+- [x] 08-01-PLAN.md — Source-side v1 marker removal (Context, Bind, Dep.description)
+- [x] 08-02-PLAN.md — Test migration batch 1 (compiler, dspy_backend, signature_v2)
+- [x] 08-03-PLAN.md — Test migration batch 2 (auto_routing, optimized_lm, optimizer, integration_dspy, resolver)
+- [x] 08-04-PLAN.md — Phase gate: CompiledGraph fix, full suite, ootd.py E2E
 
 **Success Criteria** (what must be TRUE):
   1. Context marker is removed from codebase and package exports — importing it raises ImportError
