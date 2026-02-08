@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 ## Current Position
 
 Phase: 8 of 8 (Cleanup & Migration) — IN PROGRESS
-Plan: 01 of 04 complete
-Status: In progress (tests temporarily broken -- Plans 02-03 fix them)
-Last activity: 2026-02-08 — Completed 08-01-PLAN.md (source-side v1 marker removal)
+Plan: 03 of 04 complete
+Status: In progress
+Last activity: 2026-02-08 — Completed 08-03-PLAN.md (runtime-adjacent test migration)
 
-Progress: [###########################.] 90% (27/30 plans complete)
+Progress: [############################.] 96% (29/30 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 27 (13 v1.0 + 14 v2.0)
+- Total plans completed: 29 (13 v1.0 + 16 v2.0)
 - Average duration: —
 - Total execution time: —
 
@@ -35,7 +35,7 @@ Progress: [###########################.] 90% (27/30 plans complete)
 | 5. Markers & Resolver | 4/4 | ~25min | ~6min |
 | 6. Node & LM Protocol | 5/5 | ~40min | ~8min |
 | 7. Integration | 4/4 | ~20min | ~5min |
-| 8. Cleanup & Migration | 1/4 | ~3min | ~3min |
+| 8. Cleanup & Migration | 3/4 | ~6min | ~2min |
 
 *Updated after each plan completion*
 
@@ -98,5 +98,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 08-01-PLAN.md (source-side v1 marker removal)
+Stopped at: Completed 08-03-PLAN.md (runtime-adjacent test migration)
 Resume file: None
