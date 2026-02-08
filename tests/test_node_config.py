@@ -39,7 +39,8 @@ class TestNodeConfigTypedDict:
 
     def test_node_config_is_not_config_dict(self):
         """NodeConfig is NOT a subclass of ConfigDict."""
-        assert not issubclass(NodeConfig, ConfigDict)
+        # TypedDict doesn't support issubclass, so check __bases__ directly
+        assert ConfigDict not in NodeConfig.__bases__
 
 
 # =============================================================================
