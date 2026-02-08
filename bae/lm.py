@@ -18,6 +18,7 @@ from typing import (
     runtime_checkable,
 )
 
+from anthropic import transform_schema
 from pydantic import BaseModel, create_model
 from pydantic_ai import Agent, format_as_xml
 
@@ -482,7 +483,7 @@ class ClaudeCLIBackend:
         prompt = _build_fill_prompt(target, resolved, instruction, source)
 
         # Call CLI with JSON schema constraining output to plain fields only
-        schema = plain_model.model_json_schema()
+        schema = transform_schema(plain_model)
         data = self._run_cli_json(prompt, schema)
 
         # Validate plain fields (LLM boundary — FillError on failure)
