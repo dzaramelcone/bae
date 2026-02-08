@@ -3,12 +3,8 @@
 Tests the conversion of bae Node classes to DSPy Signature classes.
 """
 
-from typing import Annotated
-
 import dspy
-import pytest
 
-from bae.markers import Context, Dep
 from bae.node import Node
 
 
@@ -25,15 +21,13 @@ class TestNodeToSignature:
         sig = node_to_signature(AnalyzeUserIntent)
         assert sig.instructions == "AnalyzeUserIntent"
 
-    def test_annotated_field_becomes_output_field_on_non_start(self):
-        """Case 2: Context-annotated field is plain (v2) -> OutputField on non-start node."""
+    def test_plain_field_becomes_output_field_on_non_start(self):
+        """Case 2: Plain field -> OutputField on non-start node."""
         from bae.compiler import node_to_signature
 
         class ProcessRequest(Node):
-            request: Annotated[str, Context(description="The user's request")]
+            request: str
 
-        # In v2, Context is not a recognized marker for classify_fields.
-        # The field is "plain" and on a non-start node -> OutputField.
         sig = node_to_signature(ProcessRequest)
         assert "request" in sig.output_fields
 
@@ -42,23 +36,21 @@ class TestNodeToSignature:
         from bae.compiler import node_to_signature
 
         class ProcessRequest(Node):
-            request: Annotated[str, Context(description="The user's request")]
+            request: str
             internal_counter: int = 0
 
-        # In v2, both fields are "plain" -> OutputFields on non-start
         sig = node_to_signature(ProcessRequest)
         assert "request" in sig.output_fields
         assert "internal_counter" in sig.output_fields
 
-    def test_multiple_context_fields_are_plain(self):
-        """Case 4: Multiple Context-annotated fields are plain in v2."""
+    def test_multiple_plain_fields(self):
+        """Case 4: Multiple plain fields become OutputFields on non-start."""
         from bae.compiler import node_to_signature
 
         class ChatNode(Node):
-            history: Annotated[str, Context(description="Chat history")]
-            user_input: Annotated[str, Context(description="Current user message")]
+            history: str
+            user_input: str
 
-        # In v2, Context-annotated fields are "plain" -> OutputFields on non-start
         sig = node_to_signature(ChatNode)
         assert "history" in sig.output_fields
         assert "user_input" in sig.output_fields
@@ -95,52 +87,10 @@ class TestNodeToSignature:
         from bae.compiler import node_to_signature
 
         class SomeNode(Node):
-            data: Annotated[str, Context(description="Some data")]
+            data: str
 
         sig = node_to_signature(SomeNode)
         assert issubclass(sig, dspy.Signature)
-
-
-class TestContextMarker:
-    """Test the Context annotation marker."""
-
-    def test_context_is_frozen_dataclass(self):
-        """Context should be immutable (frozen dataclass)."""
-        ctx = Context(description="test")
-        with pytest.raises(Exception):  # FrozenInstanceError
-            ctx.description = "modified"
-
-    def test_context_holds_description(self):
-        """Context stores description string."""
-        ctx = Context(description="The user's query")
-        assert ctx.description == "The user's query"
-
-    def test_context_equality(self):
-        """Two Context objects with same description are equal."""
-        ctx1 = Context(description="test")
-        ctx2 = Context(description="test")
-        assert ctx1 == ctx2
-
-
-class TestDepMarker:
-    """Test the Dep annotation marker for __call__ parameters."""
-
-    def test_dep_is_frozen_dataclass(self):
-        """Dep should be immutable (frozen dataclass)."""
-        dep = Dep(description="test")
-        with pytest.raises(Exception):  # FrozenInstanceError
-            dep.description = "modified"
-
-    def test_dep_holds_description(self):
-        """Dep stores description string."""
-        dep = Dep(description="Database connection")
-        assert dep.description == "Database connection"
-
-    def test_dep_equality(self):
-        """Two Dep objects with same description are equal."""
-        dep1 = Dep(description="test")
-        dep2 = Dep(description="test")
-        assert dep1 == dep2
 
 
 # --- CompiledGraph.run() Integration Tests ---
@@ -163,7 +113,7 @@ class RunResultNode(Node):
 class RunStartNode(Node):
     """Starting node for run() tests."""
 
-    text: Annotated[str, Context(description="The text")]
+    text: str
 
     def __call__(self, lm: LM) -> RunResultNode:
         ...
