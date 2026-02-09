@@ -66,6 +66,7 @@ Make independent deps on the same node resolve concurrently via `asyncio.gather(
 - Concurrency limits (semaphore for rate-limited backends) — add when a real use case demands it
 - Dynamic fan-out framework support (DepMap, etc.) — manual gather in `__call__` is the escape hatch for now
 - Declarative fan-out annotations — deferred until real use case
+- FastAPI Depends integration — `bae[fastapi]` optional dep, bridge between Dep(callable) and FastAPI's Depends(callable) for web server injection. Similar structure (callable with caching), natural fit
 
 </deferred>
 
