@@ -129,8 +129,8 @@ def _build_fill_prompt(
     parts: list[str] = []
 
     if source is not None:
-        source_schema = transform_schema(type(source))
-        parts.append(f"Input schema:\n{json.dumps(source_schema, indent=2)}")
+        # source_schema = transform_schema(type(source))
+        # parts.append(f"Input schema:\n{json.dumps(source_schema, indent=2)}")
 
         source_data = source.model_dump(mode="json")
         parts.append(f"Input data:\n{json.dumps(source_data, indent=2)}")

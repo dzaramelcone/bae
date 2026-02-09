@@ -168,7 +168,7 @@ class No(Node): ...
 
 class VibeCheck(BaseModel):
     mood: str
-    communication_style: str
+    stylometry: str
     context_cues: str
 
 
@@ -207,11 +207,11 @@ class InferUserPersonality(Node):
     """Make personal inferences about the user."""
 
     user_info: Annotated[UserInfo, Recall()]
+    brief_perspective: list[str]
+    brief_vision: list[str]
+    brief_goals: list[str]
+    brief_dreams: list[str]
     mbti: str
-    perspective: list[str]
-    vision: list[str]
-    goals: list[str]
-    dreams: list[str]
 
 
 class GenerateWardrobe(Node):
@@ -220,7 +220,7 @@ class GenerateWardrobe(Node):
     user_info: Annotated[UserInfo, Recall()]
     user_career: Annotated[InferUserBackground, Dep()]
     user_personality: Annotated[InferUserPersonality, Dep()]
-    overall_styling: str
+    brief_overall_styling: str
     tops: list[str]
     bottoms: list[str]
     footwear: list[str]
@@ -230,10 +230,10 @@ class GenerateWardrobe(Node):
 class RecommendOOTD(Node):
     wardrobe: Annotated[GenerateWardrobe, Dep()]
     overall_vision: str
-    choice_of_top: str
-    choice_of_bottom: str
-    choice_of_footwear: str
-    choice_of_accessories: list[str]
+    top: str
+    bottom: str
+    footwear: str
+    accessories: list[str]
     final_response: str
     inspo: list[HttpUrl]
 
