@@ -395,6 +395,10 @@ class ClaudeCLIBackend:
             "--tools", "",                               # disable built-in tools (Bash, Edit, etc.)
             "--strict-mcp-config",                       # disable MCP servers (no --mcp-config = none)
             "--setting-sources", "",                     # skip loading project/user settings
+            "--system-prompt",                           # override default system prompt to prevent
+            "You are a structured data generator. "      # CLI from leaking cwd/env/project context
+            "Be brief and concise. "                     # into LLM calls
+            "Respond only with the requested data.",
         ]
 
         process = await asyncio.create_subprocess_exec(
