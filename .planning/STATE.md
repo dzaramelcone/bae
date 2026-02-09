@@ -10,20 +10,20 @@ See: .planning/PROJECT.md (updated 2026-02-08)
 ## Current Position
 
 Phase: 12 of 12 (Parallel Deps Migration)
-Plan: 2 of 4 complete
-Status: In progress
-Last activity: 2026-02-09 — Completed 12-02-PLAN.md (graph run/arun split)
+Plan: 4 of 4 complete
+Status: Phase complete
+Last activity: 2026-02-09 — Completed 12-04-PLAN.md (parallel dep resolution tests)
 
-Progress: [████████████████████░░░░░░░░░░░░] 63% v3.0 (Phase 11 done + 12-01..02 of 12-04)
+Progress: [████████████████████████████████] 100% v3.0 (Phase 11 done + 12-01..04 complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 40 (13 v1.0 + 21 v2.0 + 6 v3.0)
+- Total plans completed: 42 (13 v1.0 + 21 v2.0 + 8 v3.0)
 - v2.0 duration: 2 days (2026-02-07 → 2026-02-08)
 - v2.0 commits: 106
 - v3.0 duration: in progress
-- v3.0 commits: 8
+- v3.0 commits: 9
 
 ## Accumulated Context
 
@@ -50,6 +50,8 @@ v3.0 decisions so far:
 - inspect.iscoroutinefunction for runtime sync/async dep callable detection
 - Graph.run() is sync (asyncio.run boundary), Graph.arun() is async (Phase 12-02)
 - All tests use graph.arun() in async contexts, graph.run() for sync callers
+- Module-scope dep functions required for PEP 649 -- get_type_hints resolves in module scope
+- Phase 12 complete: 344 tests collected, 334 pass, 10 skip, 0 failures
 
 ### Pending Todos
 
@@ -65,6 +67,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 12-02-PLAN.md (graph run/arun split)
+Stopped at: Completed 12-04-PLAN.md (parallel dep resolution tests) -- Phase 12 complete
 Branch: 11-async-core
 Resume file: None
