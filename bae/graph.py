@@ -12,7 +12,7 @@ from typing import Annotated, Any, get_args, get_origin, get_type_hints
 from bae.exceptions import BaeError, DepError, RecallError
 from bae.lm import LM
 from bae.node import Node, _has_ellipsis_body, _wants_lm
-from bae.resolver import resolve_fields
+from bae.resolver import LM_KEY, resolve_fields
 from bae.result import GraphResult
 
 logger = logging.getLogger(__name__)
@@ -254,7 +254,7 @@ class Graph:
             lm = DSPyBackend()
 
         trace: list[Node] = []
-        dep_cache: dict = {}
+        dep_cache: dict = {LM_KEY: lm}
         current: Node | None = start_node
         iters = 0
 

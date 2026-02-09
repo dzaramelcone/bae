@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import graphlib
+import time
 from dataclasses import FrozenInstanceError
 from typing import Annotated
 
@@ -12,6 +14,7 @@ from bae.exceptions import BaeError, RecallError
 from bae.markers import Dep, Recall
 from bae.node import Node
 from bae.resolver import (
+    LM_KEY,
     build_dep_dag,
     classify_fields,
     recall_from_trace,
@@ -581,3 +584,222 @@ class TestResolveFields:
         # tracked_get_location was resolved in NodeA, cached for NodeB's
         # tracked_get_weather which transitively depends on tracked_get_location
         assert call_count["get_location"] == 1
+
+
+# =============================================================================
+# Node-as-Dep tests
+# =============================================================================
+
+# --- Mock LM for Node-as-Dep tests ---
+
+lm_fill_count: dict[str, int] = {}
+
+
+class MockLM:
+    """Minimal LM that fills plain fields with deterministic values."""
+
+    async def fill(self, target, resolved, instruction, source=None):
+        lm_fill_count[target.__name__] = lm_fill_count.get(target.__name__, 0) + 1
+        # Sleep to simulate LLM latency (used by concurrency test)
+        await asyncio.sleep(0.05)
+        # Build plain fields with deterministic values
+        from bae.resolver import classify_fields
+
+        fields = classify_fields(target)
+        all_fields = dict(resolved)
+        for name, kind in fields.items():
+            if kind == "plain" and name not in all_fields and name in target.model_fields:
+                field_info = target.model_fields[name]
+                ann = field_info.annotation
+                if ann is str:
+                    all_fields[name] = f"mock_{name}"
+                elif ann == list[str]:
+                    all_fields[name] = [f"mock_{name}_1"]
+                else:
+                    all_fields[name] = f"mock_{name}"
+        return target.model_construct(**all_fields)
+
+    async def make(self, node, target):
+        raise NotImplementedError
+
+    async def decide(self, node):
+        raise NotImplementedError
+
+    async def choose_type(self, types, context):
+        raise NotImplementedError
+
+
+# --- Node-as-Dep test node types ---
+
+
+class UserInfo(Node):
+    """Data model used as Recall source."""
+
+    name: str = "Dzara"
+
+
+class StartNode(Node):
+    """Start node with a UserInfo field — provides Recall source in trace."""
+
+    user_info: UserInfo
+
+    async def __call__(self) -> None: ...
+
+
+class InferBackground(Node):
+    """Node-as-Dep target: has a Recall + plain fields."""
+
+    user_info: Annotated[UserInfo, Recall()]
+    occupation: str
+    lifestyle: str
+
+
+class InferPersonality(Node):
+    """Another Node-as-Dep target: Recall + plain fields."""
+
+    user_info: Annotated[UserInfo, Recall()]
+    mbti: str
+
+
+class BuildWardrobe(Node):
+    """Node-as-Dep that itself depends on other Node-as-Deps."""
+
+    user_info: Annotated[UserInfo, Recall()]
+    background: Annotated[InferBackground, Dep()]
+    personality: Annotated[InferPersonality, Dep()]
+    tops: list[str]
+
+
+class FinalNode(Node):
+    """Top-level node with a single Node-as-Dep."""
+
+    wardrobe: Annotated[BuildWardrobe, Dep()]
+    recommendation: str
+
+
+class TwoDepNode(Node):
+    """Node with two independent Node-as-Deps for concurrency test."""
+
+    bg: Annotated[InferBackground, Dep()]
+    personality: Annotated[InferPersonality, Dep()]
+    summary: str
+
+
+class ReuseSameDepNode(Node):
+    """Two fields that reference the same Node-as-Dep type."""
+
+    a: Annotated[InferBackground, Dep()]
+    b: Annotated[InferBackground, Dep()]
+    output: str
+
+
+class TestNodeDepInDag:
+    def test_node_dep_in_dag(self):
+        """build_dep_dag includes Node deps and their transitive deps."""
+
+        class Host(Node):
+            bg: Annotated[InferBackground, Dep()]
+
+        ts = build_dep_dag(Host)
+        order = list(ts.static_order())
+        assert InferBackground in order
+
+    def test_node_dep_transitive_in_dag(self):
+        """Node dep that itself has Node deps: all appear in DAG."""
+        ts = build_dep_dag(FinalNode)
+        order = list(ts.static_order())
+        assert InferBackground in order
+        assert InferPersonality in order
+        assert BuildWardrobe in order
+
+    def test_node_dep_ordering(self):
+        """Transitive Node deps come before the node that depends on them."""
+        ts = build_dep_dag(FinalNode)
+        order = list(ts.static_order())
+        bg_idx = order.index(InferBackground)
+        pers_idx = order.index(InferPersonality)
+        wardrobe_idx = order.index(BuildWardrobe)
+        assert bg_idx < wardrobe_idx
+        assert pers_idx < wardrobe_idx
+
+
+class TestNodeDepResolves:
+    async def test_node_dep_resolves(self):
+        """Basic Node-as-Dep: Recall + plain fields filled via mock LM."""
+        lm_fill_count.clear()
+        mock_lm = MockLM()
+        trace = [StartNode.model_construct(user_info=UserInfo(name="Dzara"))]
+        cache: dict = {LM_KEY: mock_lm}
+
+        class Host(Node):
+            bg: Annotated[InferBackground, Dep()]
+
+        result = await resolve_fields(Host, trace=trace, dep_cache=cache)
+        assert "bg" in result
+        bg = result["bg"]
+        assert isinstance(bg, InferBackground)
+        # Recall field should be resolved from trace
+        assert bg.user_info.name == "Dzara"
+        # Plain fields should be filled by mock LM
+        assert bg.occupation == "mock_occupation"
+        assert bg.lifestyle == "mock_lifestyle"
+
+    async def test_node_dep_concurrent(self):
+        """Two independent Node deps fire concurrently via gather."""
+        lm_fill_count.clear()
+        mock_lm = MockLM()
+        trace = [StartNode.model_construct(user_info=UserInfo(name="Dzara"))]
+        cache: dict = {LM_KEY: mock_lm}
+
+        t0 = time.monotonic()
+        result = await resolve_fields(TwoDepNode, trace=trace, dep_cache=cache)
+        elapsed = time.monotonic() - t0
+
+        assert "bg" in result
+        assert "personality" in result
+        # Two 50ms sleeps should overlap — total < 150ms if concurrent
+        # (sequential would be >= 100ms, concurrent ~50ms + overhead)
+        assert elapsed < 0.15, f"Took {elapsed:.3f}s — deps may not be concurrent"
+
+    async def test_node_dep_chained(self):
+        """Node dep depending on another Node dep resolves in order."""
+        lm_fill_count.clear()
+        mock_lm = MockLM()
+        trace = [StartNode.model_construct(user_info=UserInfo(name="Dzara"))]
+        cache: dict = {LM_KEY: mock_lm}
+
+        result = await resolve_fields(FinalNode, trace=trace, dep_cache=cache)
+        wardrobe = result["wardrobe"]
+        assert isinstance(wardrobe, BuildWardrobe)
+        # Chained deps should be resolved
+        assert isinstance(wardrobe.background, InferBackground)
+        assert isinstance(wardrobe.personality, InferPersonality)
+
+    async def test_node_dep_cached(self):
+        """Same Node dep referenced twice → only one LM call."""
+        lm_fill_count.clear()
+        mock_lm = MockLM()
+        trace = [StartNode.model_construct(user_info=UserInfo(name="Dzara"))]
+        cache: dict = {LM_KEY: mock_lm}
+
+        result = await resolve_fields(ReuseSameDepNode, trace=trace, dep_cache=cache)
+        # Both fields should get the same instance
+        assert result["a"] is result["b"]
+        # LM fill should only be called once for InferBackground
+        assert lm_fill_count.get("InferBackground", 0) == 1
+
+
+class TestValidateAcceptsNodeDep:
+    def test_validate_accepts_node_dep(self):
+        """validate_node_deps doesn't error on Dep() + Node type."""
+
+        class NodeWithNodeDep(Node):
+            bg: Annotated[InferBackground, Dep()]
+
+        errors = validate_node_deps(NodeWithNodeDep, is_start=False)
+        assert errors == []
+
+    def test_validate_accepts_chained_node_dep(self):
+        """validate_node_deps doesn't error on chained Node-as-Deps."""
+        errors = validate_node_deps(FinalNode, is_start=False)
+        assert errors == []
