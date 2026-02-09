@@ -6,14 +6,13 @@ Implements self-correction on parse failures and API error retry.
 
 from __future__ import annotations
 
+import asyncio
 import json
-import time
 import types
 from typing import TYPE_CHECKING, Any, TypeVar, get_args, get_type_hints
 
 import dspy
 from pydantic import ValidationError
-import json
 
 from bae.compiler import node_to_signature
 from bae.exceptions import BaeLMError, BaeParseError
@@ -92,7 +91,7 @@ class DSPyBackend:
         # Raise with original output for debugging
         raise ValueError(f"Cannot parse output as {target.__name__}: {output}")
 
-    def _call_with_retry(
+    async def _call_with_retry(
         self,
         predictor: dspy.Predict,
         inputs: dict[str, Any],
@@ -117,18 +116,18 @@ class DSPyBackend:
         last_error = None
         for attempt in range(self.max_retries + 1):
             try:
-                return predictor(**inputs)
+                return await predictor.acall(**inputs)
             except API_RETRY_EXCEPTIONS as e:
                 last_error = e
                 if attempt < self.max_retries:
-                    time.sleep(1)
+                    await asyncio.sleep(1)
                     continue
                 raise BaeLMError(str(e), cause=e) from e
 
         # Should not reach here
         raise BaeLMError("Unexpected error", cause=last_error)
 
-    def make(self, node: Node, target: type[T], **deps: Any) -> T:
+    async def make(self, node: Node, target: type[T], **deps: Any) -> T:
         """Produce an instance of target type using dspy.Predict.
 
         Args:
@@ -152,7 +151,7 @@ class DSPyBackend:
             error_hint = str(last_error) if last_error else None
 
             try:
-                result = self._call_with_retry(predictor, inputs, error_hint)
+                result = await self._call_with_retry(predictor, inputs, error_hint)
                 output = result.output
                 return self._parse_output(output, target)
             except ValueError as e:
@@ -189,7 +188,7 @@ class DSPyBackend:
 
         return [], True
 
-    def _predict_choice(
+    async def _predict_choice(
         self,
         node: Node,
         choices: list[type],
@@ -222,7 +221,7 @@ class DSPyBackend:
         # Build context from node as JSON
         context = json.dumps({node.__class__.__name__: node.model_dump(mode="json")}, indent=2)
 
-        result = predictor(context=context)
+        result = await predictor.acall(context=context)
         chosen = result.choice.strip()
 
         # Validate choice
@@ -237,7 +236,7 @@ class DSPyBackend:
         # Default to first option if unclear
         return type_names[0]
 
-    def decide(self, node: Node) -> Node | None:
+    async def decide(self, node: Node) -> Node | None:
         """Decide which successor to produce based on return type hint.
 
         Uses two-step pattern for union types:
@@ -266,10 +265,10 @@ class DSPyBackend:
 
         # Single type -> skip choice, just make
         if len(types_list) == 1 and not is_terminal:
-            return self.make(node, types_list[0])
+            return await self.make(node, types_list[0])
 
         # Multiple types or optional -> two-step
-        choice = self._predict_choice(node, types_list, is_terminal)
+        choice = await self._predict_choice(node, types_list, is_terminal)
 
         if choice == "None":
             return None
@@ -279,9 +278,9 @@ class DSPyBackend:
         if target is None:
             target = types_list[0]  # Fallback
 
-        return self.make(node, target)
+        return await self.make(node, target)
 
-    def choose_type(
+    async def choose_type(
         self,
         types: list[type],
         context: dict[str, Any],
@@ -318,7 +317,7 @@ class DSPyBackend:
             for k, v in context.items()
         }}, indent=2)
 
-        result = predictor(context=context_str)
+        result = await predictor.acall(context=context_str)
         chosen = result.choice.strip()
 
         # Map name back to type
@@ -333,7 +332,7 @@ class DSPyBackend:
 
         return types[0]
 
-    def fill(
+    async def fill(
         self,
         target: type[T],
         resolved: dict[str, Any],
@@ -363,7 +362,7 @@ class DSPyBackend:
         predictor = dspy.Predict(signature)
 
         # resolved dict provides InputField values; LLM generates OutputField values
-        result = self._call_with_retry(predictor, resolved)
+        result = await self._call_with_retry(predictor, resolved)
 
         # Collect all field values: resolved (InputFields) + LM output (OutputFields)
         all_fields = dict(resolved)

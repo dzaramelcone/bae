@@ -67,7 +67,7 @@ class OptimizedLM(DSPyBackend):
         logger.debug(f"Using naive predictor for {target.__name__}")
         return dspy.Predict(node_to_signature(target))
 
-    def make(self, node: Node, target: type[T], **deps: Any) -> T:
+    async def make(self, node: Node, target: type[T], **deps: Any) -> T:
         """Produce target using optimized predictor if available.
 
         Overrides DSPyBackend.make() to use pre-loaded predictors from
@@ -93,7 +93,7 @@ class OptimizedLM(DSPyBackend):
             error_hint = str(last_error) if last_error else None
 
             try:
-                result = self._call_with_retry(predictor, inputs, error_hint)
+                result = await self._call_with_retry(predictor, inputs, error_hint)
                 output = result.output
                 return self._parse_output(output, target)
             except ValueError as e:
