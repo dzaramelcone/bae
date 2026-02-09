@@ -169,7 +169,7 @@ class Node(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     node_config: ClassVar[NodeConfig] = NodeConfig()
 
-    def __call__(self, lm: LM, *_args: object, **_kwargs: object) -> Node | None:
+    async def __call__(self, lm: LM, *_args: object, **_kwargs: object) -> Node | None:
         """Execute node logic and return next node.
 
         Override this to implement custom routing logic.
@@ -182,7 +182,7 @@ class Node(BaseModel):
             The next node instance, or None if terminal.
         """
         # Default: LLM decides which successor to produce
-        return lm.decide(self)
+        return await lm.decide(self)
 
     @classmethod
     def successors(cls) -> set[type[Node]]:

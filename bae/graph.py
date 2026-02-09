@@ -187,7 +187,7 @@ class Graph:
 
         return issues
 
-    def run(
+    async def run(
         self,
         start_node: Node,
         lm: LM | None = None,
@@ -234,7 +234,7 @@ class Graph:
                 err.trace = trace
                 raise err
 
-            # 1. Resolve deps and recalls
+            # 1. Resolve deps and recalls (sync — Phase 12 makes this async)
             try:
                 resolved = resolve_fields(current.__class__, trace, dep_cache)
             except RecallError:
@@ -270,9 +270,9 @@ class Graph:
             elif strategy[0] == "custom":
                 # Custom __call__ logic
                 if _wants_lm(current.__class__.__call__):
-                    current = current(lm)
+                    current = await current(lm)
                 else:
-                    current = current()
+                    current = await current()
             else:
                 # Ellipsis body -- LM routing via v2 API
                 if strategy[0] == "make":
@@ -280,7 +280,7 @@ class Graph:
                 elif strategy[0] == "decide":
                     types_list = list(strategy[1])
                     context = _build_context(current)
-                    target_type = lm.choose_type(types_list, context)
+                    target_type = await lm.choose_type(types_list, context)
                 else:
                     current = None
                     iters += 1
@@ -289,7 +289,7 @@ class Graph:
                 # Resolve target's dep/recall fields before fill
                 target_resolved = resolve_fields(target_type, trace, dep_cache)
                 instruction = _build_instruction(target_type)
-                current = lm.fill(
+                current = await lm.fill(
                     target_type, target_resolved, instruction, source=current
                 )
 
