@@ -5,6 +5,7 @@ Provides a clean interface for LLM backends to produce typed node instances.
 
 from __future__ import annotations
 
+import asyncio
 import enum
 from typing import (
     TYPE_CHECKING,
@@ -195,15 +196,15 @@ class LM(Protocol):
     v2 methods (choose_type/fill): context-dict-centric, used by the graph runtime.
     """
 
-    def make(self, node: Node, target: type[T]) -> T:
+    async def make(self, node: Node, target: type[T]) -> T:
         """Produce an instance of a specific node type."""
         ...
 
-    def decide(self, node: Node) -> Node | None:
+    async def decide(self, node: Node) -> Node | None:
         """Let LLM decide which successor to produce based on return type hint."""
         ...
 
-    def choose_type(
+    async def choose_type(
         self,
         types: list[type[Node]],
         context: dict[str, object],
@@ -211,7 +212,7 @@ class LM(Protocol):
         """Pick successor type from candidates, given resolved context fields."""
         ...
 
-    def fill(
+    async def fill(
         self,
         target: type[T],
         resolved: dict[str, object],
@@ -258,7 +259,7 @@ class PydanticAIBackend:
         data = {node.__class__.__name__: node.model_dump(mode="json")}
         return json.dumps(data, indent=2)
 
-    def make(self, node: Node, target: type[T]) -> T:
+    async def make(self, node: Node, target: type[T]) -> T:
         """Produce an instance of target type using pydantic-ai."""
         agent = self._get_agent((target,), allow_none=False)
         prompt = self._node_to_prompt(node)
@@ -266,10 +267,10 @@ class PydanticAIBackend:
         # Add instruction about what to produce
         full_prompt = f"{prompt}\n\nProduce a {target.__name__}."
 
-        result = agent.run_sync(full_prompt)
+        result = await agent.run(full_prompt)
         return result.output
 
-    def decide(self, node: Node) -> Node | None:
+    async def decide(self, node: Node) -> Node | None:
         """Let LLM pick successor type and produce it."""
         successors = tuple(node.successors())
         is_terminal = node.is_terminal()
@@ -290,10 +291,10 @@ class PydanticAIBackend:
 
         full_prompt = f"{prompt}\n\nDecide the next step. Options: {', '.join(type_names)}"
 
-        result = agent.run_sync(full_prompt)
+        result = await agent.run(full_prompt)
         return result.output
 
-    def choose_type(
+    async def choose_type(
         self,
         types: list[type[Node]],
         context: dict[str, object],
@@ -314,7 +315,7 @@ class PydanticAIBackend:
         }}, indent=2)
         prompt = f"{context_json}\n\nPick one type: {', '.join(type_names)}"
 
-        result = agent.run_sync(prompt)
+        result = await agent.run(prompt)
         chosen = result.output.strip()
 
         # Map name back to type
@@ -329,7 +330,7 @@ class PydanticAIBackend:
 
         return types[0]
 
-    def fill(
+    async def fill(
         self,
         target: type[T],
         resolved: dict[str, object],
@@ -342,7 +343,7 @@ class PydanticAIBackend:
 
         prompt = _build_fill_prompt(target, resolved, instruction, source)
 
-        result = agent.run_sync(prompt)
+        result = await agent.run(prompt)
         # Merge LLM output with resolved deps
         all_fields = dict(resolved)
         plain_output = result.output
@@ -365,19 +366,18 @@ class ClaudeCLIBackend:
         data = {node.__class__.__name__: node.model_dump(mode="json")}
         return json.dumps(data, indent=2)
 
-    def make(self, node: Node, target: type[T]) -> T:
+    async def make(self, node: Node, target: type[T]) -> T:
         """Produce an instance of target type using Claude CLI."""
         prompt = self._node_to_prompt(node)
         full_prompt = f"{prompt}\n\nProduce a {target.__name__}."
 
         schema = transform_schema(target)
-        data = self._run_cli_json(full_prompt, schema)
+        data = await self._run_cli_json(full_prompt, schema)
         return target.model_validate(data)
 
-    def _run_cli_json(self, prompt: str, schema: dict) -> dict | None:
+    async def _run_cli_json(self, prompt: str, schema: dict) -> dict | None:
         """Run Claude CLI with JSON schema and extract structured output."""
         import json
-        import subprocess
 
         # Strip 'format' fields — CLI silently rejects schemas containing them
         # (e.g. format:uri from HttpUrl). The API supports format but the CLI
@@ -396,15 +396,26 @@ class ClaudeCLIBackend:
             "--setting-sources", "",                     # skip loading project/user settings
         ]
 
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout)
-        except subprocess.TimeoutExpired:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                process.communicate(), timeout=self.timeout
+            )
+        except asyncio.TimeoutError:
+            process.kill()
             raise RuntimeError(f"Claude CLI timed out after {self.timeout}s")
 
-        if result.returncode != 0:
-            raise RuntimeError(f"Claude CLI failed: {result.stderr}")
+        stdout = stdout_bytes.decode()
+        stderr = stderr_bytes.decode()
 
-        data = json.loads(result.stdout)
+        if process.returncode != 0:
+            raise RuntimeError(f"Claude CLI failed: {stderr}")
+
+        data = json.loads(stdout)
 
         # Claude CLI returns conversation stream - extract structured_output from result
         if isinstance(data, list):
@@ -417,7 +428,7 @@ class ClaudeCLIBackend:
 
         return data
 
-    def decide(self, node: Node) -> Node | None:
+    async def decide(self, node: Node) -> Node | None:
         """Let LLM pick successor type and produce it using Claude CLI.
 
         Uses two-step approach: first pick type, then fill it.
@@ -444,7 +455,7 @@ class ClaudeCLIBackend:
 
         choice_schema = _build_choice_schema(type_names)
 
-        choice_data = self._run_cli_json(choice_prompt, choice_schema)
+        choice_data = await self._run_cli_json(choice_prompt, choice_schema)
         chosen = choice_data["choice"]
 
         if chosen == "None":
@@ -452,9 +463,9 @@ class ClaudeCLIBackend:
 
         # Step 2: Fill the chosen type
         target = next(t for t in successors if t.__name__ == chosen)
-        return self.make(node, target)
+        return await self.make(node, target)
 
-    def choose_type(
+    async def choose_type(
         self,
         types: list[type[Node]],
         context: dict[str, object],
@@ -475,7 +486,7 @@ class ClaudeCLIBackend:
 
         choice_schema = _build_choice_schema(type_names)
 
-        choice_data = self._run_cli_json(prompt, choice_schema)
+        choice_data = await self._run_cli_json(prompt, choice_schema)
         chosen = choice_data["choice"]
 
         # Map name back to type
@@ -485,7 +496,7 @@ class ClaudeCLIBackend:
 
         return types[0]
 
-    def fill(
+    async def fill(
         self,
         target: type[T],
         resolved: dict[str, object],
@@ -508,7 +519,7 @@ class ClaudeCLIBackend:
 
         # Call CLI with JSON schema constraining output to plain fields only
         schema = transform_schema(plain_model)
-        data = self._run_cli_json(prompt, schema)
+        data = await self._run_cli_json(prompt, schema)
 
         # Validate plain fields (LLM boundary — FillError on failure)
         validated = validate_plain_fields(data, target)
