@@ -95,7 +95,7 @@ def validate_plain_fields(
 
     try:
         validated = PlainModel.model_validate(raw)
-        return validated.model_dump()
+        return {name: getattr(validated, name) for name in PlainModel.model_fields}
     except Exception as e:
         raise FillError(
             f"Plain field validation failed for {target_cls.__name__}",
@@ -348,7 +348,8 @@ class PydanticAIBackend:
         all_fields = dict(resolved)
         plain_output = result.output
         if isinstance(plain_output, BaseModel):
-            all_fields.update(plain_output.model_dump())
+            for name in type(plain_output).model_fields:
+                all_fields[name] = getattr(plain_output, name)
         return target.model_construct(**all_fields)
 
 

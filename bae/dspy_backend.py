@@ -364,11 +364,32 @@ class DSPyBackend:
         # resolved dict provides InputField values; LLM generates OutputField values
         result = await self._call_with_retry(predictor, resolved)
 
-        # Collect all field values: resolved (InputFields) + LM output (OutputFields)
+        # Extract OutputField values from prediction and validate nested models
+        from typing import get_type_hints, Annotated, get_origin, get_args
+
+        from pydantic import BaseModel
+
+        hints = get_type_hints(target, include_extras=True)
         all_fields = dict(resolved)
-        # Extract OutputField values from prediction
         for key in result.keys():
             if key not in resolved:
-                all_fields[key] = getattr(result, key)
+                raw_val = getattr(result, key)
+                if isinstance(raw_val, str):
+                    try:
+                        raw_val = json.loads(raw_val)
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                # Validate nested BaseModel fields through Pydantic
+                hint = hints.get(key)
+                if hint is not None and get_origin(hint) is Annotated:
+                    hint = get_args(hint)[0]
+                if (
+                    isinstance(raw_val, dict)
+                    and hint is not None
+                    and isinstance(hint, type)
+                    and issubclass(hint, BaseModel)
+                ):
+                    raw_val = hint.model_validate(raw_val)
+                all_fields[key] = raw_val
 
         return target.model_construct(**all_fields)
