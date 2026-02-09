@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-08)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v3.0 Async Graphs — COMPLETE
+**Current focus:** v3.0 Async Graphs — gap closure (Phase 13)
 
 ## Current Position
 
-Phase: 12 of 12 (Parallel Deps + Migration — COMPLETE, verified)
-Plan: 4 of 4 complete
-Status: Milestone v3.0 complete — all phases verified
-Last activity: 2026-02-09 — Phase 12 verified (19/19 must-haves passed)
+Phase: 13 of 13 (Fix Nested Model Construction in Fill)
+Plan: 0 of 1 complete
+Status: Planning complete — ready for execution
+Last activity: 2026-02-09
 
-Progress: [████████████████████████████████] 100% v3.0 (2/2 phases)
+Progress: [████████████████████████████████] 100% v3.0 phases planned
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ v3.0 decisions so far:
 - All tests use graph.arun() in async contexts, graph.run() for sync callers
 - Module-scope dep functions required for PEP 649 -- get_type_hints resolves in module scope
 - Phase 12 complete: 344 tests collected, 334 pass, 10 skip, 0 failures
+- Use `model_construct()` for internal node creation (bypass Pydantic validation for deferred field population)
 
 ### Pending Todos
 
@@ -67,6 +68,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Milestone v3.0 complete — ready for /gsd:audit-milestone
+Stopped at: Phase 13 plan created — ready for /gsd:execute-phase 13
 Branch: 11-async-core
 Resume file: None

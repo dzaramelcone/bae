@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Phases:** 11-13
-**Total Plans:** 4 (Phase 11), 4 (Phase 12), TBD (Phase 13)
+**Total Plans:** 4 (Phase 11), 4 (Phase 12), 1 (Phase 13)
 
 ## Overview
 
@@ -58,7 +58,10 @@ Plans:
 **Depends on**: Phase 12
 **Requirements**: MIG-03
 **Gap Closure**: Closes gap from v3.0 milestone audit
-**Plans:** TBD
+**Plans:** 1 plan
+
+Plans:
+- [ ] 13-01-PLAN.md — TDD fix: validate_plain_fields + all three fill() backends preserve nested model instances
 
 **Success Criteria:**
 1. `fill()` returns properly constructed nested Pydantic model instances (not raw dicts)
