@@ -10,20 +10,20 @@ See: .planning/PROJECT.md (updated 2026-02-08)
 ## Current Position
 
 Phase: 11 (Async Core) — 4 plans
-Plan: 02 of 4 (11-01 and 11-02 complete)
+Plan: 03 of 4 (11-01, 11-02, 11-03 complete)
 Status: In progress
-Last activity: 2026-02-09 — Completed 11-01-PLAN.md (async LM Protocol + backends)
+Last activity: 2026-02-09 — Completed 11-03-PLAN.md (async graph execution layer)
 
-Progress: [████████████████░░░░░░░░░░░░░░░░] 50% v3.0 (2/4 plans)
+Progress: [████████████████████████░░░░░░░░] 75% v3.0 (3/4 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 36 (13 v1.0 + 21 v2.0 + 2 v3.0)
+- Total plans completed: 37 (13 v1.0 + 21 v2.0 + 3 v3.0)
 - v2.0 duration: 2 days (2026-02-07 → 2026-02-08)
 - v2.0 commits: 106
 - v3.0 duration: in progress
-- v3.0 commits: 4
+- v3.0 commits: 7
 
 ## Accumulated Context
 
@@ -41,6 +41,9 @@ v3.0 decisions so far:
 - Used predictor.acall() for native async DSPy calls (not asyncio.to_thread)
 - Pure computation methods kept sync — no I/O, no benefit from async
 - DSPy mock predictors use predictor.acall() (async) not predictor() (sync)
+- Node.__call__ is async def — all subclasses must use async def __call__
+- resolve_fields() stays sync in Phase 11 (async is Phase 12)
+- CLI uses asyncio.run() as sync boundary (Typer doesn't support async)
 
 ### Pending Todos
 
@@ -48,7 +51,6 @@ v3.0 decisions so far:
 - Bump Python requirement to 3.14 stable
 - **OTel observability**: Add OpenTelemetry spans with decorators for node ins/outs. Jaeger in Docker for local trace visualization.
 - **Replace CLI trace capture with logging**: Standard Python logger for all fill/choose_type ins and outs. Custom Formatter/Handler for dumping to file.
-- Re-enable 3 skipped `TestGraphFillIntegration` tests in Plan 11-03
 
 ### Blockers/Concerns
 
@@ -57,6 +59,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 11-01-PLAN.md
+Stopped at: Completed 11-03-PLAN.md
 Branch: 11-async-core
 Resume file: None
