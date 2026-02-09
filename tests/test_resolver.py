@@ -456,66 +456,66 @@ def failing_dep() -> str:
 
 
 class TestResolveDep:
-    def test_resolve_leaf_dep(self):
+    async def test_resolve_leaf_dep(self):
         """Leaf dep with no transitive deps resolves by calling fn directly."""
         cache: dict = {}
-        result = resolve_dep(get_location, cache)
+        result = await resolve_dep(get_location, cache)
         assert result == "NYC"
         assert get_location in cache
         assert cache[get_location] == "NYC"
 
-    def test_resolve_chained_dep(self):
+    async def test_resolve_chained_dep(self):
         """Chained dep resolves transitive deps first, passes as kwargs."""
         cache: dict = {}
-        result = resolve_dep(get_weather, cache)
+        result = await resolve_dep(get_weather, cache)
         assert result == "Weather in NYC"
         assert get_location in cache
         assert get_weather in cache
 
-    def test_cache_prevents_duplicate_calls(self):
+    async def test_cache_prevents_duplicate_calls(self):
         """Same dep function called once even when resolved through multiple paths."""
         call_count.clear()
         cache: dict = {}
-        resolve_dep(tracked_get_weather, cache)
-        resolve_dep(tracked_get_weather, cache)
+        await resolve_dep(tracked_get_weather, cache)
+        await resolve_dep(tracked_get_weather, cache)
         assert call_count["get_location"] == 1
         assert call_count["get_weather"] == 1
 
-    def test_cache_keyed_by_identity(self):
+    async def test_cache_keyed_by_identity(self):
         """Pre-populated cache entry used instead of calling the dep function."""
         cache: dict = {tracked_get_location: "cached"}
         call_count.clear()
-        result = resolve_dep(tracked_get_weather, cache)
+        result = await resolve_dep(tracked_get_weather, cache)
         assert result == "Sunny in cached"
         assert call_count.get("get_location", 0) == 0
 
-    def test_dep_exception_propagates_raw(self):
+    async def test_dep_exception_propagates_raw(self):
         """Dep function exceptions propagate unwrapped."""
         with pytest.raises(ConnectionError, match="API down"):
-            resolve_dep(failing_dep, {})
+            await resolve_dep(failing_dep, {})
 
 
 class TestResolveFields:
-    def test_resolve_dep_field(self):
+    async def test_resolve_dep_field(self):
         """Node with a single Dep field resolves to the dep function's return value."""
 
         class DepFieldNode(Node):
             location: Annotated[str, Dep(get_location)]
 
-        result = resolve_fields(DepFieldNode, trace=[], dep_cache={})
+        result = await resolve_fields(DepFieldNode, trace=[], dep_cache={})
         assert result == {"location": "NYC"}
 
-    def test_resolve_recall_field(self):
+    async def test_resolve_recall_field(self):
         """Node with a single Recall field resolves from trace."""
         trace = [VibeCheck.model_construct(mood="happy")]
 
         class RecallFieldNode(Node):
             mood: Annotated[str, Recall()]
 
-        result = resolve_fields(RecallFieldNode, trace=trace, dep_cache={})
+        result = await resolve_fields(RecallFieldNode, trace=trace, dep_cache={})
         assert result == {"mood": "happy"}
 
-    def test_resolve_mixed_fields(self):
+    async def test_resolve_mixed_fields(self):
         """Dep and Recall fields both resolved; plain fields excluded."""
         trace = [VibeCheck.model_construct(mood="happy")]
 
@@ -524,14 +524,14 @@ class TestResolveFields:
             mood: Annotated[str, Recall()]
             name: str
 
-        result = resolve_fields(MixedNode, trace=trace, dep_cache={})
+        result = await resolve_fields(MixedNode, trace=trace, dep_cache={})
         assert "location" in result
         assert result["location"] == "NYC"
         assert "mood" in result
         assert result["mood"] == "happy"
         assert "name" not in result
 
-    def test_resolve_fields_declaration_order(self):
+    async def test_resolve_fields_declaration_order(self):
         """Resolved fields appear in declaration order."""
         trace = [VibeCheck.model_construct(mood="happy")]
 
@@ -540,11 +540,11 @@ class TestResolveFields:
             mood: Annotated[str, Recall()]
             temperature: Annotated[int, Dep(get_temperature)]
 
-        result = resolve_fields(OrderedNode, trace=trace, dep_cache={})
+        result = await resolve_fields(OrderedNode, trace=trace, dep_cache={})
         keys = list(result.keys())
         assert keys == ["location", "mood", "temperature"]
 
-    def test_resolve_dep_caching_across_fields(self):
+    async def test_resolve_dep_caching_across_fields(self):
         """Shared transitive dep called only once across multiple fields."""
         call_count.clear()
 
@@ -552,20 +552,20 @@ class TestResolveFields:
             weather: Annotated[str, Dep(tracked_get_weather)]
             location: Annotated[str, Dep(tracked_get_location)]
 
-        resolve_fields(SharedDepNode, trace=[], dep_cache={})
+        await resolve_fields(SharedDepNode, trace=[], dep_cache={})
         assert call_count["get_location"] == 1
 
-    def test_resolve_fields_empty_for_plain_only(self):
+    async def test_resolve_fields_empty_for_plain_only(self):
         """Node with only plain fields returns empty dict."""
 
         class PlainNode(Node):
             name: str
             value: int
 
-        result = resolve_fields(PlainNode, trace=[], dep_cache={})
+        result = await resolve_fields(PlainNode, trace=[], dep_cache={})
         assert result == {}
 
-    def test_dep_cache_persists_across_calls(self):
+    async def test_dep_cache_persists_across_calls(self):
         """Same dep_cache dict shared across multiple resolve_fields calls."""
         call_count.clear()
         shared_cache: dict = {}
@@ -576,8 +576,8 @@ class TestResolveFields:
         class NodeB(Node):
             weather: Annotated[str, Dep(tracked_get_weather)]
 
-        resolve_fields(NodeA, trace=[], dep_cache=shared_cache)
-        resolve_fields(NodeB, trace=[], dep_cache=shared_cache)
+        await resolve_fields(NodeA, trace=[], dep_cache=shared_cache)
+        await resolve_fields(NodeB, trace=[], dep_cache=shared_cache)
         # tracked_get_location was resolved in NodeA, cached for NodeB's
         # tracked_get_weather which transitively depends on tracked_get_location
         assert call_count["get_location"] == 1

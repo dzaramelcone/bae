@@ -145,7 +145,7 @@ class TestGraphRun:
             None,
         ])
 
-        result = await graph.run(Start(query="hello"), lm=lm)
+        result = await graph.arun(Start(query="hello"), lm=lm)
 
         # Returns GraphResult with node=None (terminated)
         assert isinstance(result, GraphResult)
@@ -162,7 +162,7 @@ class TestGraphRun:
             None,
         ])
 
-        result = await graph.run(Start(query="hello"), lm=lm)
+        result = await graph.arun(Start(query="hello"), lm=lm)
         assert isinstance(result, GraphResult)
         assert result.node is None
         assert len(result.trace) == 3  # Start, Process, Review
@@ -174,4 +174,4 @@ class TestGraphRun:
         lm = MockLM(sequence=[])
 
         with pytest.raises(BaeError, match="exceeded"):
-            await graph.run(Infinite(), lm=lm, max_iters=10)
+            await graph.arun(Infinite(), lm=lm, max_iters=10)

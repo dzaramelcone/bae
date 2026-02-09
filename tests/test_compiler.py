@@ -138,23 +138,23 @@ class TestCompiledGraphRunUsesOptimizedLM:
         # Add it to compiled.optimized
         compiled.optimized[RunResultNode] = mock_predictor
 
-        # Mock Graph.run to verify lm parameter
-        mock_run = AsyncMock(return_value=GraphResult(node=None, trace=[]))
-        with patch.object(graph, "run", mock_run):
-            # Patch OptimizedLM at its source module (lazy imported in run())
+        # Mock Graph.arun to verify lm parameter
+        mock_arun = AsyncMock(return_value=GraphResult(node=None, trace=[]))
+        with patch.object(graph, "arun", mock_arun):
+            # Patch OptimizedLM at its source module (lazy imported in arun())
             with patch("bae.optimized_lm.OptimizedLM") as mock_lm_class:
                 mock_lm_instance = MagicMock()
                 mock_lm_class.return_value = mock_lm_instance
 
                 start_node = RunStartNode(text="test input")
-                result = await compiled.run(start_node)
+                result = await compiled.arun(start_node)
 
                 # Verify OptimizedLM was created with compiled.optimized
                 mock_lm_class.assert_called_once_with(optimized=compiled.optimized)
 
-                # Verify graph.run was called with the OptimizedLM
-                mock_run.assert_called_once()
-                call_kwargs = mock_run.call_args.kwargs
+                # Verify graph.arun was called with the OptimizedLM
+                mock_arun.assert_called_once()
+                call_kwargs = mock_arun.call_args.kwargs
                 assert call_kwargs["lm"] is mock_lm_instance
 
 
@@ -172,7 +172,7 @@ class TestCompiledGraphRunReturnsGraphResult:
         # No optimized predictors - empty dict
         # Run with a terminal node
         start_node = RunResultNode(result="test")
-        result = await compiled.run(start_node)
+        result = await compiled.arun(start_node)
 
         # Should return GraphResult
         assert isinstance(result, GraphResult)
@@ -188,7 +188,7 @@ class TestCompiledGraphRunReturnsGraphResult:
         compiled = compile_graph(graph)
 
         start_node = RunResultNode(result="traced")
-        result = await compiled.run(start_node)
+        result = await compiled.arun(start_node)
 
         # Trace should contain the start node
         assert len(result.trace) >= 1

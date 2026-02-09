@@ -105,7 +105,7 @@ class TestDepResolutionOnStartNode:
         """graph.run(StartWithDep) resolves dep field, trace[0] has data populated."""
         graph = Graph(start=StartWithDep)
 
-        result = await graph.run(
+        result = await graph.arun(
             StartWithDep.model_construct(),
             lm=MockV2LM(responses={}),
         )
@@ -167,7 +167,7 @@ class TestMultiNodeWithDepsAndRecalls:
         )
         lm = MockV2LM(responses={Analyze: analyze_node})
 
-        result = await graph.run(
+        result = await graph.arun(
             GatherInfo.model_construct(),
             lm=lm,
         )
@@ -225,7 +225,7 @@ class TestCustomCallWithResolvedDeps:
         """Node with Dep field + custom __call__ accesses self.data after resolution."""
         graph = Graph(start=CustomWithDep)
 
-        result = await graph.run(
+        result = await graph.arun(
             CustomWithDep.model_construct(),
             lm=MockV2LM(responses={}),
         )
@@ -272,7 +272,7 @@ class TestDepFailureRaisesDepError:
         graph = Graph(start=NodeWithFailingDep)
 
         with pytest.raises(DepError) as exc_info:
-            await graph.run(
+            await graph.arun(
                 NodeWithFailingDep.model_construct(),
                 lm=MockV2LM(responses={}),
             )
@@ -320,13 +320,13 @@ class TestIterationGuard:
         lm = MockV2LM(responses={LoopNode: loop_node})
 
         with pytest.raises(BaeError, match="exceeded 5 iterations"):
-            await graph.run(loop_node, lm=lm, max_iters=5)
+            await graph.arun(loop_node, lm=lm, max_iters=5)
 
     async def test_max_iters_zero_means_infinite(self):
         """graph.run with max_iters=0 does NOT raise (sentinel for infinite)."""
         graph = Graph(start=CountdownNode)
 
-        result = await graph.run(
+        result = await graph.arun(
             CountdownNode(steps_left=3),
             lm=MockV2LM(responses={}),
             max_iters=0,
@@ -365,7 +365,7 @@ class TestTerminalNodeInTrace:
         """Terminal node (returns None) is included in trace."""
         graph = Graph(start=SimpleTerminal)
 
-        result = await graph.run(
+        result = await graph.arun(
             SimpleTerminal(message="the end"),
             lm=MockV2LM(responses={}),
         )
@@ -379,7 +379,7 @@ class TestTerminalNodeInTrace:
         """In multi-node graph, terminal is last in trace."""
         graph = Graph(start=NodeBeforeTerminal)
 
-        result = await graph.run(
+        result = await graph.arun(
             NodeBeforeTerminal(),
             lm=MockV2LM(responses={}),
         )

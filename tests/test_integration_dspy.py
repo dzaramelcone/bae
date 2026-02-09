@@ -164,7 +164,7 @@ class TestAutoRoutingUnionType:
             }
         )
 
-        result = await graph.run(AnalyzeQuery(query="What is 6*7?"), lm=lm)
+        result = await graph.arun(AnalyzeQuery(query="What is 6*7?"), lm=lm)
 
         # v2: decide strategy calls choose_type then fill for each ellipsis node
         # AnalyzeQuery (decide: ProcessSimple|ProcessComplex) + ProcessSimple (decide: Done|None)
@@ -190,7 +190,7 @@ class TestAutoRoutingSingleType:
             }
         )
 
-        result = await graph.run(
+        result = await graph.arun(
             ProcessComplex(steps=["step1", "step2"]),
             lm=lm,
         )
@@ -215,7 +215,7 @@ class TestCustomCallEscapeHatch:
             }
         )
 
-        result = await graph.run(StartCustom(value=50), lm=lm)
+        result = await graph.arun(StartCustom(value=50), lm=lm)
 
         # Custom call invoked lm.make directly (v1 method)
         assert len(lm.make_calls) == 1
@@ -237,7 +237,7 @@ class TestDSPyBackendDefault:
 
         # Run without lm - should use DSPyBackend
         # This will just run the terminal node which returns None
-        result = await graph.run(Done(result="test"))
+        result = await graph.arun(Done(result="test"))
 
         assert isinstance(result, GraphResult)
         assert result.node is None
@@ -263,7 +263,7 @@ class TestDSPyBackendDefault:
         mock_predict_cls.return_value = mock_predictor
 
         graph = Graph(start=ProcessSimple)
-        result = await graph.run(ProcessSimple(answer="test"))
+        result = await graph.arun(ProcessSimple(answer="test"))
 
         # DSPyBackend.fill() called dspy.Predict for the fill step
         assert mock_predict_cls.called
@@ -284,7 +284,7 @@ class TestGraphResultTrace:
             }
         )
 
-        result = await graph.run(AnalyzeQuery(query="complex task"), lm=lm)
+        result = await graph.arun(AnalyzeQuery(query="complex task"), lm=lm)
 
         # v2 trace: AnalyzeQuery -> ProcessComplex -> Review -> Done
         assert len(result.trace) == 4
@@ -304,7 +304,7 @@ class TestGraphResultTrace:
             }
         )
 
-        result = await graph.run(AnalyzeQuery(query="simple question"), lm=lm)
+        result = await graph.arun(AnalyzeQuery(query="simple question"), lm=lm)
 
         # v2 trace: AnalyzeQuery (choose_type+fill) -> ProcessSimple (choose_type+fill) -> Done (terminal)
         assert len(result.trace) == 3

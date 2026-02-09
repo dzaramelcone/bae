@@ -200,7 +200,7 @@ class TestGraphFillIntegration:
 
         lm = CapturingLM(responses={MiddleNode: middle, EndNode: end})
 
-        result = await graph.run(
+        result = await graph.arun(
             StartNode(user_message="ugh i just got up"),
             lm=lm,
         )
@@ -228,7 +228,7 @@ class TestGraphFillIntegration:
 
         lm = CapturingLM(responses={})
 
-        result = await graph.run(EndNode(top="Tee", bottom="Jeans"), lm=lm)
+        result = await graph.arun(EndNode(top="Tee", bottom="Jeans"), lm=lm)
 
         # Terminal node -- no fill() calls at all
         assert len(lm.fill_calls) == 0
@@ -246,7 +246,7 @@ class TestGraphFillIntegration:
         end = EndNode.model_construct(top="Navy sweater", bottom="Chinos")
 
         lm = CapturingLM(responses={MiddleNode: middle, EndNode: end})
-        await graph.run(StartNode(user_message="test"), lm=lm)
+        await graph.arun(StartNode(user_message="test"), lm=lm)
 
         # MiddleNode has no docstring -- class name only
         assert lm.fill_calls[0]["instruction"] == "MiddleNode"
