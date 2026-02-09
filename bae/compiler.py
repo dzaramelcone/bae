@@ -5,6 +5,7 @@ Compiles a Graph into a DSPy program for prompt optimization.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, get_type_hints
@@ -30,11 +31,25 @@ class CompiledGraph:
         self.signatures = signatures
         self.optimized: dict[type[Node], dspy.Predict] = {}
 
-    async def run(self, start_node: Node) -> "GraphResult":
-        """Run the compiled graph using optimized predictors.
+    def run(self, start_node: Node) -> "GraphResult":
+        """Run the compiled graph synchronously.
+
+        Convenience wrapper around arun(). Cannot be called from within
+        a running event loop (raises RuntimeError).
+
+        Args:
+            start_node: The initial node to start execution.
+
+        Returns:
+            GraphResult with final node and execution trace.
+        """
+        return asyncio.run(self.arun(start_node))
+
+    async def arun(self, start_node: Node) -> "GraphResult":
+        """Run the compiled graph asynchronously.
 
         Creates an OptimizedLM from loaded predictors and delegates
-        to Graph.run(). Nodes with optimized predictors use them;
+        to Graph.arun(). Nodes with optimized predictors use them;
         others fall back to naive prompts.
 
         Args:
@@ -47,7 +62,7 @@ class CompiledGraph:
         from bae.result import GraphResult
 
         lm = OptimizedLM(optimized=self.optimized)
-        return await self.graph.run(start_node, lm=lm)
+        return await self.graph.arun(start_node, lm=lm)
 
     def optimize(
         self,

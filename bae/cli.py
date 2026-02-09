@@ -7,7 +7,6 @@ Commands:
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import importlib
 import json
@@ -266,7 +265,7 @@ def run_graph(
         lm = None  # Uses DSPyBackend by default
 
     typer.echo(f"Running {graph.start.__name__}...")
-    result = asyncio.run(graph.run(start_node, lm=lm))
+    result = graph.run(start_node, lm=lm)
 
     typer.echo("\nTrace:")
     for i, node in enumerate(result.trace):
