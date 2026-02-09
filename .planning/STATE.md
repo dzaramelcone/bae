@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-08)
 ## Current Position
 
 Phase: 12 of 12 (Parallel Deps Migration)
-Plan: 1 of 4 complete
+Plan: 2 of 4 complete
 Status: In progress
-Last activity: 2026-02-09 — Completed 12-01-PLAN.md (async resolver)
+Last activity: 2026-02-09 — Completed 12-02-PLAN.md (graph run/arun split)
 
-Progress: [██████████████████░░░░░░░░░░░░░░] 56% v3.0 (Phase 11 done + 12-01 of 12-04)
+Progress: [████████████████████░░░░░░░░░░░░] 63% v3.0 (Phase 11 done + 12-01..02 of 12-04)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 39 (13 v1.0 + 21 v2.0 + 5 v3.0)
+- Total plans completed: 40 (13 v1.0 + 21 v2.0 + 6 v3.0)
 - v2.0 duration: 2 days (2026-02-07 → 2026-02-08)
 - v2.0 commits: 106
 - v3.0 duration: in progress
@@ -48,6 +48,8 @@ v3.0 decisions so far:
 - resolve_fields() and resolve_dep() now async with topo-sort gather (Phase 12-01)
 - _build_fn_dag() helper added for resolve_dep mini-DAG (kept build_dep_dag unchanged)
 - inspect.iscoroutinefunction for runtime sync/async dep callable detection
+- Graph.run() is sync (asyncio.run boundary), Graph.arun() is async (Phase 12-02)
+- All tests use graph.arun() in async contexts, graph.run() for sync callers
 
 ### Pending Todos
 
@@ -63,6 +65,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 12-01-PLAN.md (async resolver conversion)
+Stopped at: Completed 12-02-PLAN.md (graph run/arun split)
 Branch: 11-async-core
 Resume file: None
