@@ -7,6 +7,7 @@ Commands:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import importlib
 import json
@@ -239,7 +240,7 @@ def run_graph(
     graph = _load_graph_from_module(module)
 
     # Get the start node class
-    start_cls = graph._start
+    start_cls = graph.start
 
     # Parse input
     if input_json:
@@ -264,8 +265,8 @@ def run_graph(
     else:
         lm = None  # Uses DSPyBackend by default
 
-    typer.echo(f"Running {graph._start.__name__}...")
-    result = graph.run(start_node, lm=lm) if lm else graph.run(start_node)
+    typer.echo(f"Running {graph.start.__name__}...")
+    result = asyncio.run(graph.run(start_node, lm=lm))
 
     typer.echo("\nTrace:")
     for i, node in enumerate(result.trace):
