@@ -32,11 +32,11 @@ Plans:
 5. DSPy uses `await predictor.acall()` (native async)
 6. All existing tests pass with pytest-asyncio
 
-### Phase 12: Parallel Deps + Migration ⚠️
+### Phase 12: Parallel Deps + Migration ✓
 **Goal**: Independent deps on the same node resolve concurrently. Full test suite, ootd.py, and E2E pass.
 **Depends on**: Phase 11
 **Requirements**: PDEP-01 through PDEP-05, MIG-01 through MIG-03
-**Plans:** 4 plans executed — **MIG-03 failing** (fill() returns dict instead of nested Pydantic model in E2E)
+**Plans:** 4 plans — **Complete** (2026-02-09)
 
 Plans:
 - [x] 12-01-PLAN.md — Async resolve_fields + resolve_dep with topo-sort gather (resolver.py)
@@ -53,15 +53,15 @@ Plans:
 6. examples/ootd.py works with async graph.run()
 7. E2E tests pass with async backends
 
-### Phase 13: Fix Nested Model Construction in Fill
+### Phase 13: Fix Nested Model Construction in Fill ✓
 **Goal**: fill() correctly constructs nested Pydantic models from LLM JSON output. E2E test `test_anticipate_has_llm_filled_vibe` passes.
 **Depends on**: Phase 12
 **Requirements**: MIG-03
 **Gap Closure**: Closes gap from v3.0 milestone audit
-**Plans:** 1 plan
+**Plans:** 1 plan — **Complete** (2026-02-09)
 
 Plans:
-- [ ] 13-01-PLAN.md — TDD fix: validate_plain_fields + all three fill() backends preserve nested model instances
+- [x] 13-01-PLAN.md — TDD fix: validate_plain_fields + all three fill() backends preserve nested model instances
 
 **Success Criteria:**
 1. `fill()` returns properly constructed nested Pydantic model instances (not raw dicts)

@@ -27,7 +27,7 @@
 
 - [x] **MIG-01**: All existing tests pass with async (pytest-asyncio, asyncio_mode="auto")
 - [x] **MIG-02**: examples/ootd.py works with async graph.run()
-- [ ] **MIG-03**: E2E tests (--run-e2e) pass with async backends — 4/5 pass, `test_anticipate_has_llm_filled_vibe` fails: `fill` returns raw dict instead of nested VibeCheck model
+- [x] **MIG-03**: E2E tests (--run-e2e) pass with async backends — fixed in Phase 13 (getattr extraction preserves nested models)
 
 ## Traceability
 
@@ -49,9 +49,9 @@
 | PDEP-05 | 12 | Complete |
 | MIG-01 | 12 | Complete |
 | MIG-02 | 12 | Complete |
-| MIG-03 | 12 | **FAILING** — fill returns dict not VibeCheck |
+| MIG-03 | 13 | Complete |
 
-**Coverage:** 17 requirements, 16 complete, 1 failing
+**Coverage:** 17 requirements, 17 complete
 
 ---
 *Created: 2026-02-08 for v3.0 Async Graphs*
