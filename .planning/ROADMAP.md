@@ -1,8 +1,8 @@
 # Milestone v3.0: Async Graphs
 
 **Status:** Active
-**Phases:** 11-12
-**Total Plans:** 4 (Phase 11), 4 (Phase 12)
+**Phases:** 11-13
+**Total Plans:** 4 (Phase 11), 4 (Phase 12), TBD (Phase 13)
 
 ## Overview
 
@@ -32,11 +32,11 @@ Plans:
 5. DSPy uses `await predictor.acall()` (native async)
 6. All existing tests pass with pytest-asyncio
 
-### Phase 12: Parallel Deps + Migration ✓
+### Phase 12: Parallel Deps + Migration ⚠️
 **Goal**: Independent deps on the same node resolve concurrently. Full test suite, ootd.py, and E2E pass.
 **Depends on**: Phase 11
 **Requirements**: PDEP-01 through PDEP-05, MIG-01 through MIG-03
-**Plans:** 4 plans — **Complete** (2026-02-09)
+**Plans:** 4 plans executed — **MIG-03 failing** (fill() returns dict instead of nested Pydantic model in E2E)
 
 Plans:
 - [x] 12-01-PLAN.md — Async resolve_fields + resolve_dep with topo-sort gather (resolver.py)
@@ -52,6 +52,19 @@ Plans:
 5. Per-run dep caching is race-condition-free under concurrent resolution
 6. examples/ootd.py works with async graph.run()
 7. E2E tests pass with async backends
+
+### Phase 13: Fix Nested Model Construction in Fill
+**Goal**: fill() correctly constructs nested Pydantic models from LLM JSON output. E2E test `test_anticipate_has_llm_filled_vibe` passes.
+**Depends on**: Phase 12
+**Requirements**: MIG-03
+**Gap Closure**: Closes gap from v3.0 milestone audit
+**Plans:** TBD
+
+**Success Criteria:**
+1. `fill()` returns properly constructed nested Pydantic model instances (not raw dicts)
+2. E2E test `test_anticipate_has_llm_filled_vibe` passes — `anticipate.vibe` is `VibeCheck` instance
+3. All 5 E2E tests pass with `--run-e2e`
+4. Full test suite (344+) passes, 0 regressions
 
 ---
 
