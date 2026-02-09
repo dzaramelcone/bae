@@ -5,15 +5,15 @@
 
 ## Async Core
 
-- [ ] **ASYNC-01**: Graph.run() is async (`async def run()`)
-- [ ] **ASYNC-02**: LM protocol methods (choose_type, fill, make, decide) are async
-- [ ] **ASYNC-03**: PydanticAIBackend uses native async (`await agent.run()` instead of `agent.run_sync()`)
-- [ ] **ASYNC-04**: ClaudeCLIBackend uses `asyncio.create_subprocess_exec()` instead of `subprocess.run()`
-- [ ] **ASYNC-05**: DSPyBackend uses native async (`await predictor.acall()` instead of `predictor()`)
-- [ ] **ASYNC-06**: OptimizedLM async (inherits from async DSPyBackend)
-- [ ] **ASYNC-07**: Node.__call__() is async
-- [ ] **ASYNC-08**: CLI uses `asyncio.run()` at the boundary (Typer stays sync)
-- [ ] **ASYNC-09**: CompiledGraph.run() is async
+- [x] **ASYNC-01**: Graph.run() is async (`async def run()`)
+- [x] **ASYNC-02**: LM protocol methods (choose_type, fill, make, decide) are async
+- [x] **ASYNC-03**: PydanticAIBackend uses native async (`await agent.run()` instead of `agent.run_sync()`)
+- [x] **ASYNC-04**: ClaudeCLIBackend uses `asyncio.create_subprocess_exec()` instead of `subprocess.run()`
+- [x] **ASYNC-05**: DSPyBackend uses native async (`await predictor.acall()` instead of `predictor()`)
+- [x] **ASYNC-06**: OptimizedLM async (inherits from async DSPyBackend)
+- [x] **ASYNC-07**: Node.__call__() is async
+- [x] **ASYNC-08**: CLI uses `asyncio.run()` at the boundary (Typer stays sync)
+- [x] **ASYNC-09**: CompiledGraph.run() is async
 
 ## Parallel Dependency Resolution
 
@@ -33,15 +33,15 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ASYNC-01 | 11 | Pending |
-| ASYNC-02 | 11 | Pending |
-| ASYNC-03 | 11 | Pending |
-| ASYNC-04 | 11 | Pending |
-| ASYNC-05 | 11 | Pending |
-| ASYNC-06 | 11 | Pending |
-| ASYNC-07 | 11 | Pending |
-| ASYNC-08 | 11 | Pending |
-| ASYNC-09 | 11 | Pending |
+| ASYNC-01 | 11 | Complete |
+| ASYNC-02 | 11 | Complete |
+| ASYNC-03 | 11 | Complete |
+| ASYNC-04 | 11 | Complete |
+| ASYNC-05 | 11 | Complete |
+| ASYNC-06 | 11 | Complete |
+| ASYNC-07 | 11 | Complete |
+| ASYNC-08 | 11 | Complete |
+| ASYNC-09 | 11 | Complete |
 | PDEP-01 | 12 | Pending |
 | PDEP-02 | 12 | Pending |
 | PDEP-03 | 12 | Pending |
@@ -51,7 +51,7 @@
 | MIG-02 | 12 | Pending |
 | MIG-03 | 12 | Pending |
 
-**Coverage:** 17 requirements, 0 complete
+**Coverage:** 17 requirements, 9 complete
 
 ---
 *Created: 2026-02-08 for v3.0 Async Graphs*

@@ -12,17 +12,17 @@ DSPy has native async (`Predict.acall()`), PydanticAI is async-native, pytest-as
 
 ## Phases
 
-### Phase 11: Async Core
+### Phase 11: Async Core ✓
 **Goal**: All LM backends, Graph.run(), and Node.__call__() are async. Existing tests pass.
 **Depends on**: v2.0 complete
 **Requirements**: ASYNC-01 through ASYNC-09
-**Plans:** 4 plans
+**Plans:** 4 plans — **Complete** (2026-02-09)
 
 Plans:
-- [ ] 11-01-PLAN.md — LM Protocol + PydanticAI + ClaudeCLI async (lm.py + tests)
-- [ ] 11-02-PLAN.md — DSPyBackend + OptimizedLM async (dspy_backend.py, optimized_lm.py + tests)
-- [ ] 11-03-PLAN.md — Node + Graph + Compiler + CLI async (node.py, graph.py, compiler.py, cli.py + tests)
-- [ ] 11-04-PLAN.md — Integration + E2E test migration + full suite verification
+- [x] 11-01-PLAN.md — LM Protocol + PydanticAI + ClaudeCLI async (lm.py + tests)
+- [x] 11-02-PLAN.md — DSPyBackend + OptimizedLM async (dspy_backend.py, optimized_lm.py + tests)
+- [x] 11-03-PLAN.md — Node + Graph + Compiler + CLI async (node.py, graph.py, compiler.py, cli.py + tests)
+- [x] 11-04-PLAN.md — Integration + E2E test migration + full suite verification
 
 **Success Criteria:**
 1. `Graph.run()` is `async def` and awaits LM calls
