@@ -7,7 +7,9 @@ by a callable), 'recall' (populated from the execution trace), or 'plain'
 
 from __future__ import annotations
 
+import asyncio
 import graphlib
+import inspect
 from typing import Annotated, get_args, get_origin, get_type_hints
 
 from bae.exceptions import RecallError
@@ -224,13 +226,92 @@ def validate_node_deps(node_cls: type, *, is_start: bool) -> list[str]:
     return errors
 
 
-def resolve_dep(fn: object, cache: dict) -> object:
-    """Resolve a single dep function, recursively resolving transitive deps.
+async def _resolve_one(fn: object, cache: dict) -> object:
+    """Resolve a single dep callable whose transitive deps are already cached.
+
+    Inspects ``fn``'s type hints for ``Dep``-annotated parameters, looks up
+    each in ``cache`` (guaranteed to exist by topological ordering), builds
+    kwargs, and calls ``fn``.
+
+    Sync callables are called directly (thin coroutine wrapper -- calling a
+    sync function from within an async def is sufficient for
+    ``asyncio.gather()`` participation).  Async callables are awaited.
+
+    Args:
+        fn: The dep callable to invoke.
+        cache: Per-run cache with all transitive deps already resolved.
+
+    Returns:
+        The result of calling fn with its resolved dep kwargs.
+    """
+    try:
+        hints = get_type_hints(fn, include_extras=True)
+    except Exception:
+        hints = {}
+
+    kwargs: dict[str, object] = {}
+    for param_name, hint in hints.items():
+        if param_name == "return":
+            continue
+        if get_origin(hint) is Annotated:
+            for m in get_args(hint)[1:]:
+                if isinstance(m, Dep) and m.fn is not None:
+                    kwargs[param_name] = cache[m.fn]
+                    break
+
+    if inspect.iscoroutinefunction(fn):
+        return await fn(**kwargs)
+    return fn(**kwargs)
+
+
+def _build_fn_dag(fn: object) -> graphlib.TopologicalSorter:
+    """Build a TopologicalSorter for a callable and its transitive deps.
+
+    Same walk logic as :func:`build_dep_dag` but seeded from a single
+    callable rather than a node class.
+
+    Args:
+        fn: The root callable to build the DAG from.
+
+    Returns:
+        A ``graphlib.TopologicalSorter`` ready for ``prepare()``.
+    """
+    ts = graphlib.TopologicalSorter()
+    visited: set = set()
+
+    def walk(f: object) -> None:
+        if id(f) in visited:
+            return
+        visited.add(id(f))
+
+        ts.add(f)
+
+        try:
+            hints = get_type_hints(f, include_extras=True)
+        except Exception:
+            return
+
+        for param_name, hint in hints.items():
+            if param_name == "return":
+                continue
+            if get_origin(hint) is Annotated:
+                for m in get_args(hint)[1:]:
+                    if isinstance(m, Dep) and m.fn is not None:
+                        ts.add(f, m.fn)
+                        walk(m.fn)
+                        break
+
+    walk(fn)
+    return ts
+
+
+async def resolve_dep(fn: object, cache: dict) -> object:
+    """Resolve a single dep callable, concurrently resolving transitive deps.
 
     If ``fn`` is already in ``cache``, returns the cached value immediately.
-    Otherwise, inspects ``fn``'s type hints for ``Dep``-annotated parameters,
-    recursively resolves those first, then calls ``fn`` with the resolved kwargs.
-    The result is stored in ``cache`` before returning.
+    Otherwise, builds a mini-DAG of ``fn``'s transitive deps and resolves
+    them level-by-level using ``asyncio.gather()`` for concurrency within
+    each topological level.
 
     Exceptions from dep functions propagate raw (no wrapping).
 
@@ -244,29 +325,35 @@ def resolve_dep(fn: object, cache: dict) -> object:
     if fn in cache:
         return cache[fn]
 
-    hints = get_type_hints(fn, include_extras=True)
-    kwargs: dict[str, object] = {}
+    dag = _build_fn_dag(fn)
+    dag.prepare()
 
-    for param_name, hint in hints.items():
-        if param_name == "return":
-            continue
-        if get_origin(hint) is Annotated:
-            for m in get_args(hint)[1:]:
-                if isinstance(m, Dep) and m.fn is not None:
-                    kwargs[param_name] = resolve_dep(m.fn, cache)
-                    break
+    while dag.is_active():
+        ready = dag.get_ready()
+        to_resolve = [f for f in ready if f not in cache]
 
-    result = fn(**kwargs)
-    cache[fn] = result
-    return result
+        if to_resolve:
+            results = await asyncio.gather(
+                *[_resolve_one(f, cache) for f in to_resolve]
+            )
+            for f, result in zip(to_resolve, results):
+                cache[f] = result
+
+        for f in ready:
+            dag.done(f)
+
+    return cache[fn]
 
 
-def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[str, object]:
+async def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[str, object]:
     """Resolve all Dep and Recall fields on a Node subclass.
 
-    Iterates fields in declaration order. For each ``Dep``-annotated field,
-    delegates to :func:`resolve_dep`. For each ``Recall``-annotated field,
-    delegates to :func:`recall_from_trace`. Plain fields are skipped.
+    Dep fields are resolved concurrently per topological level using
+    ``asyncio.gather()``.  Independent deps on the same level fire in
+    parallel.  Recall fields are resolved synchronously after deps (pure
+    computation, no I/O benefit from async).
+
+    The result dict preserves field declaration order.
 
     Args:
         node_cls: A Node subclass whose annotated fields to resolve.
@@ -276,8 +363,11 @@ def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[str, ob
     Returns:
         Dict mapping field name to resolved value for Dep and Recall fields only.
     """
-    resolved: dict[str, object] = {}
     hints = get_type_hints(node_cls, include_extras=True)
+
+    # Classify fields into dep and recall buckets
+    dep_fields: dict[str, object] = {}
+    recall_fields: dict[str, type] = {}
 
     for field_name, hint in hints.items():
         if field_name == "return":
@@ -292,10 +382,40 @@ def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[str, ob
 
         for m in metadata:
             if isinstance(m, Dep) and m.fn is not None:
-                resolved[field_name] = resolve_dep(m.fn, dep_cache)
+                dep_fields[field_name] = m.fn
                 break
             if isinstance(m, Recall):
-                resolved[field_name] = recall_from_trace(trace, base_type)
+                recall_fields[field_name] = base_type
                 break
+
+    # Resolve deps via topo-sort levels with gather
+    if dep_fields:
+        dag = build_dep_dag(node_cls)
+        dag.prepare()
+
+        while dag.is_active():
+            ready = dag.get_ready()
+            to_resolve = [fn for fn in ready if fn not in dep_cache]
+
+            if to_resolve:
+                results = await asyncio.gather(
+                    *[_resolve_one(fn, dep_cache) for fn in to_resolve]
+                )
+                for fn, result in zip(to_resolve, results):
+                    dep_cache[fn] = result
+
+            for fn in ready:
+                dag.done(fn)
+
+    # Build resolved dict in declaration order
+    resolved: dict[str, object] = {}
+    for field_name, hint in hints.items():
+        if field_name == "return":
+            continue
+
+        if field_name in dep_fields:
+            resolved[field_name] = dep_cache[dep_fields[field_name]]
+        elif field_name in recall_fields:
+            resolved[field_name] = recall_from_trace(trace, recall_fields[field_name])
 
     return resolved
