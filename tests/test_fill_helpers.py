@@ -180,14 +180,26 @@ class TestValidatePlainFields:
         assert isinstance(result["temp_f"], float)
 
     def test_nested_model_validated(self):
-        """Nested BaseModel plain fields are validated through Pydantic."""
+        """Nested BaseModel plain fields are preserved as model instances."""
         from bae.lm import validate_plain_fields
 
         raw = {"vibe": {"mood": "happy", "style": "casual"}}
         result = validate_plain_fields(raw, MixedNode)
 
-        # Should be a validated VibeCheck instance after model_dump
-        assert result["vibe"]["mood"] == "happy"
+        assert isinstance(result["vibe"], VibeCheck)
+        assert result["vibe"].mood == "happy"
+        assert result["vibe"].style == "casual"
+
+    def test_nested_model_preserves_instance_type(self):
+        """validate_plain_fields preserves nested model instances, not raw dicts."""
+        from bae.lm import validate_plain_fields
+
+        raw = {"vibe": {"mood": "chill", "style": "relaxed"}}
+        result = validate_plain_fields(raw, MixedNode)
+
+        # Must be VibeCheck, NOT dict
+        assert not isinstance(result["vibe"], dict)
+        assert isinstance(result["vibe"], VibeCheck)
 
     def test_nested_model_invalid_raises_fill_error(self):
         """Invalid nested model data raises FillError."""

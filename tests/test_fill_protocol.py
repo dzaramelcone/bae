@@ -255,6 +255,58 @@ class TestGraphFillIntegration:
         assert lm.fill_calls[1]["instruction"] == "EndNode"
 
 
+class TestFillNestedModelPreservation:
+    """fill() returns nodes with nested BaseModel instances, not raw dicts."""
+
+    async def test_cli_fill_preserves_nested_model(self):
+        """ClaudeCLIBackend.fill() produces VibeCheck instance, not dict."""
+        from examples.ootd import (
+            AnticipateUsersDay,
+            CalendarResult,
+            GeoLocation,
+            VibeCheck,
+            WeatherResult,
+        )
+
+        backend = ClaudeCLIBackend()
+        resolved = {
+            "weather": WeatherResult(
+                name="Seattle",
+                conditions=[],
+                temp=72.0,
+                feels_like=70.0,
+                temp_min=65.0,
+                temp_max=75.0,
+                humidity=60,
+                wind_speed=5.0,
+                clouds=50,
+                visibility=10000,
+            ),
+            "schedule": CalendarResult(events=[]),
+            "location": GeoLocation(
+                name="Seattle", lat=47.6, lon=-122.3, country="US", state="WA"
+            ),
+        }
+
+        async def mock_cli(prompt, schema):
+            return {
+                "vibe": {
+                    "mood": "groggy",
+                    "communication_style": "casual",
+                    "context_cues": "just woke up",
+                }
+            }
+
+        with patch.object(backend, "_run_cli_json", side_effect=mock_cli):
+            result = await backend.fill(
+                AnticipateUsersDay, resolved, "AnticipateUsersDay"
+            )
+
+        assert isinstance(result, AnticipateUsersDay)
+        assert isinstance(result.vibe, VibeCheck)
+        assert result.vibe.mood == "groggy"
+
+
 class TestBuildInstruction:
     """Direct unit tests for _build_instruction."""
 
