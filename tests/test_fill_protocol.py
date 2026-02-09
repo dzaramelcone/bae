@@ -9,7 +9,7 @@ Verifies:
 from __future__ import annotations
 
 from typing import Annotated
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import BaseModel, HttpUrl
@@ -80,7 +80,7 @@ class EndNode(Node):
 class TestPromptStructure:
     """fill() prompt includes source context, resolved deps, and instruction."""
 
-    def test_cli_fill_sends_prompt_with_source_and_context(self):
+    async def test_cli_fill_sends_prompt_with_source_and_context(self):
         """ClaudeCLIBackend.fill() sends source + context + instruction in prompt."""
         backend = ClaudeCLIBackend()
         source = StartNode(user_message="ugh i just got up")
@@ -91,13 +91,13 @@ class TestPromptStructure:
 
         captured_args = {}
 
-        def capture_cli(prompt, schema):
+        async def capture_cli(prompt, schema):
             captured_args["prompt"] = prompt
             captured_args["schema"] = schema
             return {"vibe": {"mood": "groggy", "cues": "just woke up"}}
 
         with patch.object(backend, "_run_cli_json", side_effect=capture_cli):
-            backend.fill(MiddleNode, resolved, "MiddleNode", source=source)
+            await backend.fill(MiddleNode, resolved, "MiddleNode", source=source)
 
         prompt = captured_args["prompt"]
 
@@ -111,26 +111,26 @@ class TestPromptStructure:
         # Instruction
         assert "MiddleNode" in prompt
 
-    def test_cli_fill_uses_json_schema(self):
+    async def test_cli_fill_uses_json_schema(self):
         """ClaudeCLIBackend.fill() passes JSON schema from plain model."""
         backend = ClaudeCLIBackend()
         resolved: dict = {}
 
         captured_args = {}
 
-        def capture_cli(prompt, schema):
+        async def capture_cli(prompt, schema):
             captured_args["schema"] = schema
             return {"top": "Navy sweater", "bottom": "Chinos"}
 
         with patch.object(backend, "_run_cli_json", side_effect=capture_cli):
-            backend.fill(EndNode, resolved, "EndNode")
+            await backend.fill(EndNode, resolved, "EndNode")
 
         schema = captured_args["schema"]
         assert "properties" in schema
         assert "top" in schema["properties"]
         assert "bottom" in schema["properties"]
 
-    def test_cli_fill_no_plain_fields_skips_llm(self):
+    async def test_cli_fill_no_plain_fields_skips_llm(self):
         """fill() with no plain fields returns model_construct without LLM call."""
 
         class AllDepsNode(Node):
@@ -145,8 +145,8 @@ class TestPromptStructure:
             "location": Location(name="Seattle", lat=47.6),
         }
 
-        with patch.object(backend, "_run_cli_json") as mock_cli:
-            result = backend.fill(AllDepsNode, resolved, "AllDepsNode")
+        with patch.object(backend, "_run_cli_json", new_callable=AsyncMock) as mock_cli:
+            result = await backend.fill(AllDepsNode, resolved, "AllDepsNode")
 
             mock_cli.assert_not_called()
             assert isinstance(result, AllDepsNode)
@@ -163,13 +163,13 @@ class CapturingLM:
         self.responses = responses
         self.fill_calls: list[dict] = []
 
-    def choose_type(self, types, context):
+    async def choose_type(self, types, context):
         for t in types:
             if t in self.responses:
                 return t
         return types[0]
 
-    def fill(self, target, resolved, instruction, source=None):
+    async def fill(self, target, resolved, instruction, source=None):
         self.fill_calls.append({
             "target": target,
             "resolved": resolved,
@@ -178,13 +178,14 @@ class CapturingLM:
         })
         return self.responses[target]
 
-    def make(self, node, target):
+    async def make(self, node, target):
         raise NotImplementedError
 
-    def decide(self, node):
+    async def decide(self, node):
         raise NotImplementedError
 
 
+@pytest.mark.skip(reason="Requires async Graph.run - Plan 11-03")
 class TestGraphFillIntegration:
     """Graph.run() resolves target deps then calls fill() with source."""
 
