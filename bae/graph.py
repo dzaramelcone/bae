@@ -3,6 +3,7 @@
 The Graph class discovers topology from Node type hints and handles execution.
 """
 
+import asyncio
 import logging
 import types
 from collections import deque
@@ -106,9 +107,11 @@ class Graph:
     ```python
     graph = Graph(start=AnalyzeRequest)
 
-    # Run the graph with an LM backend
-    lm = PydanticAIBackend()
+    # Sync API (most common)
     result = graph.run(AnalyzeRequest(request="Build a web scraper"), lm=lm)
+
+    # Async API (when already in an event loop)
+    result = await graph.arun(AnalyzeRequest(request="Build a web scraper"), lm=lm)
     ```
 
     The graph topology is discovered by walking return type hints from the start node.
@@ -187,13 +190,41 @@ class Graph:
 
         return issues
 
-    async def run(
+    def run(
         self,
         start_node: Node,
         lm: LM | None = None,
         max_iters: int = 10,
     ) -> GraphResult:
-        """Execute the graph starting from the given node.
+        """Execute the graph synchronously.
+
+        Convenience wrapper around arun(). Cannot be called from within
+        a running event loop (raises RuntimeError).
+
+        Args:
+            start_node: Initial node instance with fields populated.
+            lm: Language model backend for producing nodes.
+            max_iters: Maximum iterations (0 = infinite). Default 10.
+
+        Returns:
+            GraphResult with trace of visited nodes.
+
+        Raises:
+            BaeError: If max_iters exceeded.
+            DepError: If a dependency function fails.
+            RecallError: If recall finds no matching field in trace.
+        """
+        return asyncio.run(self.arun(start_node, lm=lm, max_iters=max_iters))
+
+    async def arun(
+        self,
+        start_node: Node,
+        lm: LM | None = None,
+        max_iters: int = 10,
+    ) -> GraphResult:
+        """Execute the graph asynchronously.
+
+        Use when already in an event loop. For sync callers, use run().
 
         Uses v2 execution loop:
         1. resolve_fields() resolves Dep and Recall fields on each node
@@ -234,9 +265,9 @@ class Graph:
                 err.trace = trace
                 raise err
 
-            # 1. Resolve deps and recalls (sync — Phase 12 makes this async)
+            # 1. Resolve deps and recalls
             try:
-                resolved = resolve_fields(current.__class__, trace, dep_cache)
+                resolved = await resolve_fields(current.__class__, trace, dep_cache)
             except RecallError:
                 raise  # Already correct type
             except Exception as e:
@@ -287,7 +318,7 @@ class Graph:
                     continue
 
                 # Resolve target's dep/recall fields before fill
-                target_resolved = resolve_fields(target_type, trace, dep_cache)
+                target_resolved = await resolve_fields(target_type, trace, dep_cache)
                 instruction = _build_instruction(target_type)
                 current = await lm.fill(
                     target_type, target_resolved, instruction, source=current
