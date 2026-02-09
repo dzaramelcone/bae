@@ -36,7 +36,7 @@ class AnalyzeQuery(Node):
 
     query: str
 
-    def __call__(self) -> ProcessSimple | ProcessComplex:
+    async def __call__(self) -> ProcessSimple | ProcessComplex:
         """Auto-routing: LLM decides between simple and complex processing."""
         ...
 
@@ -46,7 +46,7 @@ class ProcessSimple(Node):
 
     answer: str
 
-    def __call__(self) -> Done | None:
+    async def __call__(self) -> Done | None:
         """Auto-routing: LLM decides to produce Done or terminate."""
         ...
 
@@ -56,7 +56,7 @@ class ProcessComplex(Node):
 
     steps: list[str]
 
-    def __call__(self) -> Review:
+    async def __call__(self) -> Review:
         """Auto-routing: single return type -> make."""
         ...
 
@@ -66,7 +66,7 @@ class Review(Node):
 
     summary: str
 
-    def __call__(self) -> Done:
+    async def __call__(self) -> Done:
         """Auto-routing: single return type -> make."""
         ...
 
@@ -76,7 +76,7 @@ class Done(Node):
 
     result: str
 
-    def __call__(self) -> None:
+    async def __call__(self) -> None:
         """Terminal: ellipsis body with pure None return."""
         ...
 
@@ -91,9 +91,9 @@ class StartCustom(Node):
 
     value: int = 0
 
-    def __call__(self, lm: LM) -> EndCustom:
+    async def __call__(self, lm: LM) -> EndCustom:
         """Custom logic escape hatch - not auto-routed."""
-        return lm.make(self, EndCustom)
+        return await lm.make(self, EndCustom)
 
 
 class EndCustom(Node):
@@ -101,7 +101,7 @@ class EndCustom(Node):
 
     result: int
 
-    def __call__(self) -> None:
+    async def __call__(self) -> None:
         ...
 
 
@@ -122,23 +122,23 @@ class MockLM:
         self.choose_type_calls: list[tuple[list, dict]] = []
         self.make_calls: list[tuple[Node, type]] = []
 
-    def choose_type(self, types, context):
+    async def choose_type(self, types, context):
         self.choose_type_calls.append((types, context))
         for t in types:
             if t in self.responses:
                 return t
         return types[0]
 
-    def fill(self, target, resolved, instruction, source=None):
+    async def fill(self, target, resolved, instruction, source=None):
         self.fill_calls.append((target, resolved, instruction))
         return self.responses[target]
 
     # v1 stubs for custom __call__ nodes that call lm.make/decide directly
-    def make(self, node: Node, target: type) -> Node:
+    async def make(self, node: Node, target: type) -> Node:
         self.make_calls.append((node, target))
         return self.responses[target]
 
-    def decide(self, node: Node) -> Node | None:
+    async def decide(self, node: Node) -> Node | None:
         for target in node.successors():
             if target in self.responses:
                 return self.responses[target]
@@ -153,7 +153,7 @@ class MockLM:
 class TestAutoRoutingUnionType:
     """Test auto-routing with union return type (choose_type + fill)."""
 
-    def test_union_return_type_calls_choose_type_and_fill(self):
+    async def test_union_return_type_calls_choose_type_and_fill(self):
         """Ellipsis body with union return calls choose_type then fill."""
         graph = Graph(start=AnalyzeQuery)
 
@@ -164,7 +164,7 @@ class TestAutoRoutingUnionType:
             }
         )
 
-        result = graph.run(AnalyzeQuery(query="What is 6*7?"), lm=lm)
+        result = await graph.run(AnalyzeQuery(query="What is 6*7?"), lm=lm)
 
         # v2: decide strategy calls choose_type then fill for each ellipsis node
         # AnalyzeQuery (decide: ProcessSimple|ProcessComplex) + ProcessSimple (decide: Done|None)
@@ -179,7 +179,7 @@ class TestAutoRoutingUnionType:
 class TestAutoRoutingSingleType:
     """Test auto-routing with single return type (fill only)."""
 
-    def test_single_return_type_calls_lm_fill(self):
+    async def test_single_return_type_calls_lm_fill(self):
         """Ellipsis body with single return calls fill directly (no choose_type)."""
         graph = Graph(start=ProcessComplex)
 
@@ -190,7 +190,7 @@ class TestAutoRoutingSingleType:
             }
         )
 
-        result = graph.run(
+        result = await graph.run(
             ProcessComplex(steps=["step1", "step2"]),
             lm=lm,
         )
@@ -205,7 +205,7 @@ class TestAutoRoutingSingleType:
 class TestCustomCallEscapeHatch:
     """Test custom __call__ logic is called directly."""
 
-    def test_custom_call_not_auto_routed(self):
+    async def test_custom_call_not_auto_routed(self):
         """Custom __call__ is invoked directly, not via choose_type/fill."""
         graph = Graph(start=StartCustom)
 
@@ -215,7 +215,7 @@ class TestCustomCallEscapeHatch:
             }
         )
 
-        result = graph.run(StartCustom(value=50), lm=lm)
+        result = await graph.run(StartCustom(value=50), lm=lm)
 
         # Custom call invoked lm.make directly (v1 method)
         assert len(lm.make_calls) == 1
@@ -231,13 +231,13 @@ class TestCustomCallEscapeHatch:
 class TestDSPyBackendDefault:
     """Test that DSPyBackend is used when lm not provided."""
 
-    def test_graph_run_without_lm_uses_dspy_backend(self):
+    async def test_graph_run_without_lm_uses_dspy_backend(self):
         """Graph.run() without lm parameter defaults to DSPyBackend."""
         graph = Graph(start=Done)
 
         # Run without lm - should use DSPyBackend
         # This will just run the terminal node which returns None
-        result = graph.run(Done(result="test"))
+        result = await graph.run(Done(result="test"))
 
         assert isinstance(result, GraphResult)
         assert result.node is None
@@ -245,20 +245,25 @@ class TestDSPyBackendDefault:
         assert isinstance(result.trace[0], Done)
 
     @patch("bae.dspy_backend.dspy.Predict")
-    def test_dspy_backend_used_for_auto_routing(self, mock_predict_cls):
+    async def test_dspy_backend_used_for_auto_routing(self, mock_predict_cls):
         """DSPyBackend is actually invoked for auto-routing when no lm provided."""
-        # v2: ProcessSimple (Done | None) → decide strategy → choose_type([Done])
+        # v2: ProcessSimple (Done | None) -> decide strategy -> choose_type([Done])
         # choose_type skips LLM for single type, then fill(Done) calls dspy.Predict
 
         mock_prediction = MagicMock()
         mock_prediction.keys.return_value = ["result"]
         mock_prediction.result = "done"
 
-        mock_predictor = MagicMock(return_value=mock_prediction)
+        mock_predictor = MagicMock()
+
+        async def mock_acall(**kwargs):
+            return mock_prediction
+
+        mock_predictor.acall = mock_acall
         mock_predict_cls.return_value = mock_predictor
 
         graph = Graph(start=ProcessSimple)
-        result = graph.run(ProcessSimple(answer="test"))
+        result = await graph.run(ProcessSimple(answer="test"))
 
         # DSPyBackend.fill() called dspy.Predict for the fill step
         assert mock_predict_cls.called
@@ -267,7 +272,7 @@ class TestDSPyBackendDefault:
 class TestGraphResultTrace:
     """Test GraphResult trace contains execution path."""
 
-    def test_trace_shows_full_execution_path(self):
+    async def test_trace_shows_full_execution_path(self):
         """GraphResult.trace contains all visited nodes in order."""
         graph = Graph(start=AnalyzeQuery)
 
@@ -279,7 +284,7 @@ class TestGraphResultTrace:
             }
         )
 
-        result = graph.run(AnalyzeQuery(query="complex task"), lm=lm)
+        result = await graph.run(AnalyzeQuery(query="complex task"), lm=lm)
 
         # v2 trace: AnalyzeQuery -> ProcessComplex -> Review -> Done
         assert len(result.trace) == 4
@@ -288,7 +293,7 @@ class TestGraphResultTrace:
         assert isinstance(result.trace[2], Review)
         assert isinstance(result.trace[3], Done)
 
-    def test_trace_includes_choose_type_step(self):
+    async def test_trace_includes_choose_type_step(self):
         """Trace shows nodes where LLM chose the path via choose_type."""
         graph = Graph(start=AnalyzeQuery)
 
@@ -299,7 +304,7 @@ class TestGraphResultTrace:
             }
         )
 
-        result = graph.run(AnalyzeQuery(query="simple question"), lm=lm)
+        result = await graph.run(AnalyzeQuery(query="simple question"), lm=lm)
 
         # v2 trace: AnalyzeQuery (choose_type+fill) -> ProcessSimple (choose_type+fill) -> Done (terminal)
         assert len(result.trace) == 3
@@ -331,35 +336,41 @@ class TestPhase2SuccessCriteria:
         # Tested in TestDSPyBackendDefault.test_dspy_backend_used_for_auto_routing
         pass
 
-    def test_pydantic_models_parse_from_dspy_output(self):
+    async def test_pydantic_models_parse_from_dspy_output(self):
         """Pydantic models parse correctly from dspy.Predict output."""
 
-        # Direct test of DSPyBackend parsing
         @patch("bae.dspy_backend.dspy.Predict")
-        def test_parse(mock_predict_cls):
-            mock_predict = MagicMock()
-            mock_predict.return_value.output = json.dumps({"result": "success"})
-            mock_predict_cls.return_value = mock_predict
+        async def test_parse(mock_predict_cls):
+            mock_prediction = MagicMock()
+            mock_prediction.output = json.dumps({"result": "success"})
+
+            mock_predictor = MagicMock()
+
+            async def mock_acall(**kwargs):
+                return mock_prediction
+
+            mock_predictor.acall = mock_acall
+            mock_predict_cls.return_value = mock_predictor
 
             backend = DSPyBackend()
             source = ProcessComplex(steps=["step1"])
 
             # This should parse the JSON output into Done model
-            result = backend.make(source, Done)
+            result = await backend.make(source, Done)
 
             assert isinstance(result, Done)
             assert result.result == "success"
 
-        test_parse()
+        await test_parse()
 
-    def test_union_return_types_two_step_pattern(self):
+    async def test_union_return_types_two_step_pattern(self):
         """Union return types work with two-step pattern (choose then make)."""
         # The DSPyBackend.decide() method implements two-step:
         # 1. Predict which type to choose
         # 2. Call make() to produce it
 
         @patch("bae.dspy_backend.dspy.Predict")
-        def test_two_step(mock_predict_cls):
+        async def test_two_step(mock_predict_cls):
             # Mock both the choice prediction and the make prediction
             call_count = [0]
 
@@ -367,10 +378,22 @@ class TestPhase2SuccessCriteria:
                 mock = MagicMock()
                 if call_count[0] == 0:
                     # First call: choice prediction
-                    mock.return_value.choice = "ProcessSimple"
+                    mock_result = MagicMock()
+                    mock_result.choice = "ProcessSimple"
+
+                    async def mock_acall_choice(**kwargs):
+                        return mock_result
+
+                    mock.acall = mock_acall_choice
                 else:
                     # Second call: make prediction
-                    mock.return_value.output = json.dumps({"answer": "42"})
+                    mock_result = MagicMock()
+                    mock_result.output = json.dumps({"answer": "42"})
+
+                    async def mock_acall_make(**kwargs):
+                        return mock_result
+
+                    mock.acall = mock_acall_make
                 call_count[0] += 1
                 return mock
 
@@ -379,9 +402,9 @@ class TestPhase2SuccessCriteria:
             backend = DSPyBackend()
             source = AnalyzeQuery(query="test")
 
-            result = backend.decide(source)
+            result = await backend.decide(source)
 
             assert isinstance(result, ProcessSimple)
             assert result.answer == "42"
 
-        test_two_step()
+        await test_two_step()

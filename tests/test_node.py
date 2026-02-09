@@ -14,11 +14,11 @@ class MockLM:
         self.return_value = return_value
         self.calls: list[Node] = []
 
-    def make(self, node: Node, target: type) -> Node:
+    async def make(self, node: Node, target: type) -> Node:
         self.calls.append(node)
         return self.return_value
 
-    def decide(self, node: Node) -> Node | None:
+    async def decide(self, node: Node) -> Node | None:
         self.calls.append(node)
         return self.return_value
 
@@ -27,10 +27,10 @@ class Start(Node):
     """Starting node."""
     query: str
 
-    def __call__(self, lm: LM) -> Process | Clarify:
+    async def __call__(self, lm: LM) -> Process | Clarify:
         if "unclear" in self.query:
-            return lm.make(self, Clarify)
-        return lm.make(self, Process)
+            return await lm.make(self, Clarify)
+        return await lm.make(self, Process)
 
 
 class Clarify(Node):
@@ -42,16 +42,16 @@ class Process(Node):
     """Process the task."""
     task: str
 
-    def __call__(self, lm: LM) -> Review | None:
-        return lm.decide(self)
+    async def __call__(self, lm: LM) -> Review | None:
+        return await lm.decide(self)
 
 
 class Review(Node):
     """Review the result."""
     content: str
 
-    def __call__(self, lm: LM) -> Process | None:
-        return lm.decide(self)
+    async def __call__(self, lm: LM) -> Process | None:
+        return await lm.decide(self)
 
 
 class TestNodeTopology:
@@ -80,34 +80,34 @@ class TestNodeTopology:
 
 
 class TestNodeCall:
-    def test_call_with_lm_make(self):
+    async def test_call_with_lm_make(self):
         """Node can use lm.make to produce specific type."""
         expected = Process(task="do it")
         lm = MockLM(return_value=expected)
 
         start = Start(query="test")
-        result = start(lm=lm)
+        result = await start(lm=lm)
 
         assert result is expected
         assert lm.calls == [start]
 
-    def test_call_branches_on_condition(self):
+    async def test_call_branches_on_condition(self):
         """Node can branch based on its own state."""
         clarify = Clarify(question="what?")
         lm = MockLM(return_value=clarify)
 
         start = Start(query="unclear request")
-        result = start(lm=lm)
+        result = await start(lm=lm)
 
         assert result is clarify
 
-    def test_call_with_lm_decide(self):
+    async def test_call_with_lm_decide(self):
         """Node can use lm.decide to let LLM choose."""
         review = Review(content="looks good")
         lm = MockLM(return_value=review)
 
         process = Process(task="test")
-        result = process(lm=lm)
+        result = await process(lm=lm)
 
         assert result is review
         assert lm.calls == [process]

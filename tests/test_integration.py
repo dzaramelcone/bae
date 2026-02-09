@@ -22,9 +22,9 @@ class Task(Node):
     """A task to be processed."""
     description: str
 
-    def __call__(self, lm: LM) -> SubTasks | Result:
+    async def __call__(self, lm: LM) -> SubTasks | Result:
         """Decide whether to break down into subtasks or produce result directly."""
-        return lm.decide(self)
+        return await lm.decide(self)
 
 
 class SubTasks(Node):
@@ -32,9 +32,9 @@ class SubTasks(Node):
     original: str
     subtasks: list[str]
 
-    def __call__(self, lm: LM) -> Result:
+    async def __call__(self, lm: LM) -> Result:
         """Process subtasks and produce final result."""
-        return lm.make(self, Result)
+        return await lm.make(self, Result)
 
 
 class Result(Node):
@@ -42,7 +42,7 @@ class Result(Node):
     summary: str
     steps_taken: list[str]
 
-    def __call__(self, lm: LM) -> None:
+    async def __call__(self, lm: LM) -> None:
         """Terminal node."""
         return None
 
@@ -52,9 +52,9 @@ class Question(Node):
     """A question to answer."""
     text: str
 
-    def __call__(self, lm: LM) -> Answer | Clarification:
+    async def __call__(self, lm: LM) -> Answer | Clarification:
         """Answer directly or ask for clarification."""
-        return lm.decide(self)
+        return await lm.decide(self)
 
 
 class Clarification(Node):
@@ -62,9 +62,9 @@ class Clarification(Node):
     original_question: str
     clarifying_question: str
 
-    def __call__(self, lm: LM) -> Answer:
+    async def __call__(self, lm: LM) -> Answer:
         """After clarification, produce answer."""
-        return lm.make(self, Answer)
+        return await lm.make(self, Answer)
 
 
 class Answer(Node):
@@ -72,7 +72,7 @@ class Answer(Node):
     text: str
     confidence: float
 
-    def __call__(self, lm: LM) -> None:
+    async def __call__(self, lm: LM) -> None:
         """Terminal node."""
         return None
 
@@ -92,48 +92,48 @@ class TestPydanticAIBackend:
     def lm(self):
         return PydanticAIBackend(model="anthropic:claude-sonnet-4-20250514")
 
-    def test_make_produces_typed_output(self, lm):
+    async def test_make_produces_typed_output(self, lm):
         """lm.make should produce an instance of the target type."""
         task = Task(description="Write a hello world program")
-        result = lm.make(task, Result)
+        result = await lm.make(task, Result)
 
         assert isinstance(result, Result)
         assert isinstance(result.summary, str)
         assert isinstance(result.steps_taken, list)
         assert len(result.summary) > 0
 
-    def test_decide_picks_from_options(self, lm):
+    async def test_decide_picks_from_options(self, lm):
         """lm.decide should pick one of the valid successor types."""
         task = Task(description="Calculate 2 + 2")
-        next_node = lm.decide(task)
+        next_node = await lm.decide(task)
 
         # Should be either SubTasks or Result
         assert isinstance(next_node, (SubTasks, Result))
 
-    def test_decide_can_return_none_for_terminal(self, lm):
+    async def test_decide_can_return_none_for_terminal(self, lm):
         """lm.decide should be able to return None for terminal nodes."""
         result = Result(summary="Done", steps_taken=["step 1"])
-        next_node = lm.decide(result)
+        next_node = await lm.decide(result)
 
         # Result's only option is None (terminal)
         assert next_node is None
 
-    def test_graph_run_simple(self, lm):
+    async def test_graph_run_simple(self, lm):
         """Run a simple graph to completion."""
         graph = Graph(start=Question)
 
         question = Question(text="What is 2 + 2?")
-        result = graph.run(question, lm=lm, max_iters=5)
+        result = await graph.run(question, lm=lm, max_iters=5)
 
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminated successfully
 
-    def test_graph_run_task_decomposition(self, lm):
+    async def test_graph_run_task_decomposition(self, lm):
         """Run task decomposition graph."""
         graph = Graph(start=Task)
 
         task = Task(description="Make a peanut butter sandwich")
-        result = graph.run(task, lm=lm, max_iters=10)
+        result = await graph.run(task, lm=lm, max_iters=10)
 
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminated successfully
@@ -146,48 +146,48 @@ class TestClaudeCLIBackend:
     def lm(self):
         return ClaudeCLIBackend(model="claude-sonnet-4-20250514")
 
-    def test_make_produces_typed_output(self, lm):
+    async def test_make_produces_typed_output(self, lm):
         """lm.make should produce an instance of the target type."""
         task = Task(description="Add 2+2")
-        result = lm.make(task, Result)
+        result = await lm.make(task, Result)
 
         assert isinstance(result, Result)
         assert isinstance(result.summary, str)
         assert isinstance(result.steps_taken, list)
 
-    def test_decide_picks_from_options(self, lm):
+    async def test_decide_picks_from_options(self, lm):
         """lm.decide should pick one of the valid successor types."""
         task = Task(description="Calculate 2 + 2")
-        next_node = lm.decide(task)
+        next_node = await lm.decide(task)
 
         assert isinstance(next_node, (SubTasks, Result, type(None)))
 
-    def test_graph_run_simple(self, lm):
+    async def test_graph_run_simple(self, lm):
         """Run a simple graph to completion."""
         graph = Graph(start=Question)
 
         question = Question(text="What is the capital of France?")
-        result = graph.run(question, lm=lm, max_iters=5)
+        result = await graph.run(question, lm=lm, max_iters=5)
 
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminated successfully
 
-    def test_decide_can_return_none_for_terminal(self, lm):
+    async def test_decide_can_return_none_for_terminal(self, lm):
         """lm.decide should be able to return None for terminal nodes."""
         result = Result(summary="Done", steps_taken=["step 1"])
-        next_node = lm.decide(result)
+        next_node = await lm.decide(result)
 
         # Result's only option is None (terminal)
         assert next_node is None
 
-    def test_graph_run_task_decomposition(self):
+    async def test_graph_run_task_decomposition(self):
         """Run task decomposition graph."""
         # Use longer timeout for multi-step graph
         lm = ClaudeCLIBackend(model="claude-sonnet-4-20250514", timeout=60)
         graph = Graph(start=Task)
 
         task = Task(description="Make a peanut butter sandwich")
-        result = graph.run(task, lm=lm, max_iters=10)
+        result = await graph.run(task, lm=lm, max_iters=10)
 
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminated successfully

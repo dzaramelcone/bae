@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Annotated
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from pydantic import BaseModel, HttpUrl
 
 from bae.graph import Graph, _build_instruction
@@ -54,7 +53,7 @@ class Vibe(BaseModel):
 class StartNode(Node):
     user_message: str
 
-    def __call__(self) -> MiddleNode: ...
+    async def __call__(self) -> MiddleNode: ...
 
 
 class MiddleNode(Node):
@@ -62,7 +61,7 @@ class MiddleNode(Node):
     location: LocationDep
     vibe: Vibe
 
-    def __call__(self) -> EndNode: ...
+    async def __call__(self) -> EndNode: ...
 
 
 class EndNode(Node):
@@ -71,7 +70,7 @@ class EndNode(Node):
     top: str
     bottom: str
 
-    def __call__(self) -> None: ...
+    async def __call__(self) -> None: ...
 
 
 # ── Prompt structure tests ─────────────────────────────────────────────
@@ -137,7 +136,7 @@ class TestPromptStructure:
             weather: WeatherDep
             location: LocationDep
 
-            def __call__(self) -> None: ...
+            async def __call__(self) -> None: ...
 
         backend = ClaudeCLIBackend()
         resolved = {
@@ -185,11 +184,10 @@ class CapturingLM:
         raise NotImplementedError
 
 
-@pytest.mark.skip(reason="Requires async Graph.run - Plan 11-03")
 class TestGraphFillIntegration:
     """Graph.run() resolves target deps then calls fill() with source."""
 
-    def test_fill_receives_resolved_deps(self):
+    async def test_fill_receives_resolved_deps(self):
         """fill() gets only the target's resolved dep values, not current node fields."""
         graph = Graph(start=StartNode)
 
@@ -202,7 +200,7 @@ class TestGraphFillIntegration:
 
         lm = CapturingLM(responses={MiddleNode: middle, EndNode: end})
 
-        result = graph.run(
+        result = await graph.run(
             StartNode(user_message="ugh i just got up"),
             lm=lm,
         )
@@ -210,34 +208,34 @@ class TestGraphFillIntegration:
         assert len(result.trace) == 3
         assert len(lm.fill_calls) == 2
 
-        # First fill: StartNode → MiddleNode
+        # First fill: StartNode -> MiddleNode
         call1 = lm.fill_calls[0]
         assert call1["target"] is MiddleNode
         assert "weather" in call1["resolved"]  # dep resolved
         assert "location" in call1["resolved"]  # dep resolved
-        assert "vibe" not in call1["resolved"]  # plain — LLM fills
+        assert "vibe" not in call1["resolved"]  # plain -- LLM fills
         assert isinstance(call1["source"], StartNode)  # source is previous node
 
-        # Second fill: MiddleNode → EndNode
+        # Second fill: MiddleNode -> EndNode
         call2 = lm.fill_calls[1]
         assert call2["target"] is EndNode
         assert call2["resolved"] == {}  # no deps on EndNode
         assert isinstance(call2["source"], MiddleNode)
 
-    def test_fill_source_is_none_for_start_node(self):
-        """Start node is never filled — it's caller-provided."""
+    async def test_fill_source_is_none_for_start_node(self):
+        """Start node is never filled -- it's caller-provided."""
         graph = Graph(start=EndNode)
 
         lm = CapturingLM(responses={})
 
-        result = graph.run(EndNode(top="Tee", bottom="Jeans"), lm=lm)
+        result = await graph.run(EndNode(top="Tee", bottom="Jeans"), lm=lm)
 
-        # Terminal node — no fill() calls at all
+        # Terminal node -- no fill() calls at all
         assert len(lm.fill_calls) == 0
         assert len(result.trace) == 1
 
-    def test_instruction_is_class_name_only(self):
-        """fill() instruction is class name only — docstrings are inert."""
+    async def test_instruction_is_class_name_only(self):
+        """fill() instruction is class name only -- docstrings are inert."""
         graph = Graph(start=StartNode)
 
         middle = MiddleNode.model_construct(
@@ -248,9 +246,9 @@ class TestGraphFillIntegration:
         end = EndNode.model_construct(top="Navy sweater", bottom="Chinos")
 
         lm = CapturingLM(responses={MiddleNode: middle, EndNode: end})
-        graph.run(StartNode(user_message="test"), lm=lm)
+        await graph.run(StartNode(user_message="test"), lm=lm)
 
-        # MiddleNode has no docstring — class name only
+        # MiddleNode has no docstring -- class name only
         assert lm.fill_calls[0]["instruction"] == "MiddleNode"
 
         # EndNode has docstring but instruction is class name only

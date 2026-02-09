@@ -36,22 +36,22 @@ class MockV2LM:
         self.fill_calls: list[tuple[type, dict, str]] = []
         self.choose_type_calls: list[tuple[list[type], dict]] = []
 
-    def choose_type(self, types: list[type], context: dict) -> type:
+    async def choose_type(self, types: list[type], context: dict) -> type:
         self.choose_type_calls.append((types, context))
         for t in types:
             if t in self.responses:
                 return t
         return types[0]
 
-    def fill(self, target: type, resolved: dict, instruction: str, source=None) -> Node:
+    async def fill(self, target: type, resolved: dict, instruction: str, source=None) -> Node:
         self.fill_calls.append((target, resolved, instruction))
         return self.responses[target]
 
     # Keep v1 methods as stubs to satisfy Protocol shape
-    def make(self, node: Node, target: type) -> Node:
+    async def make(self, node: Node, target: type) -> Node:
         raise NotImplementedError("v1 API")
 
-    def decide(self, node: Node) -> Node | None:
+    async def decide(self, node: Node) -> Node | None:
         raise NotImplementedError("v1 API")
 
 
@@ -94,18 +94,18 @@ class StartWithDep(Node):
 
     data: Annotated[FetchResult, Dep(fetch_data)]
 
-    def __call__(self) -> None:
+    async def __call__(self) -> None:
         ...
 
 
 class TestDepResolutionOnStartNode:
     """Feature 1: Dep(callable) fields resolved before __call__."""
 
-    def test_dep_field_resolved_before_call(self):
+    async def test_dep_field_resolved_before_call(self):
         """graph.run(StartWithDep) resolves dep field, trace[0] has data populated."""
         graph = Graph(start=StartWithDep)
 
-        result = graph.run(
+        result = await graph.run(
             StartWithDep.model_construct(),
             lm=MockV2LM(responses={}),
         )
@@ -128,7 +128,7 @@ class GatherInfo(Node):
 
     info: Annotated[Info, Dep(fetch_info)]
 
-    def __call__(self) -> InfoBridge:
+    async def __call__(self) -> InfoBridge:
         # Custom __call__ reads dep-resolved field and produces bridge node
         # with Info as a plain field (recallable)
         return InfoBridge(info=self.info)
@@ -139,7 +139,7 @@ class InfoBridge(Node):
 
     info: Info
 
-    def __call__(self) -> Analyze:
+    async def __call__(self) -> Analyze:
         ...
 
 
@@ -149,14 +149,14 @@ class Analyze(Node):
     prev_info: Annotated[Info, Recall()]
     analysis: str = ""
 
-    def __call__(self) -> None:
+    async def __call__(self) -> None:
         ...
 
 
 class TestMultiNodeWithDepsAndRecalls:
     """Feature 2: Multi-node graph with dep resolution and trace recall."""
 
-    def test_gather_dep_then_recall(self):
+    async def test_gather_dep_then_recall(self):
         """GatherInfo dep resolved, InfoBridge holds plain field, Analyze recalls it."""
         graph = Graph(start=GatherInfo)
 
@@ -167,7 +167,7 @@ class TestMultiNodeWithDepsAndRecalls:
         )
         lm = MockV2LM(responses={Analyze: analyze_node})
 
-        result = graph.run(
+        result = await graph.run(
             GatherInfo.model_construct(),
             lm=lm,
         )
@@ -204,7 +204,7 @@ class TerminalResult(Node):
 
     value: str = ""
 
-    def __call__(self) -> None:
+    async def __call__(self) -> None:
         ...
 
 
@@ -213,7 +213,7 @@ class CustomWithDep(Node):
 
     data: Annotated[FetchResult, Dep(fetch_data)]
 
-    def __call__(self) -> TerminalResult:
+    async def __call__(self) -> TerminalResult:
         # Custom logic reads resolved dep from self
         return TerminalResult(value=f"got-{self.data.value}")
 
@@ -221,11 +221,11 @@ class CustomWithDep(Node):
 class TestCustomCallWithResolvedDeps:
     """Feature 3: Custom __call__ can access self.dep_field after resolution."""
 
-    def test_custom_call_reads_resolved_dep(self):
+    async def test_custom_call_reads_resolved_dep(self):
         """Node with Dep field + custom __call__ accesses self.data after resolution."""
         graph = Graph(start=CustomWithDep)
 
-        result = graph.run(
+        result = await graph.run(
             CustomWithDep.model_construct(),
             lm=MockV2LM(responses={}),
         )
@@ -260,19 +260,19 @@ class NodeWithFailingDep(Node):
 
     data: Annotated[FetchResult, Dep(failing_fn)]
 
-    def __call__(self) -> None:
+    async def __call__(self) -> None:
         ...
 
 
 class TestDepFailureRaisesDepError:
     """Feature 4: DepError raised on dep failures with __cause__ and trace."""
 
-    def test_dep_failure_raises_dep_error(self):
+    async def test_dep_failure_raises_dep_error(self):
         """graph.run raises DepError when dep function fails."""
         graph = Graph(start=NodeWithFailingDep)
 
         with pytest.raises(DepError) as exc_info:
-            graph.run(
+            await graph.run(
                 NodeWithFailingDep.model_construct(),
                 lm=MockV2LM(responses={}),
             )
@@ -294,7 +294,7 @@ class LoopNode(Node):
 
     counter: int = 0
 
-    def __call__(self) -> LoopNode:
+    async def __call__(self) -> LoopNode:
         ...
 
 
@@ -303,7 +303,7 @@ class CountdownNode(Node):
 
     steps_left: int = 3
 
-    def __call__(self) -> CountdownNode | None:
+    async def __call__(self) -> CountdownNode | None:
         if self.steps_left <= 0:
             return None
         return CountdownNode(steps_left=self.steps_left - 1)
@@ -312,7 +312,7 @@ class CountdownNode(Node):
 class TestIterationGuard:
     """Feature 5: max_iters limits execution to prevent infinite loops."""
 
-    def test_max_iters_exceeded_raises_bae_error(self):
+    async def test_max_iters_exceeded_raises_bae_error(self):
         """graph.run with max_iters=5 raises BaeError after 5 iterations."""
         graph = Graph(start=LoopNode)
 
@@ -320,13 +320,13 @@ class TestIterationGuard:
         lm = MockV2LM(responses={LoopNode: loop_node})
 
         with pytest.raises(BaeError, match="exceeded 5 iterations"):
-            graph.run(loop_node, lm=lm, max_iters=5)
+            await graph.run(loop_node, lm=lm, max_iters=5)
 
-    def test_max_iters_zero_means_infinite(self):
+    async def test_max_iters_zero_means_infinite(self):
         """graph.run with max_iters=0 does NOT raise (sentinel for infinite)."""
         graph = Graph(start=CountdownNode)
 
-        result = graph.run(
+        result = await graph.run(
             CountdownNode(steps_left=3),
             lm=MockV2LM(responses={}),
             max_iters=0,
@@ -347,25 +347,25 @@ class SimpleTerminal(Node):
 
     message: str = "done"
 
-    def __call__(self) -> None:
+    async def __call__(self) -> None:
         ...
 
 
 class NodeBeforeTerminal(Node):
     """Node that transitions to terminal."""
 
-    def __call__(self) -> SimpleTerminal:
+    async def __call__(self) -> SimpleTerminal:
         return SimpleTerminal(message="finished")
 
 
 class TestTerminalNodeInTrace:
     """Feature 6: Terminal node is included in trace (last element)."""
 
-    def test_terminal_node_in_trace(self):
+    async def test_terminal_node_in_trace(self):
         """Terminal node (returns None) is included in trace."""
         graph = Graph(start=SimpleTerminal)
 
-        result = graph.run(
+        result = await graph.run(
             SimpleTerminal(message="the end"),
             lm=MockV2LM(responses={}),
         )
@@ -375,11 +375,11 @@ class TestTerminalNodeInTrace:
         assert isinstance(result.trace[-1], SimpleTerminal)
         assert result.trace[-1].message == "the end"
 
-    def test_terminal_node_is_last_in_multi_node_trace(self):
+    async def test_terminal_node_is_last_in_multi_node_trace(self):
         """In multi-node graph, terminal is last in trace."""
         graph = Graph(start=NodeBeforeTerminal)
 
-        result = graph.run(
+        result = await graph.run(
             NodeBeforeTerminal(),
             lm=MockV2LM(responses={}),
         )

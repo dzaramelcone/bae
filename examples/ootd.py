@@ -172,7 +172,7 @@ class VibeCheck(BaseModel):
 class IsTheUserGettingDressed(Node):
     user_message: str  # caller provides this — start node fields are always user-provided
 
-    def __call__(self) -> AnticipateUsersDay: ...
+    async def __call__(self) -> AnticipateUsersDay: ...
 
 
 class AnticipateUsersDay(Node):
@@ -181,7 +181,7 @@ class AnticipateUsersDay(Node):
     location: LocationDep
     vibe: VibeCheck  # LLM fills this — inferred from user_message on previous node
 
-    def __call__(self) -> RecommendOOTD: ...
+    async def __call__(self) -> RecommendOOTD: ...
 
 
 class RecommendOOTD(Node):
@@ -192,7 +192,7 @@ class RecommendOOTD(Node):
     final_response: str = Field(description="casual message to the user with the recommendation")
     inspo: list[HttpUrl] = Field(description="outfit inspiration image URLs")
 
-    def __call__(self) -> None: ...
+    async def __call__(self) -> None: ...
 
 
 # =============================================================================
@@ -203,5 +203,7 @@ class RecommendOOTD(Node):
 graph = Graph(start=IsTheUserGettingDressed)
 
 if __name__ == "__main__":
-    result = graph.run(IsTheUserGettingDressed(user_message="ugh i just got up"))
+    import asyncio
+
+    result = asyncio.run(graph.run(IsTheUserGettingDressed(user_message="ugh i just got up")))
     print(result.trace[-1].model_dump_json(indent=2))

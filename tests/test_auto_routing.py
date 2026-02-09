@@ -28,7 +28,7 @@ class TargetA(Node):
 
     value: str
 
-    def __call__(self, lm: LM) -> None:
+    async def __call__(self, lm: LM) -> None:
         ...
 
 
@@ -37,7 +37,7 @@ class TargetB(Node):
 
     option: str
 
-    def __call__(self, lm: LM) -> None:
+    async def __call__(self, lm: LM) -> None:
         ...
 
 
@@ -47,7 +47,7 @@ class EllipsisUnionNode(Node):
 
     content: str
 
-    def __call__(self, lm: LM) -> TargetA | TargetB:
+    async def __call__(self, lm: LM) -> TargetA | TargetB:
         ...
 
 
@@ -56,7 +56,7 @@ class EllipsisSingleNode(Node):
 
     data: str
 
-    def __call__(self, lm: LM) -> TargetA:
+    async def __call__(self, lm: LM) -> TargetA:
         ...
 
 
@@ -65,7 +65,7 @@ class EllipsisOptionalSingleNode(Node):
 
     data: str
 
-    def __call__(self, lm: LM) -> TargetA | None:
+    async def __call__(self, lm: LM) -> TargetA | None:
         ...
 
 
@@ -74,7 +74,7 @@ class EllipsisOptionalUnionNode(Node):
 
     content: str
 
-    def __call__(self, lm: LM) -> TargetA | TargetB | None:
+    async def __call__(self, lm: LM) -> TargetA | TargetB | None:
         ...
 
 
@@ -83,7 +83,7 @@ class EllipsisTerminalNode(Node):
 
     data: str
 
-    def __call__(self, lm: LM) -> None:
+    async def __call__(self, lm: LM) -> None:
         ...
 
 
@@ -93,8 +93,8 @@ class CustomLogicNode(Node):
 
     content: str
 
-    def __call__(self, lm: LM) -> TargetA | TargetB:
-        return lm.decide(self)
+    async def __call__(self, lm: LM) -> TargetA | TargetB:
+        return await lm.decide(self)
 
 
 class CustomMakeNode(Node):
@@ -102,8 +102,8 @@ class CustomMakeNode(Node):
 
     data: str
 
-    def __call__(self, lm: LM) -> TargetA:
-        return lm.make(self, TargetA)
+    async def __call__(self, lm: LM) -> TargetA:
+        return await lm.make(self, TargetA)
 
 
 class CustomConditionNode(Node):
@@ -111,10 +111,10 @@ class CustomConditionNode(Node):
 
     query: str
 
-    def __call__(self, lm: LM) -> TargetA | TargetB:
+    async def __call__(self, lm: LM) -> TargetA | TargetB:
         if "special" in self.query:
-            return lm.make(self, TargetB)
-        return lm.make(self, TargetA)
+            return await lm.make(self, TargetB)
+        return await lm.make(self, TargetA)
 
 
 # Terminal node for integration tests
@@ -123,7 +123,7 @@ class TerminalTarget(Node):
 
     done: str = "yes"
 
-    def __call__(self, lm: LM) -> None:
+    async def __call__(self, lm: LM) -> None:
         ...
 
 
@@ -133,7 +133,7 @@ class StartUnionNode(Node):
 
     content: str
 
-    def __call__(self, lm: LM) -> TerminalTarget | TargetB:
+    async def __call__(self, lm: LM) -> TerminalTarget | TargetB:
         ...
 
 
@@ -143,7 +143,7 @@ class StartSingleNode(Node):
 
     data: str
 
-    def __call__(self, lm: LM) -> TerminalTarget:
+    async def __call__(self, lm: LM) -> TerminalTarget:
         ...
 
 
@@ -154,9 +154,9 @@ class StartCustomNode(Node):
     data: str
     call_count: int = 0
 
-    def __call__(self, lm: LM) -> TerminalTarget:
+    async def __call__(self, lm: LM) -> TerminalTarget:
         # This is custom logic - not just ellipsis
-        return lm.make(self, TerminalTarget)
+        return await lm.make(self, TerminalTarget)
 
 
 # Mid-step node for trace tests
@@ -165,7 +165,7 @@ class MidNode(Node):
 
     mid: str = "middle"
 
-    def __call__(self, lm: LM) -> TerminalTarget:
+    async def __call__(self, lm: LM) -> TerminalTarget:
         ...
 
 
@@ -175,7 +175,7 @@ class PureTerminalNode(Node):
 
     data: str = "done"
 
-    def __call__(self, lm: LM) -> None:
+    async def __call__(self, lm: LM) -> None:
         ...
 
 
@@ -282,27 +282,27 @@ class MockLM:
         self.choose_type_calls: list[tuple[list, dict]] = []
         self.make_calls: list[tuple[Node, type]] = []
 
-    def choose_type(self, types, context):
+    async def choose_type(self, types, context):
         self.choose_type_calls.append((types, context))
         next_node = self.sequence[self.index]
         if next_node is None:
             return types[0]
         return type(next_node)
 
-    def fill(self, target, resolved, instruction, source=None):
+    async def fill(self, target, resolved, instruction, source=None):
         self.fill_calls.append((target, resolved, instruction))
         result = self.sequence[self.index]
         self.index += 1
         return result
 
     # v1 stubs for custom __call__ nodes that still call lm.make/decide
-    def make(self, node: Node, target: type) -> Node:
+    async def make(self, node: Node, target: type) -> Node:
         self.make_calls.append((node, target))
         result = self.sequence[self.index]
         self.index += 1
         return result
 
-    def decide(self, node: Node) -> Node | None:
+    async def decide(self, node: Node) -> Node | None:
         result = self.sequence[self.index]
         self.index += 1
         return result
@@ -311,35 +311,35 @@ class MockLM:
 class TestGraphRunAutoRouting:
     """Tests for Graph.run() auto-routing based on ellipsis body."""
 
-    def test_ellipsis_union_calls_choose_type_and_fill(self):
+    async def test_ellipsis_union_calls_choose_type_and_fill(self):
         """Ellipsis body with union return type calls choose_type then fill."""
         graph = Graph(start=StartUnionNode)
         lm = MockLM(sequence=[TerminalTarget(), None])
 
-        result = graph.run(StartUnionNode(content="test"), lm=lm)
+        result = await graph.run(StartUnionNode(content="test"), lm=lm)
 
         # v2: decide strategy calls choose_type then fill
         assert len(lm.choose_type_calls) == 1
         assert len(lm.fill_calls) == 1
 
-    def test_ellipsis_single_calls_lm_fill(self):
+    async def test_ellipsis_single_calls_lm_fill(self):
         """Ellipsis body with single return type calls lm.fill directly."""
         graph = Graph(start=StartSingleNode)
         lm = MockLM(sequence=[TerminalTarget(), None])
 
-        result = graph.run(StartSingleNode(data="test"), lm=lm)
+        result = await graph.run(StartSingleNode(data="test"), lm=lm)
 
         # v2: make strategy calls fill directly (no choose_type)
         assert len(lm.fill_calls) == 1
         assert lm.fill_calls[0][0] is TerminalTarget
         assert len(lm.choose_type_calls) == 0
 
-    def test_custom_logic_called_directly(self):
+    async def test_custom_logic_called_directly(self):
         """Node with custom logic is called directly (escape hatch)."""
         graph = Graph(start=StartCustomNode)
         lm = MockLM(sequence=[TerminalTarget(), None])
 
-        result = graph.run(StartCustomNode(data="test"), lm=lm)
+        result = await graph.run(StartCustomNode(data="test"), lm=lm)
 
         # Custom __call__ calls lm.make internally (v1 method)
         assert len(lm.make_calls) == 1
@@ -347,12 +347,12 @@ class TestGraphRunAutoRouting:
         assert len(lm.choose_type_calls) == 0
         assert len(lm.fill_calls) == 0
 
-    def test_ellipsis_terminal_returns_graph_result_with_none(self):
+    async def test_ellipsis_terminal_returns_graph_result_with_none(self):
         """Ellipsis body with pure None return type returns GraphResult with node=None."""
         graph = Graph(start=PureTerminalNode)
         lm = MockLM(sequence=[])  # No LM calls needed
 
-        result = graph.run(PureTerminalNode(), lm=lm)
+        result = await graph.run(PureTerminalNode(), lm=lm)
 
         # Should return GraphResult with node=None
         assert isinstance(result, GraphResult)
@@ -363,20 +363,20 @@ class TestGraphRunAutoRouting:
         assert len(lm.choose_type_calls) == 0
         assert len(lm.fill_calls) == 0
 
-    def test_graph_run_returns_graph_result(self):
+    async def test_graph_run_returns_graph_result(self):
         """Graph.run() returns GraphResult with node and trace."""
         graph = Graph(start=StartSingleNode)
         terminal = TerminalTarget()
         lm = MockLM(sequence=[terminal, None])
 
-        result = graph.run(StartSingleNode(data="test"), lm=lm)
+        result = await graph.run(StartSingleNode(data="test"), lm=lm)
 
         # Should return GraphResult
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminal node returned None
         assert len(result.trace) >= 1  # At least start node
 
-    def test_trace_includes_all_nodes(self):
+    async def test_trace_includes_all_nodes(self):
         """GraphResult.trace includes all visited nodes in order."""
         graph = Graph(start=StartSingleNode)
         start = StartSingleNode(data="test")
@@ -384,7 +384,7 @@ class TestGraphRunAutoRouting:
         end = TerminalTarget()
         lm = MockLM(sequence=[mid, end, None])
 
-        result = graph.run(start, lm=lm)
+        result = await graph.run(start, lm=lm)
 
         assert isinstance(result, GraphResult)
         assert len(result.trace) == 3

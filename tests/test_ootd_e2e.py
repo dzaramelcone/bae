@@ -32,10 +32,10 @@ class TestOotdCLI:
     """Full ootd.py graph execution via Claude CLI."""
 
     @pytest.fixture(scope="class")
-    def run(self):
+    async def run(self):
         """Run the graph once, share result across tests."""
         lm = ClaudeCLIBackend(model="claude-haiku-4-5-20251001", timeout=60)
-        result = graph.run(
+        result = await graph.run(
             IsTheUserGettingDressed(user_message="ugh i just got up"),
             lm=lm,
         )

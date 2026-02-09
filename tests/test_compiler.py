@@ -106,7 +106,7 @@ class RunResultNode(Node):
 
     result: str
 
-    def __call__(self, lm: LM) -> None:
+    async def __call__(self, lm: LM) -> None:
         ...
 
 
@@ -115,15 +115,16 @@ class RunStartNode(Node):
 
     text: str
 
-    def __call__(self, lm: LM) -> RunResultNode:
+    async def __call__(self, lm: LM) -> RunResultNode:
         ...
 
 
 class TestCompiledGraphRunUsesOptimizedLM:
     """Tests that CompiledGraph.run() uses OptimizedLM."""
 
-    def test_compiled_graph_run_uses_optimized_lm(self):
+    async def test_compiled_graph_run_uses_optimized_lm(self):
         """run() creates OptimizedLM from self.optimized dict."""
+        from unittest.mock import AsyncMock
         from bae.compiler import compile_graph
         from bae.graph import Graph
 
@@ -138,18 +139,15 @@ class TestCompiledGraphRunUsesOptimizedLM:
         compiled.optimized[RunResultNode] = mock_predictor
 
         # Mock Graph.run to verify lm parameter
-        with patch.object(
-            graph, "run", wraps=graph.run
-        ) as mock_run:
+        mock_run = AsyncMock(return_value=GraphResult(node=None, trace=[]))
+        with patch.object(graph, "run", mock_run):
             # Patch OptimizedLM at its source module (lazy imported in run())
             with patch("bae.optimized_lm.OptimizedLM") as mock_lm_class:
                 mock_lm_instance = MagicMock()
                 mock_lm_class.return_value = mock_lm_instance
-                # Make the mock graph.run return a valid result
-                mock_run.return_value = GraphResult(node=None, trace=[])
 
                 start_node = RunStartNode(text="test input")
-                result = compiled.run(start_node)
+                result = await compiled.run(start_node)
 
                 # Verify OptimizedLM was created with compiled.optimized
                 mock_lm_class.assert_called_once_with(optimized=compiled.optimized)
@@ -163,7 +161,7 @@ class TestCompiledGraphRunUsesOptimizedLM:
 class TestCompiledGraphRunReturnsGraphResult:
     """Tests that CompiledGraph.run() returns GraphResult."""
 
-    def test_compiled_graph_run_returns_graph_result(self):
+    async def test_compiled_graph_run_returns_graph_result(self):
         """run() returns GraphResult with final node and trace."""
         from bae.compiler import compile_graph
         from bae.graph import Graph
@@ -174,14 +172,14 @@ class TestCompiledGraphRunReturnsGraphResult:
         # No optimized predictors - empty dict
         # Run with a terminal node
         start_node = RunResultNode(result="test")
-        result = compiled.run(start_node)
+        result = await compiled.run(start_node)
 
         # Should return GraphResult
         assert isinstance(result, GraphResult)
         assert hasattr(result, "node")
         assert hasattr(result, "trace")
 
-    def test_compiled_graph_run_result_has_trace(self):
+    async def test_compiled_graph_run_result_has_trace(self):
         """run() result includes execution trace."""
         from bae.compiler import compile_graph
         from bae.graph import Graph
@@ -190,7 +188,7 @@ class TestCompiledGraphRunReturnsGraphResult:
         compiled = compile_graph(graph)
 
         start_node = RunResultNode(result="traced")
-        result = compiled.run(start_node)
+        result = await compiled.run(start_node)
 
         # Trace should contain the start node
         assert len(result.trace) >= 1
