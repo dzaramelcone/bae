@@ -4,7 +4,7 @@ Tests the optimized LM backend that uses pre-loaded predictors when available,
 with graceful fallback to naive (fresh) predictors.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import dspy
 import pytest
@@ -153,28 +153,30 @@ class TestOptimizedLMStats:
 class TestOptimizedLMMake:
     """Test OptimizedLM.make() override."""
 
-    def test_make_uses_optimized_predictor(self):
+    async def test_make_uses_optimized_predictor(self):
         """make() uses pre-loaded predictor when available."""
         from bae.optimized_lm import OptimizedLM
 
         optimized_predictor = MagicMock(spec=dspy.Predict)
-        optimized_predictor.return_value = dspy.Prediction(
-            output='{"result": "optimized output", "score": 42}'
+        optimized_predictor.acall = AsyncMock(
+            return_value=dspy.Prediction(
+                output='{"result": "optimized output", "score": 42}'
+            )
         )
 
         backend = OptimizedLM(optimized={ResultNode: optimized_predictor})
         node = OptimizedNode(content="test input")
 
-        result = backend.make(node, ResultNode)
+        result = await backend.make(node, ResultNode)
 
         # Should use optimized predictor
         assert isinstance(result, ResultNode)
         assert result.result == "optimized output"
         assert result.score == 42
-        optimized_predictor.assert_called()
+        optimized_predictor.acall.assert_called()
         assert backend.stats["optimized"] == 1
 
-    def test_make_falls_back_to_naive(self):
+    async def test_make_falls_back_to_naive(self):
         """make() creates fresh predictor when target not in optimized dict."""
         from bae.optimized_lm import OptimizedLM
 
@@ -187,31 +189,34 @@ class TestOptimizedLMMake:
             with patch("dspy.Predict") as mock_predict:
                 mock_predictor = MagicMock()
                 mock_predict.return_value = mock_predictor
-                mock_predictor.return_value = dspy.Prediction(
-                    output='{"result": "naive output", "score": 1}'
+                mock_predictor.acall = AsyncMock(
+                    return_value=dspy.Prediction(
+                        output='{"result": "naive output", "score": 1}'
+                    )
                 )
 
-                result = backend.make(node, ResultNode)
+                result = await backend.make(node, ResultNode)
 
                 assert isinstance(result, ResultNode)
                 assert result.result == "naive output"
                 assert backend.stats["naive"] == 1
 
-    def test_preserves_retry_behavior_on_parse_error(self):
+    async def test_preserves_retry_behavior_on_parse_error(self):
         """make() retries with error hint on parse failure (DSPyBackend behavior)."""
         from bae.exceptions import BaeParseError
         from bae.optimized_lm import OptimizedLM
 
         call_count = 0
 
-        def mock_call(**kwargs):
+        async def mock_acall(**kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
                 return dspy.Prediction(output="not valid json")
             return dspy.Prediction(output='{"result": "fixed", "score": 1}')
 
-        optimized_predictor = MagicMock(side_effect=mock_call)
+        optimized_predictor = MagicMock()
+        optimized_predictor.acall = AsyncMock(side_effect=mock_acall)
 
         backend = OptimizedLM(
             optimized={ResultNode: optimized_predictor},
@@ -219,19 +224,21 @@ class TestOptimizedLMMake:
         )
         node = OptimizedNode(content="test")
 
-        result = backend.make(node, ResultNode)
+        result = await backend.make(node, ResultNode)
 
         # Should have retried
         assert call_count == 2
         assert result.result == "fixed"
 
-    def test_raises_bae_parse_error_after_retry_exhausted(self):
+    async def test_raises_bae_parse_error_after_retry_exhausted(self):
         """make() raises BaeParseError if retry also fails."""
         from bae.exceptions import BaeParseError
         from bae.optimized_lm import OptimizedLM
 
         optimized_predictor = MagicMock()
-        optimized_predictor.return_value = dspy.Prediction(output="invalid json")
+        optimized_predictor.acall = AsyncMock(
+            return_value=dspy.Prediction(output="invalid json")
+        )
 
         backend = OptimizedLM(
             optimized={ResultNode: optimized_predictor},
@@ -240,7 +247,7 @@ class TestOptimizedLMMake:
         node = OptimizedNode(content="test")
 
         with pytest.raises(BaeParseError):
-            backend.make(node, ResultNode)
+            await backend.make(node, ResultNode)
 
 
 class TestOptimizedLMEmptyOptimized:
@@ -294,13 +301,15 @@ class TestOptimizedLMInheritance:
         backend = OptimizedLM(optimized={}, max_retries=3)
         assert backend.max_retries == 3
 
-    def test_decide_inherits_from_parent(self):
+    async def test_decide_inherits_from_parent(self):
         """decide() is inherited from DSPyBackend and uses our make()."""
         from bae.optimized_lm import OptimizedLM
 
         optimized_predictor = MagicMock(spec=dspy.Predict)
-        optimized_predictor.return_value = dspy.Prediction(
-            output='{"result": "from decide", "score": 5}'
+        optimized_predictor.acall = AsyncMock(
+            return_value=dspy.Prediction(
+                output='{"result": "from decide", "score": 5}'
+            )
         )
 
         backend = OptimizedLM(optimized={ResultNode: optimized_predictor})
@@ -314,7 +323,7 @@ class TestOptimizedLMInheritance:
 
         node = SingleReturnNode(data="test")
 
-        result = backend.decide(node)
+        result = await backend.decide(node)
 
         # Should use our make() which uses optimized predictor
         assert isinstance(result, ResultNode)
