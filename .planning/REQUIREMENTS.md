@@ -17,17 +17,17 @@
 
 ## Parallel Dependency Resolution
 
-- [ ] **PDEP-01**: Independent deps on the same node resolve concurrently via `asyncio.gather()`
-- [ ] **PDEP-02**: Dep(callable) supports both sync and async callables (detect with `inspect.iscoroutinefunction`)
-- [ ] **PDEP-03**: Dep DAG resolution respects topological ordering while maximizing parallelism within each level
-- [ ] **PDEP-04**: Per-run dep caching works correctly with concurrent resolution (no race conditions)
-- [ ] **PDEP-05**: resolve_fields() and resolve_dep() are async
+- [x] **PDEP-01**: Independent deps on the same node resolve concurrently via `asyncio.gather()`
+- [x] **PDEP-02**: Dep(callable) supports both sync and async callables (detect with `inspect.iscoroutinefunction`)
+- [x] **PDEP-03**: Dep DAG resolution respects topological ordering while maximizing parallelism within each level
+- [x] **PDEP-04**: Per-run dep caching works correctly with concurrent resolution (no race conditions)
+- [x] **PDEP-05**: resolve_fields() and resolve_dep() are async
 
 ## Migration
 
-- [ ] **MIG-01**: All existing tests pass with async (pytest-asyncio, asyncio_mode="auto")
-- [ ] **MIG-02**: examples/ootd.py works with async graph.run()
-- [ ] **MIG-03**: E2E tests (--run-e2e) pass with async backends
+- [x] **MIG-01**: All existing tests pass with async (pytest-asyncio, asyncio_mode="auto")
+- [x] **MIG-02**: examples/ootd.py works with async graph.run()
+- [x] **MIG-03**: E2E tests (--run-e2e) pass with async backends
 
 ## Traceability
 
@@ -42,16 +42,16 @@
 | ASYNC-07 | 11 | Complete |
 | ASYNC-08 | 11 | Complete |
 | ASYNC-09 | 11 | Complete |
-| PDEP-01 | 12 | Pending |
-| PDEP-02 | 12 | Pending |
-| PDEP-03 | 12 | Pending |
-| PDEP-04 | 12 | Pending |
-| PDEP-05 | 12 | Pending |
-| MIG-01 | 12 | Pending |
-| MIG-02 | 12 | Pending |
-| MIG-03 | 12 | Pending |
+| PDEP-01 | 12 | Complete |
+| PDEP-02 | 12 | Complete |
+| PDEP-03 | 12 | Complete |
+| PDEP-04 | 12 | Complete |
+| PDEP-05 | 12 | Complete |
+| MIG-01 | 12 | Complete |
+| MIG-02 | 12 | Complete |
+| MIG-03 | 12 | Complete |
 
-**Coverage:** 17 requirements, 9 complete
+**Coverage:** 17 requirements, 17 complete
 
 ---
 *Created: 2026-02-08 for v3.0 Async Graphs*
