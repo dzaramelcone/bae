@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -163,16 +163,25 @@ CalendarDep = Annotated[CalendarResult, Dep(get_schedule)]
 #   (none)    — LLM fills this when constructing the node
 
 
+class No(Node): ...
+
+
 class VibeCheck(BaseModel):
     mood: str
     communication_style: str
     context_cues: str
 
 
+class UserInfo(BaseModel):
+    name: str = "Dzara"
+    gender: str = "woman"
+
+
 class IsTheUserGettingDressed(Node):
+    user_info: UserInfo
     user_message: str  # caller provides this — start node fields are always user-provided
 
-    async def __call__(self) -> AnticipateUsersDay: ...
+    async def __call__(self) -> AnticipateUsersDay | No: ...
 
 
 class AnticipateUsersDay(Node):
@@ -184,13 +193,49 @@ class AnticipateUsersDay(Node):
     async def __call__(self) -> RecommendOOTD: ...
 
 
+class InferUserBackground(Node):
+    """Infer background details about the user."""
+
+    user_info: Annotated[UserInfo, Recall()]
+    occupation: str
+    income: str
+    lifestyle: str
+    background: str
+
+
+class InferUserPersonality(Node):
+    """Make personal inferences about the user."""
+
+    user_info: Annotated[UserInfo, Recall()]
+    mbti: str
+    perspective: list[str]
+    vision: list[str]
+    goals: list[str]
+    dreams: list[str]
+
+
+class GenerateWardrobe(Node):
+    """Generate an itemized list of the user's wardrobe."""
+
+    user_info: Annotated[UserInfo, Recall()]
+    user_career: Annotated[InferUserBackground, Dep()]
+    user_personality: Annotated[InferUserPersonality, Dep()]
+    overall_styling: str
+    tops: list[str]
+    bottoms: list[str]
+    footwear: list[str]
+    accessories: list[str]
+
+
 class RecommendOOTD(Node):
-    top: str = Field(description="a specific garment for the upper body")
-    bottom: str = Field(description="a specific garment for the lower body")
-    footwear: str = Field(description="specific shoes or boots")
-    accessories: list[str] = Field(description="jewelry, bags, hats, scarves, etc.")
-    final_response: str = Field(description="casual message to the user with the recommendation")
-    inspo: list[HttpUrl] = Field(description="outfit inspiration image URLs")
+    wardrobe: Annotated[GenerateWardrobe, Dep()]
+    overall_vision: str
+    choice_of_top: str
+    choice_of_bottom: str
+    choice_of_footwear: str
+    choice_of_accessories: list[str]
+    final_response: str
+    inspo: list[HttpUrl]
 
     async def __call__(self) -> None: ...
 
