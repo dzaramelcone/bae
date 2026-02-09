@@ -18,10 +18,10 @@ class TracingClaudeCLI(ClaudeCLIBackend):
         self.turns: list[dict] = []
         self._turn_count = 0
 
-    def _run_cli_json(self, prompt: str, schema: dict) -> dict | None:
+    async def _run_cli_json(self, prompt: str, schema: dict) -> dict | None:
         self._turn_count += 1
         print(f"  Turn {self._turn_count}: sending prompt ({len(prompt)} chars)...")
-        response = super()._run_cli_json(prompt, schema)
+        response = await super()._run_cli_json(prompt, schema)
         print(f"  Turn {self._turn_count}: got response")
         self.turns.append({"prompt": prompt, "schema": schema, "response": response})
         return response
