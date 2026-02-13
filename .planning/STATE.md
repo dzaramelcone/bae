@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v4.0 Cortex — Phase 14 Shell Foundation
+**Current focus:** v4.0 Cortex — Phase 15 Session Store
 
 ## Current Position
 
-Phase: 14 of 19 (Shell Foundation)
-Plan: 3 of 3 complete
-Status: Phase 14 complete
-Last activity: 2026-02-13 -- Phase 14 Plan 03 complete (expression capture fix)
+Phase: 15 of 19 (Session Store)
+Plan: 1 of 2 complete
+Status: In progress
+Last activity: 2026-02-13 -- Phase 15 Plan 01 complete (SessionStore class)
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##-----] 17%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [###----] 22%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 46 (13 v1.0 + 21 v2.0 + 9 v3.0 + 3 v4.0)
+- Total plans completed: 47 (13 v1.0 + 21 v2.0 + 9 v3.0 + 4 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -29,6 +29,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##-----] 17%
 | 14-01 | Cortex REPL skeleton | 7min | 2 | 6 |
 | 14-02 | Bash dispatch & completion | 2min | 2 | 3 |
 | 14-03 | Expression capture fix | 2min | 2 | 3 |
+| 15-01 | SessionStore class | 2min | 2 | 2 |
 
 ## Accumulated Context
 
@@ -47,6 +48,9 @@ v4.0 architectural decisions:
 - rlcompleter wraps live namespace dict for PY mode tab completion (Completer ABC = future LSP interface)
 - DynamicCompleter returns None in non-PY modes (matches DynamicLexer pattern)
 - Local boolean flag for expression-capture tracking (simpler than namespace injection)
+- Synchronous record() for SessionStore -- microsecond INSERTs, no async wrapper needed
+- FTS5 external content table with triggers for automatic index sync
+- Content truncation at 10,000 chars with metadata.truncated flag
 
 ### Pending Todos
 
@@ -60,6 +64,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 14-03-PLAN.md (expression capture fix) -- Phase 14 complete
+Stopped at: Completed 15-01-PLAN.md (SessionStore class)
 Branch: main
 Resume file: None
