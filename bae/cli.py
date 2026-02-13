@@ -1,6 +1,7 @@
-"""Bae CLI - Type-driven agent graphs with DSPy optimization.
+"""Bae CLI - launches cortex REPL or runs subcommands.
 
 Commands:
+    bae                        Launch cortex REPL
     bae graph show <module>    Open graph visualization in mermaid.live
     bae graph export <module>  Export graph to file (requires mmdc)
 """
@@ -42,10 +43,19 @@ def _encode_mermaid_for_live(code: str) -> str:
 app = typer.Typer(
     name="bae",
     help="Type-driven agent graphs with DSPy optimization",
-    no_args_is_help=True,
+    invoke_without_command=True,
 )
 graph_app = typer.Typer(help="Graph visualization commands")
 app.add_typer(graph_app, name="graph")
+
+
+@app.callback(invoke_without_command=True)
+def cortex(ctx: typer.Context):
+    """Launch cortex REPL."""
+    if ctx.invoked_subcommand is None:
+        from bae.repl import launch
+
+        launch()
 
 
 def _load_graph_from_module(module_path: str) -> Graph:
