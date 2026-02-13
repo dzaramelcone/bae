@@ -63,12 +63,11 @@
   3. In Py mode, user gets syntax highlighting, multiline editing (Shift+Enter for newlines), and tab completion on namespace objects
   4. In Bash mode, shell commands execute and output appears
   5. Ctrl-C with no tasks exits; Ctrl-D exits with graceful shutdown (tasks cancelled, queues drained)
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 14-01: TBD
-- [ ] 14-02: TBD
-- [ ] 14-03: TBD
+- [ ] 14-01-PLAN.md — REPL shell + modes + Python execution + entry point
+- [ ] 14-02-PLAN.md — Bash mode + tab completion + lifecycle
 
 ### Phase 15: Session Store
 **Goal**: All I/O flows through a persistence layer that labels, indexes, and structures data for RAG queries and cross-session memory
