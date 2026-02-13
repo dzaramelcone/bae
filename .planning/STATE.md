@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 15 of 19 (Session Store) -- COMPLETE
-Plan: 2 of 2 complete
+Plan: 3 of 3 complete
 Status: Phase complete
-Last activity: 2026-02-13 -- Phase 15 complete (SessionStore + REPL integration)
+Last activity: 2026-02-13 -- Phase 15 gap closure (stdout capture + callable SessionStore)
 
 Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [####---] 33%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 48 (13 v1.0 + 21 v2.0 + 9 v3.0 + 5 v4.0)
+- Total plans completed: 49 (13 v1.0 + 21 v2.0 + 9 v3.0 + 6 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -31,6 +31,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [####---] 33%
 | 14-03 | Expression capture fix | 2min | 2 | 3 |
 | 15-01 | SessionStore class | 2min | 2 | 2 |
 | 15-02 | Store REPL integration | 3min | 2 | 4 |
+| 15-03 | Gap closure: stdout + callable store | 2min | 2 | 5 |
 
 ## Accumulated Context
 
@@ -54,7 +55,8 @@ v4.0 architectural decisions:
 - Content truncation at 10,000 chars with metadata.truncated flag
 - dispatch_bash returns (stdout, stderr) tuple -- shell records, bash prints
 - NL/GRAPH stubs record output for future session continuity
-- make_store_inspector closure pattern for namespace-injected callable
+- SessionStore.__call__ replaces make_store_inspector closure (callable class, returns None for clean display)
+- sys.stdout swap in async_exec for print() capture (try/finally, StringIO buffer)
 
 ### Pending Todos
 
@@ -68,6 +70,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 15-02-PLAN.md (Store REPL integration -- Phase 15 complete)
+Stopped at: Completed 15-03-PLAN.md (Gap closure: stdout capture + callable SessionStore)
 Branch: main
 Resume file: None
