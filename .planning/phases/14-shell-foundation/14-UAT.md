@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 14-shell-foundation
 source: [14-01-SUMMARY.md, 14-02-SUMMARY.md]
 started: 2026-02-13T21:00:00Z
@@ -73,7 +73,10 @@ skipped: 0
   reason: "User reported: for loop using _ as loop variable prints 19 at the end (async_exec unconditionally returns namespace['_']). Also blank line after first print in async loop."
   severity: major
   test: 3
-  root_cause: ""
-  artifacts: []
-  missing: []
+  root_cause: "async_exec() always returns namespace.get('_') on line 30, but only rewrites the AST to capture _ when the last statement is ast.Expr (line 15). When user code sets _ independently (e.g. for _ in range(20)), the stale/loop value leaks through as the return value, and shell.py line 135-136 prints it."
+  artifacts:
+    - path: "bae/repl/exec.py"
+      issue: "Unconditional namespace.get('_') return on line 30 — should only return when expression capture rewrite happened"
+  missing:
+    - "Use a sentinel to track whether expression capture rewrite occurred; only return _ in that case"
   debug_session: ""

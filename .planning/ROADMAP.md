@@ -44,7 +44,7 @@
 
 **Milestone Goal:** NL-first augmented REPL where human and AI collaborate in a shared namespace -- session store captures all I/O for cross-session memory, channels route labeled output, and the AI agent operates in natural language while producing correct code.
 
-- [ ] **Phase 14: Shell Foundation** - Async REPL with modes, good text editing, and clean lifecycle
+- [x] **Phase 14: Shell Foundation** - Async REPL with modes, good text editing, and clean lifecycle
 - [ ] **Phase 15: Session Store** - RAG-friendly persistence layer for all I/O across sessions
 - [ ] **Phase 16: Channel I/O** - Labeled output streams wired to session store with bae graph integration
 - [ ] **Phase 17: Namespace** - Reflective shared namespace with bae objects and introspection
@@ -68,7 +68,7 @@
 Plans:
 - [x] 14-01-PLAN.md — REPL shell + modes + Python execution + entry point
 - [x] 14-02-PLAN.md — Bash mode + tab completion + lifecycle
-- [ ] 14-03-PLAN.md — Fix async_exec spurious output from loop variables (gap closure)
+- [x] 14-03-PLAN.md — Fix async_exec spurious output from loop variables (gap closure)
 
 ### Phase 15: Session Store
 **Goal**: All I/O flows through a persistence layer that labels, indexes, and structures data for RAG queries and cross-session memory
@@ -165,7 +165,7 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19
 | 11. Async Core | v3.0 | 4/4 | Complete | 2026-02-09 |
 | 12. Parallel Deps + Migration | v3.0 | 4/4 | Complete | 2026-02-09 |
 | 13. Fix Nested Fill | v3.0 | 1/1 | Complete | 2026-02-09 |
-| 14. Shell Foundation | v4.0 | 2/3 | UAT gap closure | 2026-02-13 |
+| 14. Shell Foundation | v4.0 | 3/3 | Complete | 2026-02-13 |
 | 15. Session Store | v4.0 | 0/? | Not started | - |
 | 16. Channel I/O | v4.0 | 0/? | Not started | - |
 | 17. Namespace | v4.0 | 0/? | Not started | - |
@@ -173,4 +173,4 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19
 | 19. Task Lifecycle | v4.0 | 0/? | Not started | - |
 
 ---
-*Last updated: 2026-02-13 after Phase 14 UAT gap closure plan created*
+*Last updated: 2026-02-13 after Phase 14 Shell Foundation complete (with gap closure)*
