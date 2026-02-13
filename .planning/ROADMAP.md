@@ -45,7 +45,7 @@
 **Milestone Goal:** NL-first augmented REPL where human and AI collaborate in a shared namespace -- session store captures all I/O for cross-session memory, channels route labeled output, and the AI agent operates in natural language while producing correct code.
 
 - [x] **Phase 14: Shell Foundation** - Async REPL with modes, good text editing, and clean lifecycle
-- [ ] **Phase 15: Session Store** - RAG-friendly persistence layer for all I/O across sessions
+- [x] **Phase 15: Session Store** - RAG-friendly persistence layer for all I/O across sessions
 - [ ] **Phase 16: Channel I/O** - Labeled output streams wired to session store with bae graph integration
 - [ ] **Phase 17: Namespace** - Reflective shared namespace with bae objects and introspection
 - [ ] **Phase 18: AI Agent** - NL-first AI operating in conversation while producing correct code
@@ -82,8 +82,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 15-01-PLAN.md — SessionStore class with SQLite + FTS5 persistence (TDD)
-- [ ] 15-02-PLAN.md — REPL integration, store() inspector, and integration tests
+- [x] 15-01-PLAN.md — SessionStore class with SQLite + FTS5 persistence (TDD)
+- [x] 15-02-PLAN.md — REPL integration, store() inspector, and integration tests
 
 ### Phase 16: Channel I/O
 **Goal**: All output flows through labeled channels that users can see, filter, and access -- bae graph execution integrates via wrapper pattern without source modifications
@@ -166,11 +166,11 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19
 | 12. Parallel Deps + Migration | v3.0 | 4/4 | Complete | 2026-02-09 |
 | 13. Fix Nested Fill | v3.0 | 1/1 | Complete | 2026-02-09 |
 | 14. Shell Foundation | v4.0 | 3/3 | Complete | 2026-02-13 |
-| 15. Session Store | v4.0 | 0/? | Not started | - |
+| 15. Session Store | v4.0 | 2/2 | Complete | 2026-02-13 |
 | 16. Channel I/O | v4.0 | 0/? | Not started | - |
 | 17. Namespace | v4.0 | 0/? | Not started | - |
 | 18. AI Agent | v4.0 | 0/? | Not started | - |
 | 19. Task Lifecycle | v4.0 | 0/? | Not started | - |
 
 ---
-*Last updated: 2026-02-13 after Phase 14 Shell Foundation complete (with gap closure)*
+*Last updated: 2026-02-13 after Phase 15 Session Store complete*

@@ -104,10 +104,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REPL-12 | Phase 14: Shell Foundation | Pending |
 | REPL-13 | Phase 14: Shell Foundation | Pending |
 | REPL-14 | Phase 14: Shell Foundation | Pending |
-| STORE-01 | Phase 15: Session Store | Pending |
-| STORE-02 | Phase 15: Session Store | Pending |
-| STORE-03 | Phase 15: Session Store | Pending |
-| STORE-04 | Phase 15: Session Store | Pending |
+| STORE-01 | Phase 15: Session Store | Done |
+| STORE-02 | Phase 15: Session Store | Done |
+| STORE-03 | Phase 15: Session Store | Done |
+| STORE-04 | Phase 15: Session Store | Done |
 | CHAN-01 | Phase 16: Channel I/O | Pending |
 | CHAN-02 | Phase 16: Channel I/O | Pending |
 | CHAN-03 | Phase 16: Channel I/O | Pending |
