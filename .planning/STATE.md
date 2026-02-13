@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v4.0 Cortex — Phase 16 Channel I/O
+**Current focus:** v4.0 Cortex — Phase 17 Namespace
 
 ## Current Position
 
