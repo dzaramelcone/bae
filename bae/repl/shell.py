@@ -21,7 +21,7 @@ from bae.repl.bash import dispatch_bash
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
 from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mode
-from bae.repl.store import SessionStore, make_store_inspector
+from bae.repl.store import SessionStore
 
 # Register kitty keyboard protocol Shift+Enter (CSI u encoding).
 # Terminals supporting the kitty protocol (Ghostty, kitty, iTerm2 CSI u mode)
@@ -62,7 +62,7 @@ class CortexShell:
         self.namespace: dict = {"asyncio": asyncio, "os": os, "__builtins__": __builtins__}
         self.tasks: set[asyncio.Task] = set()
         self.store = SessionStore(Path.cwd() / ".bae" / "store.db")
-        self.namespace["store"] = make_store_inspector(self.store)
+        self.namespace["store"] = self.store
         self.completer = NamespaceCompleter(self.namespace)
 
         kb = _build_key_bindings(self)
@@ -139,7 +139,10 @@ class CortexShell:
 
                 if self.mode == Mode.PY:
                     try:
-                        result = await async_exec(text, self.namespace)
+                        result, captured = await async_exec(text, self.namespace)
+                        if captured:
+                            print(captured, end="")
+                            self.store.record("PY", "repl", "output", captured, {"type": "stdout"})
                         if result is not None:
                             output = repr(result)
                             print(output)

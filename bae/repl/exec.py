@@ -1,16 +1,22 @@
-"""Async Python execution with top-level await."""
+"""Async Python execution with top-level await and stdout capture."""
 
 from __future__ import annotations
 
 import ast
 import asyncio
+import sys
 import types
+from io import StringIO
 
 _EXPR_CAPTURED = object()
 
 
-async def async_exec(code: str, namespace: dict) -> object | None:
-    """Execute code with PyCF_ALLOW_TOP_LEVEL_AWAIT."""
+async def async_exec(code: str, namespace: dict) -> tuple[object | None, str]:
+    """Execute code with PyCF_ALLOW_TOP_LEVEL_AWAIT, capturing stdout.
+
+    Returns (result, captured_stdout) where result is the last expression
+    value or None, and captured_stdout is any print() output.
+    """
     tree = ast.parse(code, mode="exec")
     expr_captured = False
 
@@ -27,10 +33,18 @@ async def async_exec(code: str, namespace: dict) -> object | None:
 
     compiled = compile(tree, "<cortex>", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
     fn = types.FunctionType(compiled, namespace)
-    result = fn()
-    if asyncio.iscoroutine(result):
-        await result
+
+    buf = StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = buf
+    try:
+        result = fn()
+        if asyncio.iscoroutine(result):
+            await result
+    finally:
+        sys.stdout = old_stdout
+    captured = buf.getvalue()
 
     if expr_captured:
-        return namespace.get("_")
-    return None
+        return namespace.get("_"), captured
+    return None, captured

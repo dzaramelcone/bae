@@ -117,25 +117,20 @@ class SessionStore:
             "SELECT * FROM sessions ORDER BY started_at DESC",
         ).fetchall()
 
+    def __call__(self, query: str | None = None, n: int = 20) -> None:
+        """Inspect stored context. store() shows session, store('query') searches."""
+        if query:
+            entries = self.search(query, limit=n)
+            for e in entries:
+                d = dict(e)
+                print(f"[{d['mode']}:{d['channel']}:{d['direction']}] {d['content'][:80]}")
+        else:
+            entries = self.session_entries()
+            print(f"Session {self.session_id}: {len(entries)} entries")
+            for e in entries[-n:]:
+                d = dict(e)
+                print(f"  [{d['mode']}:{d['direction']}] {d['content'][:60]}")
+
     def close(self) -> None:
         """Close the database connection."""
         self._conn.close()
-
-
-def make_store_inspector(store: SessionStore):
-    """Create a namespace callable for store inspection."""
-
-    def store_fn(query: str | None = None, n: int = 20):
-        """Inspect stored context. store() shows session, store('query') searches."""
-        if query:
-            entries = store.search(query, limit=n)
-            for e in entries:
-                print(f"[{e['mode']}:{e['channel']}:{e['direction']}] {e['content'][:80]}")
-        else:
-            entries = store.session_entries()
-            print(f"Session {store.session_id}: {len(entries)} entries")
-            for e in entries[-n:]:
-                print(f"  [{e['mode']}:{e['direction']}] {e['content'][:60]}")
-        return entries
-
-    return store_fn
