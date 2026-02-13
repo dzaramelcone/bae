@@ -97,11 +97,11 @@ Plans:
   3. Channels are accessible as Python objects in the namespace (e.g., `channels.py`, `channels.graph`)
   4. Enabling debug mode captures all channel output to a log file
   5. Graph execution output routes through channels via a wrapper around `graph.arun()` -- no bae source modifications
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 16-01: TBD
-- [ ] 16-02: TBD
+- [ ] 16-01-PLAN.md — Channel + ChannelRouter classes with TDD
+- [ ] 16-02-PLAN.md — Shell integration, graph wrapper, and integration tests
 
 ### Phase 17: Namespace
 **Goal**: User interacts with real bae objects in a pre-loaded namespace and can introspect any object
@@ -169,10 +169,10 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19
 | 13. Fix Nested Fill | v3.0 | 1/1 | Complete | 2026-02-09 |
 | 14. Shell Foundation | v4.0 | 3/3 | Complete | 2026-02-13 |
 | 15. Session Store | v4.0 | 4/4 | Complete | 2026-02-13 |
-| 16. Channel I/O | v4.0 | 0/? | Not started | - |
+| 16. Channel I/O | v4.0 | 0/2 | In progress | - |
 | 17. Namespace | v4.0 | 0/? | Not started | - |
 | 18. AI Agent | v4.0 | 0/? | Not started | - |
 | 19. Task Lifecycle | v4.0 | 0/? | Not started | - |
 
 ---
-*Last updated: 2026-02-13 after Phase 15 gap closure complete*
+*Last updated: 2026-02-13 after Phase 16 planning complete*
