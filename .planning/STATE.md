@@ -9,17 +9,17 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 
 ## Current Position
 
-Phase: 15 of 19 (Session Store) -- COMPLETE
-Plan: 4 of 4 complete
-Status: Phase complete
-Last activity: 2026-02-13 -- Phase 15 gap closure (formatting + dict returns + ellipsis)
+Phase: 16 of 19 (Channel I/O)
+Plan: 1 of 2 complete
+Status: In progress
+Last activity: 2026-02-13 -- Channel & ChannelRouter output multiplexing (TDD)
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [####---] 33%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [#####--] 42%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 50 (13 v1.0 + 21 v2.0 + 9 v3.0 + 7 v4.0)
+- Total plans completed: 51 (13 v1.0 + 21 v2.0 + 9 v3.0 + 8 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -33,6 +33,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [####---] 33%
 | 15-02 | Store REPL integration | 3min | 2 | 4 |
 | 15-03 | Gap closure: stdout + callable store | 2min | 2 | 5 |
 | 15-04 | Gap closure: formatting + dict returns | 2min | 2 | 3 |
+| 16-01 | Channel & ChannelRouter (TDD) | 3min | 2 | 2 |
 
 ## Accumulated Context
 
@@ -60,6 +61,8 @@ v4.0 architectural decisions:
 - sys.stdout swap in async_exec for print() capture (try/finally, StringIO buffer)
 - Canonical tag format [mode:channel:direction] -- always 3 fields, single _format_entry method
 - Public SessionStore API returns plain dicts; sqlite3.Row used only internally
+- Channel.write() always records + buffers regardless of visibility; display is the only conditional
+- ChannelRouter.write() to unknown channel is silent no-op (defensive dispatch)
 
 ### Pending Todos
 
@@ -73,6 +76,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 15-04-PLAN.md (Gap closure: formatting + dict returns + ellipsis)
+Stopped at: Completed 16-01-PLAN.md (Channel & ChannelRouter output multiplexing)
 Branch: main
 Resume file: None
