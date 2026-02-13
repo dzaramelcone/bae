@@ -9,17 +9,17 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 
 ## Current Position
 
-Phase: 16 of 19 (Channel I/O)
-Plan: 1 of 2 complete
-Status: In progress
-Last activity: 2026-02-13 -- Channel & ChannelRouter output multiplexing (TDD)
+Phase: 16 of 19 (Channel I/O) -- COMPLETE
+Plan: 2 of 2 complete
+Status: Phase complete
+Last activity: 2026-02-13 -- Shell channel integration (router.write, bash raw return, Ctrl+O toggle)
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [#####--] 42%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [######-] 47%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 51 (13 v1.0 + 21 v2.0 + 9 v3.0 + 8 v4.0)
+- Total plans completed: 52 (13 v1.0 + 21 v2.0 + 9 v3.0 + 9 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -34,6 +34,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [#####--] 42%
 | 15-03 | Gap closure: stdout + callable store | 2min | 2 | 5 |
 | 15-04 | Gap closure: formatting + dict returns | 2min | 2 | 3 |
 | 16-01 | Channel & ChannelRouter (TDD) | 3min | 2 | 2 |
+| 16-02 | Shell channel integration | 3min | 2 | 3 |
 
 ## Accumulated Context
 
@@ -55,7 +56,7 @@ v4.0 architectural decisions:
 - Synchronous record() for SessionStore -- microsecond INSERTs, no async wrapper needed
 - FTS5 external content table with triggers for automatic index sync
 - Content truncation at 10,000 chars with metadata.truncated flag
-- dispatch_bash returns (stdout, stderr) tuple -- shell records, bash prints
+- dispatch_bash returns (stdout, stderr) tuple -- pure data function, caller routes through channels
 - NL/GRAPH stubs record output for future session continuity
 - SessionStore.__call__ replaces make_store_inspector closure (callable class, returns None for clean display)
 - sys.stdout swap in async_exec for print() capture (try/finally, StringIO buffer)
@@ -63,6 +64,9 @@ v4.0 architectural decisions:
 - Public SessionStore API returns plain dicts; sqlite3.Row used only internally
 - Channel.write() always records + buffers regardless of visibility; display is the only conditional
 - ChannelRouter.write() to unknown channel is silent no-op (defensive dispatch)
+- All mode output routes through router.write() -- no bare print() for channel-routed output
+- Input recording stays as direct store.record() -- channels are output-only
+- channel_arun wraps graph.arun() with temporary logging handler -- no bae/graph.py modifications
 
 ### Pending Todos
 
@@ -76,6 +80,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 16-01-PLAN.md (Channel & ChannelRouter output multiplexing)
+Stopped at: Completed 16-02-PLAN.md (Shell channel integration -- phase 16 complete)
 Branch: main
 Resume file: None
