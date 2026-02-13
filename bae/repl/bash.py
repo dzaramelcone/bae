@@ -9,11 +9,11 @@ from prompt_toolkit import print_formatted_text
 from prompt_toolkit.formatted_text import FormattedText
 
 
-async def dispatch_bash(cmd: str) -> None:
-    """Run a shell command, printing stdout plain and stderr in red."""
+async def dispatch_bash(cmd: str) -> tuple[str, str]:
+    """Run a shell command, print output, return (stdout, stderr) strings."""
     cmd = cmd.strip()
     if not cmd:
-        return
+        return ("", "")
 
     # cd is special-cased: update REPL's working directory
     if cmd == "cd" or cmd.startswith("cd "):
@@ -22,8 +22,10 @@ async def dispatch_bash(cmd: str) -> None:
         try:
             os.chdir(target)
         except (FileNotFoundError, PermissionError) as exc:
-            print_formatted_text(FormattedText([("fg:red", f"cd: {exc}")]))
-        return
+            err = f"cd: {exc}"
+            print_formatted_text(FormattedText([("fg:red", err)]))
+            return ("", err)
+        return ("", "")
 
     proc = await asyncio.create_subprocess_shell(
         cmd,
@@ -31,8 +33,11 @@ async def dispatch_bash(cmd: str) -> None:
         stderr=asyncio.subprocess.PIPE,
         cwd=os.getcwd(),
     )
-    stdout, stderr = await proc.communicate()
-    if stdout:
-        print(stdout.decode(errors="replace"), end="")
-    if stderr:
-        print_formatted_text(FormattedText([("fg:red", stderr.decode(errors="replace"))]))
+    raw_out, raw_err = await proc.communicate()
+    out = raw_out.decode(errors="replace") if raw_out else ""
+    err = raw_err.decode(errors="replace") if raw_err else ""
+    if out:
+        print(out, end="")
+    if err:
+        print_formatted_text(FormattedText([("fg:red", err)]))
+    return (out, err)

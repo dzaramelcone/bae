@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import traceback
+from pathlib import Path
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import DynamicCompleter
@@ -20,6 +21,7 @@ from bae.repl.bash import dispatch_bash
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
 from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mode
+from bae.repl.store import SessionStore, make_store_inspector
 
 # Register kitty keyboard protocol Shift+Enter (CSI u encoding).
 # Terminals supporting the kitty protocol (Ghostty, kitty, iTerm2 CSI u mode)
@@ -59,6 +61,8 @@ class CortexShell:
         self.mode: Mode = DEFAULT_MODE
         self.namespace: dict = {"asyncio": asyncio, "os": os, "__builtins__": __builtins__}
         self.tasks: set[asyncio.Task] = set()
+        self.store = SessionStore(Path.cwd() / ".bae" / "store.db")
+        self.namespace["store"] = make_store_inspector(self.store)
         self.completer = NamespaceCompleter(self.namespace)
 
         kb = _build_key_bindings(self)
@@ -104,7 +108,8 @@ class CortexShell:
         return [("class:toolbar.mode", f" {name} "), ("class:toolbar.cwd", f" {cwd} ")]
 
     async def _shutdown(self) -> None:
-        """Cancel tasks, report summary."""
+        """Cancel tasks, close store, report summary."""
+        self.store.close()
         if not self.tasks:
             return
         for task in self.tasks:
@@ -121,6 +126,7 @@ class CortexShell:
                 try:
                     text = await self.session.prompt_async()
                 except KeyboardInterrupt:
+                    self.store.close()
                     return
                 except EOFError:
                     await self._shutdown()
@@ -129,19 +135,32 @@ class CortexShell:
                 if not text.strip():
                     continue
 
+                self.store.record(self.mode.value, "repl", "input", text)
+
                 if self.mode == Mode.PY:
                     try:
                         result = await async_exec(text, self.namespace)
                         if result is not None:
-                            print(repr(result))
+                            output = repr(result)
+                            print(output)
+                            self.store.record("PY", "repl", "output", output, {"type": "expr_result"})
                     except KeyboardInterrupt:
                         pass
                     except Exception:
-                        traceback.print_exc()
+                        tb = traceback.format_exc()
+                        print(tb, end="")
+                        self.store.record("PY", "repl", "output", tb, {"type": "error"})
                 elif self.mode == Mode.NL:
-                    print(f"(NL mode stub) {text}")
-                    print("NL mode coming in Phase 18.")
+                    stub = f"(NL mode stub) {text}\nNL mode coming in Phase 18."
+                    print(stub)
+                    self.store.record("NL", "repl", "output", stub)
                 elif self.mode == Mode.GRAPH:
-                    print("(Graph mode stub) Not yet implemented.")
+                    stub = "(Graph mode stub) Not yet implemented."
+                    print(stub)
+                    self.store.record("GRAPH", "repl", "output", stub)
                 elif self.mode == Mode.BASH:
-                    await dispatch_bash(text)
+                    stdout, stderr = await dispatch_bash(text)
+                    if stdout:
+                        self.store.record("BASH", "stdout", "output", stdout)
+                    if stderr:
+                        self.store.record("BASH", "stderr", "output", stderr, {"type": "stderr"})
