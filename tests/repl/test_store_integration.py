@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 import pytest
 
 from bae.repl.bash import dispatch_bash
+from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, enable_debug, disable_debug
 from bae.repl.store import SessionStore
 
 
@@ -176,3 +178,69 @@ def test_cross_session_persistence(tmp_path):
     assert "session one input" in contents
     assert "session two output" in contents
     s3.close()
+
+
+# --- Channel integration tests ---
+
+
+def test_channel_output_in_store(tmp_path):
+    """Channel.write() persists output to SessionStore with correct channel name."""
+    s = SessionStore(tmp_path / "ch.db")
+    router = ChannelRouter()
+    router.register("py", "#87ff87", store=s)
+    router.write("py", "x = 42", mode="PY", metadata={"type": "expr_result"})
+    entries = s.session_entries()
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["mode"] == "PY"
+    assert entry["channel"] == "py"
+    assert entry["content"] == "x = 42"
+    meta = json.loads(entry["metadata"])
+    assert meta["type"] == "expr_result"
+    s.close()
+
+
+def test_channels_in_namespace(tmp_path):
+    """CortexShell exposes a ChannelRouter in namespace['channels']."""
+    with patch("bae.repl.shell.PromptSession"):
+        from bae.repl.shell import CortexShell
+        shell = CortexShell()
+        assert "channels" in shell.namespace
+        assert isinstance(shell.namespace["channels"], ChannelRouter)
+        assert hasattr(shell.namespace["channels"], "py")
+        shell.store.close()
+
+
+def test_channel_visibility_toggle():
+    """Setting channel.visible=False excludes it from router.visible list."""
+    router = ChannelRouter()
+    for name, cfg in CHANNEL_DEFAULTS.items():
+        router.register(name, cfg["color"])
+    assert "bash" in router.visible
+    router._channels["bash"].visible = False
+    assert "bash" not in router.visible
+    assert "bash" in router.all
+
+
+def test_debug_logging_writes_file(tmp_path):
+    """enable_debug routes channel writes to a debug log file."""
+    s = SessionStore(tmp_path / "dbg.db")
+    router = ChannelRouter()
+    router.register("py", "#87ff87", store=s)
+    enable_debug(router, log_dir=tmp_path)
+    router.write("py", "debug test content", mode="PY")
+    disable_debug(router)
+    log_path = tmp_path / "debug.log"
+    assert log_path.exists()
+    content = log_path.read_text()
+    assert "debug test content" in content
+    s.close()
+
+
+@pytest.mark.asyncio
+async def test_bash_dispatch_no_print():
+    """dispatch_bash returns data without calling print or print_formatted_text."""
+    with patch("builtins.print") as mock_print:
+        stdout, stderr = await dispatch_bash("echo hello")
+    assert "hello" in stdout
+    mock_print.assert_not_called()
