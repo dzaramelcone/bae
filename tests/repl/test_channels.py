@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -268,7 +268,7 @@ async def test_toggle_channels_updates_visibility(router):
     """toggle_channels() updates channel visibility from dialog result."""
     # Mock the dialog to return only ["py", "ai"]
     mock_dialog = MagicMock()
-    mock_dialog.run_async = MagicMock(return_value=["py", "ai"])
+    mock_dialog.run_async = AsyncMock(return_value=["py", "ai"])
 
     with patch("bae.repl.channels.checkboxlist_dialog", return_value=mock_dialog):
         await toggle_channels(router)
@@ -286,7 +286,7 @@ async def test_toggle_channels_cancelled_no_change(router):
     original_visibility = {name: ch.visible for name, ch in router._channels.items()}
 
     mock_dialog = MagicMock()
-    mock_dialog.run_async = MagicMock(return_value=None)
+    mock_dialog.run_async = AsyncMock(return_value=None)
 
     with patch("bae.repl.channels.checkboxlist_dialog", return_value=mock_dialog):
         await toggle_channels(router)
