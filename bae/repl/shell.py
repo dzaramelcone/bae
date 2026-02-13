@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import traceback
+from io import StringIO
 from pathlib import Path
 
 from prompt_toolkit import PromptSession
@@ -18,6 +20,7 @@ from prompt_toolkit.styles import Style
 from pygments.lexers.python import PythonLexer
 
 from bae.repl.bash import dispatch_bash
+from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, toggle_channels
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
 from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mode
@@ -51,6 +54,14 @@ def _build_key_bindings(shell: CortexShell) -> KeyBindings:
         """Escape+Enter inserts newline (also handles kitty Shift+Enter)."""
         event.current_buffer.insert_text("\n")
 
+    @kb.add("c-o")
+    def open_channel_toggle(event):
+        """Ctrl+O opens channel visibility toggle."""
+        async def _toggle():
+            await toggle_channels(shell.router)
+            event.app.invalidate()
+        event.app.create_background_task(_toggle())
+
     return kb
 
 
@@ -63,6 +74,10 @@ class CortexShell:
         self.tasks: set[asyncio.Task] = set()
         self.store = SessionStore(Path.cwd() / ".bae" / "store.db")
         self.namespace["store"] = self.store
+        self.router = ChannelRouter()
+        for name, cfg in CHANNEL_DEFAULTS.items():
+            self.router.register(name, cfg["color"], store=self.store)
+        self.namespace["channels"] = self.router
         self.completer = NamespaceCompleter(self.namespace)
 
         kb = _build_key_bindings(self)
@@ -117,7 +132,7 @@ class CortexShell:
         results = await asyncio.gather(*self.tasks, return_exceptions=True)
         cancelled = sum(1 for r in results if isinstance(r, asyncio.CancelledError))
         if cancelled:
-            print(f"cancelled {cancelled} tasks")
+            self.router.write("debug", f"cancelled {cancelled} tasks", mode="DEBUG")
 
     async def run(self) -> None:
         """Main REPL loop."""
@@ -141,29 +156,51 @@ class CortexShell:
                     try:
                         result, captured = await async_exec(text, self.namespace)
                         if captured:
-                            print(captured, end="")
-                            self.store.record("PY", "repl", "output", captured, {"type": "stdout"})
+                            self.router.write("py", captured.rstrip("\n"), mode="PY", metadata={"type": "stdout"})
                         if result is not None:
                             output = repr(result)
-                            print(output)
-                            self.store.record("PY", "repl", "output", output, {"type": "expr_result"})
+                            self.router.write("py", output, mode="PY", metadata={"type": "expr_result"})
                     except KeyboardInterrupt:
                         pass
                     except Exception:
                         tb = traceback.format_exc()
-                        print(tb, end="")
-                        self.store.record("PY", "repl", "output", tb, {"type": "error"})
+                        self.router.write("py", tb.rstrip("\n"), mode="PY", metadata={"type": "error"})
                 elif self.mode == Mode.NL:
                     stub = f"(NL mode stub) {text}\nNL mode coming in Phase 18."
-                    print(stub)
-                    self.store.record("NL", "repl", "output", stub)
+                    self.router.write("ai", stub, mode="NL")
                 elif self.mode == Mode.GRAPH:
-                    stub = "(Graph mode stub) Not yet implemented."
-                    print(stub)
-                    self.store.record("GRAPH", "repl", "output", stub)
+                    graph = self.namespace.get("graph")
+                    if graph:
+                        await channel_arun(graph, text, self.router)
+                    else:
+                        stub = "(Graph mode stub) Not yet implemented."
+                        self.router.write("graph", stub, mode="GRAPH")
                 elif self.mode == Mode.BASH:
                     stdout, stderr = await dispatch_bash(text)
                     if stdout:
-                        self.store.record("BASH", "stdout", "output", stdout)
+                        self.router.write("bash", stdout.rstrip("\n"), mode="BASH")
                     if stderr:
-                        self.store.record("BASH", "stderr", "output", stderr, {"type": "stderr"})
+                        self.router.write("bash", stderr.rstrip("\n"), mode="BASH", metadata={"type": "stderr"})
+
+
+async def channel_arun(graph, start_node, router, *, lm=None, max_iters=10):
+    """Wrap graph.arun() routing output through [graph] channel."""
+    graph_logger = logging.getLogger("bae.graph")
+    buf = StringIO()
+    handler = logging.StreamHandler(buf)
+    handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+    graph_logger.addHandler(handler)
+    old_level = graph_logger.level
+    graph_logger.setLevel(logging.DEBUG)
+    try:
+        result = await graph.arun(start_node, lm=lm, max_iters=max_iters)
+    finally:
+        graph_logger.removeHandler(handler)
+        graph_logger.setLevel(old_level)
+    captured = buf.getvalue()
+    if captured:
+        router.write("graph", captured.rstrip(), mode="GRAPH", metadata={"type": "log"})
+    if result and result.trace:
+        terminal = result.trace[-1]
+        router.write("graph", repr(terminal), mode="GRAPH", metadata={"type": "result"})
+    return result

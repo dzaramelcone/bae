@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import os
 
-from prompt_toolkit import print_formatted_text
-from prompt_toolkit.formatted_text import FormattedText
-
 
 async def dispatch_bash(cmd: str) -> tuple[str, str]:
-    """Run a shell command, print output, return (stdout, stderr) strings."""
+    """Run a shell command, return (stdout, stderr) strings.
+
+    The caller is responsible for display via channels.
+    """
     cmd = cmd.strip()
     if not cmd:
         return ("", "")
@@ -22,9 +22,7 @@ async def dispatch_bash(cmd: str) -> tuple[str, str]:
         try:
             os.chdir(target)
         except (FileNotFoundError, PermissionError) as exc:
-            err = f"cd: {exc}"
-            print_formatted_text(FormattedText([("fg:red", err)]))
-            return ("", err)
+            return ("", f"cd: {exc}")
         return ("", "")
 
     proc = await asyncio.create_subprocess_shell(
@@ -36,8 +34,4 @@ async def dispatch_bash(cmd: str) -> tuple[str, str]:
     raw_out, raw_err = await proc.communicate()
     out = raw_out.decode(errors="replace") if raw_out else ""
     err = raw_err.decode(errors="replace") if raw_err else ""
-    if out:
-        print(out, end="")
-    if err:
-        print_formatted_text(FormattedText([("fg:red", err)]))
     return (out, err)
