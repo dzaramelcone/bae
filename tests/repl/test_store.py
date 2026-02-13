@@ -120,6 +120,33 @@ def test_content_truncation(store):
     assert meta["original_length"] == 15_000
 
 
+def test_search_returns_dicts(store):
+    """search() returns list[dict], not list[sqlite3.Row]."""
+    store.record("PY", "repl", "input", "hello world")
+    results = store.search("hello")
+    assert isinstance(results[0], dict)
+
+
+def test_recent_returns_dicts(store):
+    """recent() returns list[dict], not list[sqlite3.Row]."""
+    store.record("PY", "repl", "input", "something")
+    results = store.recent()
+    assert isinstance(results[0], dict)
+
+
+def test_session_entries_returns_dicts(store):
+    """session_entries() returns list[dict], not list[sqlite3.Row]."""
+    store.record("PY", "repl", "input", "something")
+    results = store.session_entries()
+    assert isinstance(results[0], dict)
+
+
+def test_sessions_returns_dicts(store):
+    """sessions() returns list[dict], not list[sqlite3.Row]."""
+    results = store.sessions()
+    assert isinstance(results[0], dict)
+
+
 def test_close(store):
     """After close(), further operations raise."""
     store.close()

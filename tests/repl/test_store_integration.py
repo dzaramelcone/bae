@@ -84,7 +84,7 @@ def test_store_inspector_prints_session(store, capsys):
 
 
 def test_store_inspector_search(store, capsys):
-    """store('query') searches via FTS5 and prints matching entries, returns None."""
+    """store('query') searches via FTS5 and prints canonical 3-field tags, returns None."""
     store.record("PY", "repl", "input", "hello world")
     store.record("PY", "repl", "input", "goodbye moon")
     store.record("BASH", "stdout", "output", "hello again")
@@ -92,13 +92,14 @@ def test_store_inspector_search(store, capsys):
     captured = capsys.readouterr()
     assert result is None
     assert "hello" in captured.out
+    assert "[PY:repl:input]" in captured.out
 
 
 def test_store_sessions_accessible(store):
-    """store.sessions() returns a list including the current session ID."""
+    """store.sessions() returns a list of dicts including the current session ID."""
     sessions = store.sessions()
     assert isinstance(sessions, list)
-    ids = [dict(s)["id"] for s in sessions]
+    ids = [s["id"] for s in sessions]
     assert store.session_id in ids
 
 
@@ -122,6 +123,36 @@ async def test_dispatch_bash_cd_returns_empty(tmp_path):
         assert stderr == ""
     finally:
         os.chdir(original)
+
+
+def test_store_display_truncation_ellipsis(store, capsys):
+    """store() display truncates long content with ellipsis marker."""
+    store.record("PY", "repl", "input", "a" * 200)
+    store()
+    captured = capsys.readouterr()
+    lines = captured.out.strip().split("\n")
+    # Entry line is indented (session display), find it
+    entry_line = [l for l in lines if "[PY:repl:input]" in l][0]
+    assert entry_line.rstrip().endswith("...")
+    assert "a" * 200 not in captured.out
+
+
+def test_store_search_display_truncation_ellipsis(store, capsys):
+    """store('query') display truncates long content with ellipsis marker."""
+    store.record("PY", "repl", "input", "findme " + "x" * 200)
+    store("findme")
+    captured = capsys.readouterr()
+    assert "..." in captured.out
+
+
+def test_format_entry_consistency(store, capsys):
+    """store() uses canonical 3-field [mode:channel:direction] tags for all entries."""
+    store.record("PY", "repl", "input", "py input")
+    store.record("BASH", "stdout", "output", "bash output")
+    store()
+    captured = capsys.readouterr()
+    assert "[PY:repl:input]" in captured.out
+    assert "[BASH:stdout:output]" in captured.out
 
 
 def test_cross_session_persistence(tmp_path):
