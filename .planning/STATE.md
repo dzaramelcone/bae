@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 15 of 19 (Session Store) -- COMPLETE
-Plan: 3 of 3 complete
+Plan: 4 of 4 complete
 Status: Phase complete
-Last activity: 2026-02-13 -- Phase 15 gap closure (stdout capture + callable SessionStore)
+Last activity: 2026-02-13 -- Phase 15 gap closure (formatting + dict returns + ellipsis)
 
 Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [####---] 33%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 49 (13 v1.0 + 21 v2.0 + 9 v3.0 + 6 v4.0)
+- Total plans completed: 50 (13 v1.0 + 21 v2.0 + 9 v3.0 + 7 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -32,6 +32,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [####---] 33%
 | 15-01 | SessionStore class | 2min | 2 | 2 |
 | 15-02 | Store REPL integration | 3min | 2 | 4 |
 | 15-03 | Gap closure: stdout + callable store | 2min | 2 | 5 |
+| 15-04 | Gap closure: formatting + dict returns | 2min | 2 | 3 |
 
 ## Accumulated Context
 
@@ -57,6 +58,8 @@ v4.0 architectural decisions:
 - NL/GRAPH stubs record output for future session continuity
 - SessionStore.__call__ replaces make_store_inspector closure (callable class, returns None for clean display)
 - sys.stdout swap in async_exec for print() capture (try/finally, StringIO buffer)
+- Canonical tag format [mode:channel:direction] -- always 3 fields, single _format_entry method
+- Public SessionStore API returns plain dicts; sqlite3.Row used only internally
 
 ### Pending Todos
 
@@ -70,6 +73,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 15-03-PLAN.md (Gap closure: stdout capture + callable SessionStore)
+Stopped at: Completed 15-04-PLAN.md (Gap closure: formatting + dict returns + ellipsis)
 Branch: main
 Resume file: None
