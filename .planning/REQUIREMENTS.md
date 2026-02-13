@@ -16,12 +16,18 @@ Requirements for cortex REPL. Each maps to roadmap phases.
 - [ ] **REPL-06**: User can configure custom prompt content (CPU, running tasks, costs, etc.)
 - [ ] **REPL-07**: User gets syntax highlighting and multiline editing in Py mode
 - [ ] **REPL-08**: User gets tab completion on namespace objects
-- [ ] **REPL-09**: User's input history persists across sessions
 - [ ] **REPL-10**: Ctrl-C opens a menu to kill running tasks
 - [ ] **REPL-11**: Double Ctrl-C kills all tasks, returns to bare cortex
 - [ ] **REPL-12**: Ctrl-C with no tasks running exits the process
 - [ ] **REPL-13**: Ctrl-D exits with graceful shutdown (tasks cancelled, queues drained)
 - [ ] **REPL-14**: Bash mode executes shell commands, output routed to `[bash]` channel
+
+### STORE (Session Store)
+
+- [ ] **STORE-01**: All I/O (input, output, every channel) is labeled, indexed, and persisted to a session store
+- [ ] **STORE-02**: Session data is structured for RAG queries (not opaque blobs)
+- [ ] **STORE-03**: Context persists across cortex sessions — AI retains project state between launches
+- [ ] **STORE-04**: User can inspect what context is stored
 
 ### CHAN (Channel I/O)
 
@@ -29,6 +35,7 @@ Requirements for cortex REPL. Each maps to roadmap phases.
 - [ ] **CHAN-02**: User can open a TUI select menu to toggle channel visibility (prompt_toolkit widget)
 - [ ] **CHAN-03**: User can access channels as Python objects in the namespace
 - [ ] **CHAN-04**: User can enable debug logging mode that captures all channel streams to file
+- [ ] **CHAN-05**: Channel integration with bae graph execution without modifying bae source (wrapper pattern)
 
 ### NS (Namespace)
 
@@ -44,7 +51,8 @@ Requirements for cortex REPL. Each maps to roadmap phases.
 - [ ] **AI-03**: `await ai.choose_type([TypeA, TypeB], context)` calls bae's LM choose_type
 - [ ] **AI-04**: AI output is routed to the `[ai]` channel
 - [ ] **AI-05**: AI receives namespace context (referenced variables, graph topology) when answering
-- [ ] **AI-06**: Cross-session context storage layer persists AI context across sessions
+- [ ] **AI-06**: AI can parse and extract Python code from NL conversation for integration into codebase
+- [ ] **AI-07**: Prompt engineering for AI operating in NL while producing correct Python/bash/system calls
 
 ## v5.0 Requirements
 
@@ -91,16 +99,20 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REPL-06 | — | Pending |
 | REPL-07 | — | Pending |
 | REPL-08 | — | Pending |
-| REPL-09 | — | Pending |
 | REPL-10 | — | Pending |
 | REPL-11 | — | Pending |
 | REPL-12 | — | Pending |
 | REPL-13 | — | Pending |
 | REPL-14 | — | Pending |
+| STORE-01 | — | Pending |
+| STORE-02 | — | Pending |
+| STORE-03 | — | Pending |
+| STORE-04 | — | Pending |
 | CHAN-01 | — | Pending |
 | CHAN-02 | — | Pending |
 | CHAN-03 | — | Pending |
 | CHAN-04 | — | Pending |
+| CHAN-05 | — | Pending |
 | NS-01 | — | Pending |
 | NS-02 | — | Pending |
 | NS-03 | — | Pending |
@@ -111,12 +123,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AI-04 | — | Pending |
 | AI-05 | — | Pending |
 | AI-06 | — | Pending |
+| AI-07 | — | Pending |
 
 **Coverage:**
-- v4.0 requirements: 27 total
+- v4.0 requirements: 32 total
 - Mapped to phases: 0
-- Unmapped: 27 ⚠️
+- Unmapped: 32 ⚠️
 
 ---
 *Requirements defined: 2026-02-13*
-*Last updated: 2026-02-13 after initial definition*
+*Last updated: 2026-02-13 after reframe — session store, NL-first, clean bae integration*
