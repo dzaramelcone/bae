@@ -88,48 +88,59 @@ class SessionStore:
         )
         self._conn.commit()
 
-    def search(self, query: str, limit: int = 20) -> list[sqlite3.Row]:
+    def search(self, query: str, limit: int = 20) -> list[dict]:
         """Full-text search across all entries."""
-        return self._conn.execute(
+        rows = self._conn.execute(
             "SELECT e.* FROM entries_fts fts JOIN entries e ON e.id = fts.rowid "
             "WHERE fts.content MATCH ? ORDER BY e.timestamp DESC LIMIT ?",
             (query, limit),
         ).fetchall()
+        return [dict(row) for row in rows]
 
-    def recent(self, n: int = 50) -> list[sqlite3.Row]:
+    def recent(self, n: int = 50) -> list[dict]:
         """Most recent entries across all sessions."""
-        return self._conn.execute(
+        rows = self._conn.execute(
             "SELECT * FROM entries ORDER BY timestamp DESC LIMIT ?",
             (n,),
         ).fetchall()
+        return [dict(row) for row in rows]
 
-    def session_entries(self, session_id: str | None = None) -> list[sqlite3.Row]:
+    def session_entries(self, session_id: str | None = None) -> list[dict]:
         """All entries for a session (default: current)."""
         sid = session_id or self.session_id
-        return self._conn.execute(
+        rows = self._conn.execute(
             "SELECT * FROM entries WHERE session_id = ? ORDER BY timestamp",
             (sid,),
         ).fetchall()
+        return [dict(row) for row in rows]
 
-    def sessions(self) -> list[sqlite3.Row]:
+    def sessions(self) -> list[dict]:
         """List all sessions."""
-        return self._conn.execute(
+        rows = self._conn.execute(
             "SELECT * FROM sessions ORDER BY started_at DESC",
         ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _format_entry(self, entry: dict, max_width: int = 80) -> str:
+        """Format an entry for display with canonical [mode:channel:direction] tag."""
+        tag = f"[{entry['mode']}:{entry['channel']}:{entry['direction']}]"
+        content = entry["content"].replace("\n", "\\n")
+        avail = max_width - len(tag) - 1  # 1 for space
+        if len(content) > avail:
+            content = content[:avail - 3] + "..."
+        return f"{tag} {content}"
 
     def __call__(self, query: str | None = None, n: int = 20) -> None:
         """Inspect stored context. store() shows session, store('query') searches."""
         if query:
             entries = self.search(query, limit=n)
             for e in entries:
-                d = dict(e)
-                print(f"[{d['mode']}:{d['channel']}:{d['direction']}] {d['content'][:80]}")
+                print(self._format_entry(e))
         else:
             entries = self.session_entries()
             print(f"Session {self.session_id}: {len(entries)} entries")
             for e in entries[-n:]:
-                d = dict(e)
-                print(f"  [{d['mode']}:{d['direction']}] {d['content'][:60]}")
+                print(f"  {self._format_entry(e)}")
 
     def close(self) -> None:
         """Close the database connection."""
