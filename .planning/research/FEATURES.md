@@ -1,662 +1,543 @@
-# Feature Landscape: Eval/Optimization DX for Bae v3
+# Feature Landscape: Cortex REPL for Bae v4.0
 
-**Domain:** LLM agent graph evaluation, optimization, and developer workflow
-**Researched:** 2026-02-08
-**Confidence:** HIGH for eval patterns (verified against DSPy, Braintrust, Promptfoo, DeepEval, Inspect AI); MEDIUM for zero-config auto-generation (novel territory, no precedent found)
+**Domain:** Augmented async Python REPL with AI agent integration, channel-based I/O, reflective namespace
+**Researched:** 2026-02-13
+**Confidence:** HIGH for REPL mechanics and namespace introspection (well-established Python patterns); MEDIUM for channel I/O multiplexing (novel design, Docker analogy verified); MEDIUM for AI agent object (emerging patterns, no standard yet)
 
-## Ecosystem Survey: How Eval Works Across Frameworks
+## Ecosystem Survey: How Augmented REPLs Work
 
-### DSPy: Define -> Compile -> Evaluate
+### Custom Python REPLs on prompt_toolkit
 
-DSPy's workflow is the most relevant to bae since bae already uses DSPy for optimization.
+prompt_toolkit is the standard foundation for building custom Python REPLs. ptpython is the canonical example -- a full Python REPL built entirely on prompt_toolkit with syntax highlighting, multiline editing, and popup tab completion. Building a basic Python REPL on prompt_toolkit takes under an hour; most features come free from the framework.
 
-**Eval primitives:**
-- `dspy.Example` -- labeled data (input/output pairs with `.with_inputs()` to mark which fields are inputs)
-- Metric function: `def metric(example, pred, trace=None) -> float | bool` -- returns float for scoring, bool for bootstrapping
-- `dspy.Evaluate` class: runs a program against a devset with a metric, supports `num_threads`, `display_progress`, `return_outputs`
-- Optimizers (BootstrapFewShot, MIPROv2, COPRO) consume metric + trainset and produce compiled programs
-
-**Key pattern:** Metrics return different types based on context:
+**Async REPL pattern (verified via ptpython source):**
 ```python
-def metric(example, pred, trace=None):
-    score = compute_score(example, pred)
-    if trace is None:  # evaluation mode
-        return score  # float 0.0-1.0
-    else:  # bootstrapping mode
-        return score > 0.8  # bool (keep as demo?)
+async def interactive_shell():
+    await embed(
+        globals=globals(),
+        return_asyncio_coroutine=True,
+        patch_stdout=True,
+    )
 ```
 
-**Datasets:** DSPy needs as few as 20-200 examples. Labels needed for final outputs only -- intermediate step labels are almost never required. This is critical for bae: graph traces provide input/output pairs naturally.
+Key capabilities:
+- `return_asyncio_coroutine=True` -- REPL runs as a coroutine, enabling top-level `await`
+- `patch_stdout=True` -- background coroutines can safely print above the prompt
+- `globals=globals()` -- custom namespace injection for the REPL session
+- Dynamic prompt text via callables (re-evaluated each render cycle)
+- Bottom toolbar for mode indicators, status, live info
+- Custom keybindings via `KeyBindings` registry
+- Full-screen layouts via `HSplit`/`VSplit`/`Window`/`BufferControl`
 
-**Confidence:** HIGH (verified via official DSPy docs at dspy.ai)
+**What prompt_toolkit does NOT do:** Mode switching between NL/Py/Graph, channel multiplexing, AI integration. These are cortex's differentiators.
 
-### Braintrust: Dataset + Task + Scorers
+**Confidence:** HIGH (ptpython source, official docs at python-prompt-toolkit.readthedocs.io)
 
-Braintrust structures evals as three components:
-- **Dataset**: labeled examples (input + expected output)
-- **Task**: the function being evaluated (your LLM pipeline)
-- **Scorers**: functions that score task output against expected
+### Mode Switching in Existing Shells
 
-Teams report getting meaningful evals running same-day. CI integration via GitHub Actions posts eval diffs on PRs. One-click: add production traces to datasets.
+**xonsh** is the closest prior art for multi-mode shells. It blends Python mode and subprocess mode using implicit heuristic detection -- if input looks like Python, it runs as Python; otherwise, it dispatches as a shell command. This works but creates ambiguity at mode boundaries.
 
-**Key DX insight:** Braintrust connects the full cycle -- production logs become eval datasets with one click. This "traces -> datasets" pipeline is exactly what bae needs.
+**IPython** uses magic commands (% prefix for line magics, %% for cell magics) to escape from Python into special behaviors. The prefix-character approach is proven and unambiguous.
 
-**Confidence:** MEDIUM (WebSearch-verified, no hands-on testing)
+**Aider** (AI pair programming CLI) uses explicit mode switching -- `/code`, `/architect`, `/ask`, `/help` slash commands change the behavior of subsequent input. Claude Code operates as a REPL-style agent with a bash tool and file editing tool.
 
-### Promptfoo: Declarative YAML + CLI-First
+**Open Interpreter** uses natural language as the primary input mode, with the AI generating and executing code. No explicit mode switching -- the AI figures out what to do.
 
-Promptfoo is CLI-first with declarative configs:
-- `promptfoo init` -- scaffolds project with YAML config
-- `promptfoo eval` -- runs evals from config
-- `promptfoo eval --retry-errors` -- re-runs only failed cases
-- YAML defines prompts, test cases, assertions, and providers
-- Built-in web viewer for side-by-side comparison
-- Live reload during development
+**Key insight for cortex:** Explicit mode switching with prefix characters is cleaner than heuristic detection. xonsh's implicit detection creates confusion at boundaries. IPython's `%` prefix and Aider's `/` slash commands are battle-tested patterns. For cortex, a single-character prefix per mode (like `>` for NL, no prefix for Py, `!` for graph) gives unambiguous dispatch without the complexity of auto-detection.
 
-**Key DX insight:** Zero-code eval definition via YAML. Developers don't write Python to define test cases -- they write declarative configs. This is the "1 minute to first eval" pattern.
+**Confidence:** HIGH for xonsh/IPython patterns (official docs); MEDIUM for Aider/Open Interpreter (WebSearch + GitHub verified)
 
-**Confidence:** MEDIUM (WebSearch + GitHub README verified)
+### Channel-Based I/O Multiplexing
 
-### DeepEval: Pytest for LLMs
+No existing Python REPL implements channel-based I/O. The design is novel, drawing from:
 
-DeepEval treats evals as unit tests:
-- `deepeval test run` instead of `pytest`
-- Test cases are `LLMTestCase(input=..., actual_output=..., expected_output=...)`
-- 50+ built-in metrics (G-Eval, hallucination, answer relevancy, etc.)
-- Native pytest integration -- evals run in CI like regular tests
-- `assert_test(test_case, metrics)` pattern
+**Docker Compose** uses labeled, color-coded output streams for multi-container logs. Each container's output is prefixed with its name, and colors distinguish containers visually. The Docker Engine multiplexes stdout and stderr using a binary protocol (stdcopy) that tags each frame with its stream origin.
 
-**Key DX insight:** Framing evals as tests that developers already know how to write removes the "what even is an eval?" barrier. The familiar `assert` pattern makes eval accessible.
+**tmux / pymux** (prompt_toolkit-based terminal multiplexer) multiplexes terminal sessions with labeled panes. pymux demonstrates that prompt_toolkit's layout system can handle multiple simultaneous output areas.
 
-**Confidence:** MEDIUM (WebSearch + official docs verified)
+**Go channels / Trio memory channels** provide the concurrency primitive. Python's `asyncio.Queue` is the direct analog -- single-consumer by default. For fan-out (one message to multiple consumers), you need a subscriber list with per-subscriber queues.
 
-### Inspect AI: Dataset -> Solver -> Scorer
+**Key insight for cortex:** The channel abstraction is a labeled `asyncio.Queue` with a display prefix. Each channel is a named stream (`[ai]`, `[py]`, `[graph]`, `[otel]`). The REPL renders all channels in the output area with their label prefix. Muting a channel removes it from render without stopping the producer. This is simpler than a full pub/sub system -- it's just labeled output lines with filter predicates.
 
-UK AISI's framework uses opinionated primitives:
-- **Dataset**: labeled samples with `input` and `target` columns
-- **Solver**: chain of processing steps (generate, prompt engineering, multi-turn dialog)
-- **Scorer**: evaluates final output (text comparison, model grading, custom)
-- VS Code log viewer for inspection
-- Docker sandboxing for safe execution
+**Confidence:** MEDIUM (novel design; Docker and asyncio.Queue patterns are well-understood, but the combination for REPL output is untested)
 
-**Key DX insight:** Opinionated primitives force structure. "Dataset -> Task -> Scorer" is the universal eval pattern across all frameworks.
+### Reflective Python Namespaces
 
-**Confidence:** MEDIUM (WebSearch + PyPI docs verified)
+Python's introspection is comprehensive and well-documented:
 
-### RAGAS: Metrics Without Ground Truth
+- `dir(obj)` -- list attributes and methods
+- `vars(obj)` / `obj.__dict__` -- namespace as dict
+- `type(obj)`, `isinstance()`, `issubclass()` -- type checking
+- `inspect.getmembers(obj, predicate)` -- filtered member listing
+- `inspect.getsource(obj)` -- source code retrieval
+- `inspect.signature(obj)` -- callable signatures
+- `__getattr__` / `__dir__` -- proxy objects with custom introspection and tab completion
 
-RAGAS evaluates RAG systems without requiring ground truth annotations:
-- Context precision, context recall, faithfulness, answer relevancy
-- Synthetic test generation (auto-generates test datasets, reducing manual curation by ~90%)
-- Over 400K monthly downloads, 20M+ evaluations run
+For REPL integration, the key pattern is `__dir__` customization. Tab completion in prompt_toolkit and ptpython calls `dir()` on namespace objects. If the AI agent or namespace proxy implements `__dir__`, it appears in tab completion naturally.
 
-**Key DX insight:** Reference-free metrics are powerful for bootstrapping. If bae can evaluate graph outputs without requiring labeled expected outputs, the barrier to entry drops dramatically.
+**Lazy loading via `__getattr__`:** PEP 562 (Python 3.7+) established the pattern of module-level `__getattr__` for lazy imports. The same technique works for namespace objects -- attributes resolve on first access, not at import time.
 
-**Confidence:** MEDIUM (WebSearch + arxiv paper verified)
+**Rich object display:** IPython defines `_repr_html_`, `_repr_pretty_`, `_repr_markdown_` protocols for custom display. The Rich library provides `__rich_repr__` and `__rich_console__` for terminal formatting. Since cortex uses prompt_toolkit (not IPython), the display protocol will be `__cortex_repr__` or similar -- a method that returns prompt_toolkit `FormattedText`.
+
+**Confidence:** HIGH (Python stdlib docs, inspect module docs, PEP 562)
+
+### AI Agent as REPL Object
+
+No standard pattern exists for "AI as a first-class object in a Python namespace." The closest precedents:
+
+**LangChain's agent.invoke()** -- agent is a callable Python object, but not integrated into a REPL namespace.
+
+**Open Interpreter's `interpreter` object** -- exposed as a Python package with a chat interface, but lives in its own process, not in a shared namespace.
+
+**Claude Code's architecture** -- a REPL-style interface where the AI has two tools (bash, file edit). The AI is the loop controller, not an object in a namespace.
+
+**Key insight for cortex:** The AI agent is a Python object that lives in the REPL namespace alongside user variables, graph nodes, and resolved deps. It is callable (`ai("explain this graph")`) and has methods (`ai.fill(MyNode)`, `ai.choose(A | B)`) that map directly to bae's LM protocol. It participates in tab completion via `__dir__`. Its output goes to the `[ai]` channel. This is genuinely novel -- no existing tool exposes AI as a composable Python object in a shared, interactive namespace.
+
+**Confidence:** MEDIUM (no precedent; design is sound but untested)
+
+### OpenTelemetry for Interactive Sessions
+
+OTel semantic conventions for GenAI are in Development status (not stable). Key span types:
+
+- `invoke_agent` -- root span for agent invocation
+- `gen_ai.operation.name` -- operation type attribute
+- `gen_ai.agent.name` -- agent identifier
+- `gen_ai.usage.input_tokens` / `output_tokens` -- token tracking
+- `gen_ai.request.model` -- model identifier
+
+For REPL context, the span hierarchy would be:
+```
+cortex.session (root)
+  cortex.command (per user input)
+    gen_ai.invoke_agent (if AI involved)
+      gen_ai.fill / gen_ai.choose_type (LM calls)
+    bae.graph.run (if graph execution)
+      bae.node.resolve (per node)
+```
+
+Python's OTel SDK uses `contextvars` for span propagation, which works natively with asyncio. No special handling needed for async REPL -- spans propagate through `await` chains automatically.
+
+**Confidence:** MEDIUM for GenAI semantic conventions (Development status, may change); HIGH for core OTel span mechanics (stable, well-documented)
 
 ---
 
 ## Table Stakes
 
-Features developers expect from any eval system. Missing = the eval DX feels broken or unusable.
+Features that define what "an augmented REPL" must do. Missing any of these and the product feels broken.
 
 | Feature | Why Expected | Complexity | Depends On | Notes |
 |---------|--------------|------------|------------|-------|
-| **Dataset format (input/output pairs)** | Every framework starts here. DSPy needs `dspy.Example`, Braintrust needs dataset, Promptfoo needs YAML test cases. Without a standard format, users can't even begin. | Low | Existing `trace_to_examples()` | Bae already converts traces to `dspy.Example`. Needs a user-facing dataset abstraction on top -- JSONL files or Pydantic models. |
-| **Metric function protocol** | DSPy, DeepEval, Braintrust, Inspect all use `metric(example, pred) -> score`. Without a metric, there's nothing to optimize against. | Low | Existing `node_transition_metric` | Current metric only checks type correctness. Must support quality metrics (LLM-as-judge, semantic similarity, custom). |
-| **Run eval from CLI** | Promptfoo: `promptfoo eval`. DeepEval: `deepeval test run`. Inspect: `inspect eval`. Every framework has a one-command eval runner. | Low | Existing `bae run` command | Add `bae eval <module>` that loads graph + dataset + metric and prints scores. |
-| **Eval results display (pass/fail + scores)** | Users need to see what passed, what failed, and why. Every framework shows per-example results with aggregate scores. | Med | CLI eval command | Table output: example input, expected, actual, score, pass/fail. |
-| **Multiple examples per eval run** | Running one example is a smoke test, not an eval. Batch evaluation across a dataset is the minimum viable eval. | Low | Dataset format | DSPy's `Evaluate` already handles this. Wrap it. |
-| **Save/load compiled artifacts** | DSPy programs save via `program.save()` and load via `program.load()`. Bae already has `save_optimized()`/`load_optimized()`. Must be discoverable and documented. | Low | Existing `save_optimized`, `load_optimized` | Already implemented but undiscoverable. Need CLI commands and conventions (e.g., `.compiled/` directory). |
-| **Optimization from CLI** | After eval shows a baseline, users need `bae optimize <module>` to improve. | Med | Eval + dataset + metric all working | Wraps existing `CompiledGraph.optimize()` with CLI ergonomics. |
-| **Clear error messages for eval failures** | When an eval fails (missing dataset, bad metric, graph error), the message must say exactly what's wrong and how to fix it. | Low | All eval components | Follow the pattern from v2 dep errors -- name the missing thing and suggest the fix. |
+| **Async Python execution with top-level await** | Every modern Python REPL (ptpython, IPython, Python 3.13+ REPL) supports this. Users type `await graph.arun(node)` and it works. Without this, the REPL can't interact with bae's async API. | Low | prompt_toolkit `embed()` with `return_asyncio_coroutine=True` | ptpython solves this already. Cortex inherits it. |
+| **Syntax highlighting and multiline editing** | ptpython, IPython, and Python 3.13+ REPL all have this. A REPL without syntax highlighting feels broken in 2026. | Low | prompt_toolkit (free) | Comes free from prompt_toolkit/Pygments. Zero effort. |
+| **Tab completion on namespace objects** | Every REPL does this. Users expect `ai.<TAB>` to show methods, `graph.<TAB>` to show attributes. | Low | prompt_toolkit completer + `__dir__` on objects | Standard prompt_toolkit pattern. Needs `__dir__` on custom objects. |
+| **Shared mutable namespace** | The REPL namespace must be a single Python dict that all modes (NL, Py, Graph) read and write. Variables set in Py mode are visible in NL mode. Graph results land in the namespace. | Low | `globals()` dict passed to REPL | ptpython async embed example demonstrates this exactly. |
+| **History and persistence** | Command history across sessions. Up-arrow recalls previous inputs. | Low | prompt_toolkit `FileHistory` | One line of config. |
+| **Error display with tracebacks** | When Python code fails, show a full traceback. When a graph fails, show the trace + error. Not just "error occurred." | Low | Python stdlib traceback + bae exception types | Bae already has typed exceptions (DepError, FillError, RecallError) with `.trace` attributes. |
+| **Graceful Ctrl-C / Ctrl-D** | Ctrl-C cancels current operation (not the whole REPL). Ctrl-D exits. Running LM calls must be cancellable. | Low-Med | asyncio task cancellation | asyncio.Task.cancel() propagates CancelledError. Needs try/except around eval loop. |
+| **Bae objects pre-loaded in namespace** | `Node`, `Graph`, `Dep`, `Recall`, `LM` etc. available without import. The REPL should feel like "bae is already imported." | Low | Populate namespace dict at startup | `namespace.update(bae.__dict__)` or selective import. |
+| **Mode indicator in prompt** | User must always know which mode they're in. The prompt prefix changes: `py>`, `nl>`, `bae>` or similar. | Low | prompt_toolkit dynamic prompt callable | Callable that returns current mode prefix. One function. |
 
 ## Differentiators
 
-Features that would make bae's eval DX special -- things other frameworks don't do or don't do well.
+Features that make cortex special. No existing tool does these.
 
 | Feature | Value Proposition | Complexity | Depends On | Notes |
 |---------|-------------------|------------|------------|-------|
-| **Zero-config structural eval** | Auto-generate a baseline eval from graph structure alone. No dataset, no metric, no config. Checks: does the graph complete without error? Does each node produce the right output type? Does the trace visit expected node types? Are all fields populated (non-null, non-empty)? | Med | Graph topology, existing `node_transition_metric` | **This is the 1-minute-to-first-eval killer feature.** `bae eval examples.ootd` with zero setup. Uses graph structure to generate smoke-test assertions. No other framework does this because no other framework has typed graph topology to introspect. |
-| **Trace-to-dataset pipeline** | Run the graph, collect traces, automatically convert to eval datasets. `bae run` produces traces; `bae dataset add` saves a trace as a labeled example (human reviews and approves). Over time, organic dataset growth from real usage. | Med | `trace_to_examples()`, dataset format | Braintrust does "add production trace to dataset with one click." Bae can do the same from CLI. The trace IS the labeled data. |
-| **Progressive metric complexity tiers** | Four tiers of eval sophistication, each building on the last: (1) structural -- type checking, completion, field population; (2) example-based -- expected output matching from dataset; (3) judge-based -- LLM evaluates quality with rubric; (4) custom -- user-defined metric functions. Each tier works without the others. | Med-High | All eval primitives | No framework explicitly designs for progressive complexity. They dump you into "write a metric" immediately. Bae should make Tier 1 automatic and each subsequent tier a 5-minute addition. |
-| **Graph-aware metrics** | Metrics that understand graph structure: "Did the graph take the expected path?" "Did node X produce field Y with property Z?" "Was the trace length reasonable?" These are structural metrics that only make sense for graph-based systems. | Med | Graph topology, trace data | Unique to bae. Other frameworks evaluate single prompts or pipelines. Bae can evaluate paths through a graph, branching decisions, and per-node quality. |
-| **Mermaid diagram with eval annotations** | Extend existing `bae graph show` to overlay eval results: green nodes passed, red nodes failed, scores on edges. Developers see WHERE in the graph quality breaks down. | Med | Existing `to_mermaid()`, eval results per node | LangGraph has basic graph visualization. Nobody overlays eval results on the graph diagram. This would be genuinely useful for debugging multi-node quality issues. |
-| **Compiled artifact conventions** | Standard directory layout: `<domain>/.compiled/` with timestamped artifacts, metadata (optimizer used, metric score, dataset size, DSPy version), and a `latest` symlink. `.gitignore`-able but version-trackable via metadata JSON. | Low-Med | Existing save/load | DSPy docs recommend naming like `qa_program_miprov2_acc0.87_20230615.json`. Bae should standardize this with a convention. |
-| **Eval diff (before/after optimization)** | `bae eval --compare baseline optimized` shows which examples improved, regressed, or stayed the same. Critical for knowing if optimization helped. | Med | Two eval runs to compare | Braintrust does this on PRs via GitHub Actions. Promptfoo has side-by-side comparison. Bae needs at minimum a CLI diff. |
+| **Three-mode input: NL / Py / Graph** | Single REPL handles natural language ("what does this graph do?"), Python execution (`result = await graph.arun(node)`), and graph operations (`bae run ootd`). No context switching between tools. Users stay in one terminal. | Med | Mode dispatcher, prefix detection, prompt_toolkit input processing | **Core differentiator.** Mode detection via prefix character (explicit, not heuristic). Default mode is Py. NL mode sends input to AI. Graph mode wraps `bae` CLI commands. |
+| **Channel-based I/O with labeled streams** | All output is tagged with a channel name. `[ai]` for AI responses, `[py]` for Python output, `[graph]` for graph execution traces, `[otel]` for span events. Users can mute/unmute channels to reduce noise. | Med | asyncio.Queue per channel, channel registry, render layer | **Novel.** Docker Compose's labeled output adapted for REPL. Each channel has a name, color, and mute state. Output lines carry channel metadata. Render filters by mute state. |
+| **Channel surfing / muting** | `/mute otel` silences OTel span output. `/unmute otel` restores it. `/solo ai` shows only AI output. `/channels` lists all channels with status. | Low | Channel registry with boolean mute flags | Low complexity because it's just a filter on the render path. The channel abstraction does the heavy lifting. |
+| **AI as a first-class namespace object** | `ai` lives in the namespace. `ai("explain this graph")` triggers NL interaction. `ai.fill(MyNode, context)` calls bae's LM fill directly. `ai.model` shows current model. Tab-completable. | Med | AI object wrapping bae's LM protocol, `__dir__` for completion, `__call__` for chat | **Novel.** AI is not a separate tool -- it's a Python object you compose with. `result = ai.fill(RecommendOOTD, {"weather": "rainy"})` works like any other Python call. |
+| **Reflective namespace introspection** | `/ns` shows all namespace variables with types and summaries. `/ns graph` shows a specific object's structure. Objects added to namespace get automatic rich display. | Med | `inspect` module, custom `__repr__` on bae objects, formatted display | Builds on Python's introspection. Differentiator is the integration: bae `Node` classes show their fields and annotations, `Graph` objects show topology, `GraphResult` shows trace summary. |
+| **Graph-aware REPL context** | When a graph runs, its trace lands in the namespace. `_` holds the last result (like Python REPL). `_trace` holds the last graph trace. Node instances from the trace are directly inspectable. | Low-Med | Graph execution populates namespace variables | Small feature, large usability impact. After `result = await graph.arun(start)`, `result.trace[-1]` is the terminal node with all fields accessible. |
+| **OTel span instrumentation** | Every REPL command emits an OTel span. Graph executions emit nested spans per node. AI calls emit GenAI semantic convention spans. Spans go to the `[otel]` channel and optionally to a collector (Jaeger). | Med-High | opentelemetry-api, opentelemetry-sdk, OTel GenAI semantic conventions | Valuable for understanding what happened during a session. Not every user needs it, but the instrumentation foundation enables future observability features. |
+| **Ephemeral spawned interfaces (HitL)** | During graph execution, a node that needs human input spawns a focused input UI (new terminal tab, browser form, VS Code panel). After human responds, execution resumes. | High | Terminal spawning (Ghostty AppleScript on macOS), async checkpoint/resume pattern | **Highest complexity differentiator.** Ghostty's AppleScript API supports new window/tab/split and send text, but the programmatic API is limited (discussion #2353). Needs robust fallback (inline prompt in REPL). Defer full implementation to later phase; start with inline HitL. |
 
 ## Anti-Features
 
-Features to deliberately NOT build. These are tempting but wrong for bae's scope and philosophy.
+Features to deliberately NOT build. These are tempting but wrong for cortex's scope.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| **Web UI for eval results** | Massive scope creep. Braintrust and Promptfoo already have UIs. Bae is a framework, not a platform. | CLI output with structured JSON. Users who want UI can pipe to Braintrust or use `bae eval --json \| jq`. |
-| **Production monitoring / observability** | Eval is offline development-time activity. Production monitoring is a different product (Datadog, Braintrust, Langfuse). | Export traces in OpenTelemetry format if needed later. Don't build dashboards. |
-| **Eval-as-a-service / cloud storage** | Bae is local-first. Sending eval data to a cloud service adds auth, networking, pricing complexity. | All artifacts on local filesystem. Users bring their own cloud storage if needed. |
-| **Custom metric DSL** | Inventing a domain-specific language for metrics adds learning curve. Python is the DSL. | Metric functions are plain Python. `def my_metric(example, pred, trace=None) -> float`. |
-| **Automated dataset curation** | Auto-generating diverse, representative datasets from scratch requires solving an open research problem. | Provide tooling for humans to curate: `bae dataset add`, `bae dataset list`, `bae dataset inspect`. Humans approve examples. |
-| **Multi-model comparison matrix** | Promptfoo's strength is comparing GPT vs Claude vs Llama. Bae optimizes a single graph, not model shopping. | Support changing the LM via config. Don't build comparison infrastructure. |
-| **Async eval execution** | Bae is sync-only. Adding async eval adds API complexity for marginal speed gain in a dev-time tool. | Sequential eval with progress bar. If slow, reduce dataset size or use `num_threads` via DSPy. |
-| **Eval versioning / experiment tracking** | MLflow, W&B, and Braintrust already solve this. Building experiment tracking is a full product. | Save eval results as JSON with timestamp and metadata. Users who want tracking integrate with W&B (DSPy already has W&B integration). |
-
-## Progressive Complexity Tiers
-
-This is the core DX design. Each tier is independently useful and builds on the previous.
-
-### Tier 0: Zero-Config Structural Eval
-
-**Who:** Developer who just built a graph and wants to know "does this even work?"
-**Effort:** 0 minutes setup
-**Command:** `bae eval examples.ootd`
-
-**What it checks:**
-- Graph completes without exception
-- Each node in trace is the correct type (matches graph topology)
-- Terminal node is reached
-- All plain fields on terminal node are populated (non-null, non-empty string)
-- Trace length is within expected bounds (not stuck in loop)
-- Node transition types match graph edges
-
-**How it works internally:**
-- Load graph from module
-- Construct start node with default/empty values (or require `--input`)
-- Run graph
-- Apply structural assertions derived from `Graph.nodes`, `Graph.edges`, `Graph.terminal_nodes`
-- Report pass/fail per assertion
-
-**Output:**
-```
-$ bae eval examples.ootd --input '{"user_message": "ugh i just got up"}'
-
-Structural Eval: examples.ootd
-  [PASS] Graph completed without error
-  [PASS] Terminal node reached: RecommendOOTD
-  [PASS] Trace: IsTheUserGettingDressed -> AnticipateUsersDay -> RecommendOOTD
-  [PASS] All fields populated on RecommendOOTD
-  [WARN] Field 'inspo' is empty list (may be intentional)
-
-4/4 passed, 1 warning
-```
-
-**Depends on:** Existing graph infrastructure. No new primitives needed.
-**Complexity:** Low-Med
-
-### Tier 1: Example-Based Eval
-
-**Who:** Developer who has collected a few good traces and wants regression testing.
-**Effort:** 5-10 minutes (run graph a few times, save good outputs)
-**Command:** `bae eval examples.ootd --dataset ootd_examples.jsonl`
-
-**What it checks:**
-- All Tier 0 checks
-- Terminal node output matches expected output from dataset (exact or fuzzy)
-- Specific field values match expectations
-
-**Dataset format (JSONL):**
-```json
-{"input": {"user_message": "ugh i just got up"}, "expected": {"top": "oversized sweater", "bottom": "joggers"}}
-{"input": {"user_message": "big meeting today"}, "expected": {"top": "blazer"}}
-```
-
-**How it works:**
-- Load dataset from JSONL
-- For each example: construct start node from `input`, run graph, compare terminal node fields to `expected`
-- Default comparison: exact string match per field (with case-insensitive option)
-- Users can provide partial `expected` -- only specified fields are checked
-
-**Output:**
-```
-$ bae eval examples.ootd --dataset ootd_examples.jsonl
-
-Example-Based Eval: 3 examples
-  [1/3] "ugh i just got up"     PASS  (2/2 fields match)
-  [2/3] "big meeting today"     FAIL  (top: expected "blazer", got "button-down shirt")
-  [3/3] "rainy day errands"     PASS  (3/3 fields match)
-
-Score: 2/3 (66.7%)
-```
-
-**Depends on:** Tier 0 infrastructure + dataset loading
-**Complexity:** Med
-
-### Tier 2: LLM-as-Judge Eval
-
-**Who:** Developer who needs quality evaluation beyond exact matching. "Is this outfit recommendation actually good?"
-**Effort:** 15-30 minutes (write a rubric prompt)
-**Command:** `bae eval examples.ootd --dataset examples.jsonl --judge`
-
-**What it checks:**
-- All Tier 0 checks
-- LLM judge evaluates output quality against a rubric
-- Rubric can be auto-generated from graph structure or user-provided
-
-**Auto-generated rubric (from node class + field descriptions):**
-```
-Evaluate this RecommendOOTD output:
-- top (a specific garment for the upper body): Is this a specific, real garment? Score 0-1.
-- bottom (a specific garment for the lower body): Is this a specific, real garment? Score 0-1.
-- footwear (specific shoes or boots): Is this specific footwear? Score 0-1.
-- final_response (casual message to the user with the recommendation): Is this message casual and helpful? Score 0-1.
-```
-
-**Key insight:** Bae nodes already have `Field(description=...)` on their fields. These descriptions ARE the rubric. Auto-generating a judge prompt from field descriptions gives quality evaluation with zero rubric-writing effort.
-
-**Best practices from research:**
-- Use yes/no questions, not subjective "quality" assessments
-- Ask for reasoning before scoring (chain-of-thought)
-- Minimum 30-50 examples for meaningful evaluation
-- Use a stronger model as judge than the model being evaluated
-
-**Depends on:** Tier 1 + LLM-as-judge metric function
-**Complexity:** Med-High
-
-### Tier 3: Custom Metric Functions
-
-**Who:** Developer who needs domain-specific evaluation logic.
-**Effort:** As long as the metric takes to write
-**Command:** `bae eval examples.ootd --dataset examples.jsonl --metric my_domain.metrics:outfit_quality`
-
-**What it provides:**
-- Full DSPy metric protocol: `def metric(example, pred, trace=None) -> float | bool`
-- Access to complete trace (not just terminal node)
-- Composable with built-in metrics (structural + custom)
-- Used directly by DSPy optimizers when compiling
-
-**Example:**
-```python
-def outfit_quality(example, pred, trace=None):
-    # Check that outfit is weather-appropriate
-    weather = next(n for n in trace if isinstance(n, AnticipateUsersDay))
-    temp = weather.weather.temp
-
-    # Structural checks
-    has_all_pieces = bool(pred.top and pred.bottom and pred.footwear)
-
-    # Weather appropriateness
-    if temp < 50 and "shorts" in pred.bottom.lower():
-        weather_appropriate = False
-    else:
-        weather_appropriate = True
-
-    score = (has_all_pieces + weather_appropriate) / 2.0
-    return score if trace is None else score > 0.7
-```
-
-**Depends on:** All previous tiers + user Python code
-**Complexity:** Low (framework provides protocol, user writes logic)
-
----
+| **Extending IPython** | IPython's architecture assumes it owns the event loop, the namespace, and the display system. Fighting IPython's assumptions to add channels and modes is harder than building on prompt_toolkit directly. ptpython proves custom REPLs can match IPython's UX without its baggage. | Build on prompt_toolkit + ptpython's patterns. Cherry-pick ideas (magic commands, rich display) without the framework coupling. |
+| **Auto-detecting NL vs Python input** | xonsh's heuristic mode detection creates ambiguity. `print` -- is that a Python function call or a natural language request? `ast.parse()` can determine if input is valid Python, but many NL inputs are also valid Python identifiers. The heuristic will always have false positives. | Explicit mode prefix. Default to Python mode (the common case for a Python REPL). NL requires a prefix character or mode switch. Unambiguous. |
+| **Full TUI / full-screen application** | prompt_toolkit supports full-screen layouts (HSplit/VSplit/Window), but building a full TUI is massive scope. tmux-style panes, scrollable output regions, resizable splits -- each adds complexity. | Scrollback terminal output with labeled lines (like Docker Compose). One input area, one output stream. Simple and sufficient. Full TUI is a v5 feature if needed. |
+| **Persistent AI conversation memory** | Maintaining a full conversation history across REPL sessions requires storage, context window management, summarization. This is a product, not a feature. | AI context is the current REPL session. Namespace is the memory. When the session ends, the conversation ends. Users can save state explicitly (`import pickle; pickle.dump(namespace, f)`). |
+| **Plugin / extension system** | Extensibility architectures (hooks, registries, plugin discovery) are complex to design and maintain. Bae is a framework, not a platform. | Python is the extension system. Users import what they need and add it to the namespace. `exec(open('my_setup.py').read(), namespace)` is the plugin system. |
+| **Web-based REPL** | Jupyter already exists. Building a web frontend for cortex duplicates Jupyter's value while adding WebSocket complexity, frontend code, and browser compatibility issues. | Terminal-only. Users who want web can use Jupyter with bae imported. |
+| **Voice / multimodal input** | Tempting with modern LLM capabilities, but adds audio capture, speech-to-text, latency, and platform-specific dependencies. | Text input only. NL mode handles natural language as text. |
+| **Built-in graph visualization in terminal** | Rendering Mermaid diagrams in a terminal is either low-fidelity (ASCII art) or requires a separate viewer. The existing `bae graph show` opens mermaid.live in a browser. | Keep `bae graph show` for visualization. In the REPL, `graph.to_mermaid()` prints the Mermaid source. Users paste it into mermaid.live or use `bae graph show`. |
 
 ## Feature Dependencies
 
 ```
-Graph Structure (existing)
+prompt_toolkit REPL shell (foundation)
     |
-    +---> to_mermaid() (existing)
+    +---> Async Python execution (top-level await)
     |         |
-    |         +---> Mermaid with eval annotations (Tier 2+)
+    |         +---> Shared mutable namespace
+    |         |         |
+    |         |         +---> Bae objects pre-loaded
+    |         |         |
+    |         |         +---> Graph-aware context (_, _trace)
+    |         |         |
+    |         |         +---> Reflective namespace introspection (/ns)
+    |         |         |
+    |         |         +---> AI agent object in namespace
+    |         |                   |
+    |         |                   +---> AI callable (__call__ for NL)
+    |         |                   |
+    |         |                   +---> AI methods (.fill, .choose_type)
+    |         |                   |
+    |         |                   +---> AI output -> [ai] channel
+    |         |
+    |         +---> Mode dispatcher
+    |                   |
+    |                   +---> Py mode (default): exec() / eval()
+    |                   |
+    |                   +---> NL mode (prefix): dispatch to AI agent
+    |                   |
+    |                   +---> Graph mode (prefix): dispatch to bae CLI
     |
-    +---> Tier 0: Structural Eval
-    |         |
-    |         +---> CLI: bae eval <module>
-    |         |
-    |         +---> Structural assertions from graph topology
-    |
-    +---> node_to_signature() (existing)
+    +---> Channel registry (foundation for I/O)
               |
-              +---> Auto-generated judge rubric from Field(description=...)
+              +---> Channel: [py] -- Python stdout/stderr capture
+              |
+              +---> Channel: [ai] -- AI responses
+              |
+              +---> Channel: [graph] -- Graph execution trace events
+              |
+              +---> Channel: [otel] -- OTel span events
+              |
+              +---> Mute/unmute/solo commands
+              |
+              +---> Render layer (label + color + filter)
 
-Dataset Format (new)
+OTel instrumentation (orthogonal, can be added anytime)
     |
-    +---> JSONL loader
+    +---> Session span (root)
     |
-    +---> Tier 1: Example-Based Eval
-    |         |
-    |         +---> Field-level comparison
+    +---> Command spans (per input)
     |
-    +---> Trace-to-dataset pipeline: bae dataset add
+    +---> GenAI spans (per LM call)
     |
-    +---> Feeds DSPy optimizers directly
+    +---> Node spans (per graph step)
+    |
+    +---> [otel] channel output
 
-Metric Protocol (extend existing)
+Ephemeral spawned interfaces (highest complexity, defer)
     |
-    +---> node_transition_metric (existing, Tier 0)
+    +---> HitL checkpoint pattern (async wait for human input)
     |
-    +---> Field match metric (Tier 1)
+    +---> Terminal spawning (Ghostty AppleScript, fallback to inline)
     |
-    +---> LLM-as-judge metric (Tier 2)
-    |         |
-    |         +---> Rubric from Field descriptions (auto-generated)
-    |         |
-    |         +---> User-provided rubric (manual)
-    |
-    +---> Custom metric function (Tier 3)
-    |
-    +---> All metrics feed DSPy optimizers (BootstrapFewShot, MIPROv2)
-
-Optimization Pipeline (extend existing)
-    |
-    +---> CLI: bae optimize <module>
-    |
-    +---> Compiled artifact conventions (.compiled/ directory)
-    |
-    +---> Eval diff (before/after comparison)
-
-CLI Commands (extend existing)
-    |
-    +---> bae eval <module>           (Tier 0)
-    +---> bae eval <module> --dataset (Tier 1)
-    +---> bae eval <module> --judge   (Tier 2)
-    +---> bae eval <module> --metric  (Tier 3)
-    +---> bae optimize <module>       (optimization)
-    +---> bae dataset add             (dataset curation)
-    +---> bae dataset list            (dataset inspection)
-    +---> bae graph show              (existing, extend with eval overlay)
+    +---> Browser form spawning (future)
 ```
 
-## CLI Command Design
+## Mode Switching: Expected Behavior
 
-Commands bae v3 needs, in order of priority.
+### Prefix-Based Dispatch
 
-### Must Have
+| Input | Mode | What Happens |
+|-------|------|-------------|
+| `x = 42` | Py (default) | Python exec. `x` added to namespace. |
+| `result = await graph.arun(start)` | Py (default) | Async Python exec. Top-level await works. |
+| `> what does this graph do?` | NL | Stripped prefix, sent to `ai("what does this graph do?")`. Response appears on `[ai]` channel. AI can read namespace for context. |
+| `> explain _trace` | NL | AI inspects `_trace` from namespace, explains the last graph execution. |
+| `! run ootd --input '{"msg": "rainy day"}'` | Graph | Dispatched as `bae run ootd ...`. Output on `[graph]` channel. Result lands in `_` and `_trace`. |
+| `/mute otel` | Command | REPL meta-command. Mutes the `[otel]` channel. Not sent to any mode. |
+| `/ns` | Command | REPL meta-command. Shows namespace contents. |
 
-| Command | Purpose | Notes |
-|---------|---------|-------|
-| `bae eval <module>` | Run structural eval (Tier 0) | Zero config. Just checks if graph works. |
-| `bae eval <module> --dataset <path>` | Run example-based eval (Tier 1) | Loads JSONL, compares outputs. |
-| `bae eval <module> --metric <module:fn>` | Run eval with custom metric (Tier 3) | Loads metric function from module path. |
-| `bae eval <module> --judge` | Run LLM-as-judge eval (Tier 2) | Auto-generates rubric from field descriptions. |
-| `bae optimize <module> --dataset <path>` | Run DSPy optimization | Wraps existing CompiledGraph.optimize(). |
-| `bae optimize <module> --output <dir>` | Save compiled artifacts | Saves to specified directory (default: `.compiled/`). |
-| `bae dataset add <module> --input <json>` | Run graph and save trace as dataset example | Interactive: shows output, asks "save as example?" |
+### Mode Persistence vs Per-Line
 
-### Nice to Have
+Two approaches, with a recommendation:
 
-| Command | Purpose | Notes |
-|---------|---------|-------|
-| `bae eval --compare <run1> <run2>` | Diff two eval runs | Shows regressions and improvements. |
-| `bae dataset list <path>` | Show dataset contents | Formatted table of examples. |
-| `bae dataset inspect <path> <index>` | Show single example in detail | Full input/output with formatting. |
-| `bae graph show <module> --eval-results <path>` | Mermaid diagram with eval overlay | Color nodes by pass/fail. |
+**Per-line prefix (recommended):** Each line declares its mode. Default is Py. `>` prefix for NL. `!` prefix for graph. `/` prefix for meta-commands. This is how IPython magics work -- each line is self-contained.
 
-## Compiled Artifact Conventions
+**Sticky mode:** `/mode nl` switches to NL mode. All subsequent input is NL until `/mode py`. This is how Aider works. More convenient for extended NL conversations, but confusing when switching frequently.
 
-How optimized programs should be stored and versioned.
+**Recommendation:** Per-line prefix as primary, with sticky mode as optional (`/mode nl` to stay in NL until `/mode py`). Default is Py mode. This gives unambiguous single-line dispatch with an escape hatch for extended conversations.
 
-### Directory Layout
-```
-my_domain/
-    graph.py              # Graph definition
-    .compiled/
-        latest -> 2026-02-08_miprov2/    # Symlink to best
-        2026-02-08_miprov2/
-            metadata.json                 # Run metadata
-            IsTheUserGettingDressed.json  # Per-node predictor state
-            AnticipateUsersDay.json
-            RecommendOOTD.json
-        2026-02-07_bootstrap/
-            metadata.json
-            ...
-```
+## Channel I/O: Expected Behavior
 
-### Metadata Format
-```json
-{
-    "optimizer": "MIPROv2",
-    "metric": "outfit_quality",
-    "metric_score": 0.87,
-    "dataset_size": 50,
-    "dataset_path": "ootd_examples.jsonl",
-    "dspy_version": "2.6.1",
-    "bae_version": "3.0.0",
-    "timestamp": "2026-02-08T14:30:00Z",
-    "duration_seconds": 120,
-    "node_scores": {
-        "IsTheUserGettingDressed": 0.92,
-        "AnticipateUsersDay": 0.85,
-        "RecommendOOTD": 0.84
-    }
-}
-```
+### Channel Lifecycle
 
-### Conventions
-- `.compiled/` is `.gitignore`-able (binary artifacts don't belong in git)
-- `metadata.json` IS git-trackable (small, human-readable, documents what was compiled)
-- `latest` symlink points to the best-performing compilation
-- DSPy version compatibility: same version for save and load (DSPy <3.0 doesn't guarantee backward compat)
-- Use `save_program=False` (JSON state only, not cloudpickle) for security and readability
+1. Channels are registered at REPL startup: `py`, `ai`, `graph`, `otel`, `sys`
+2. Each channel has: name, color, mute state (bool), asyncio.Queue
+3. Background render task reads from all unmuted channel queues, prints with `[name]` prefix in channel color
+4. `patch_stdout=True` ensures channel output appears above the prompt line
 
-## Mermaid Diagram Enhancements
+### Channel Surfing Commands
 
-What developers need to see in graph visualizations.
+| Command | Effect |
+|---------|--------|
+| `/channels` | List all channels with mute status |
+| `/mute <name>` | Silence a channel (output still queued, just not rendered) |
+| `/unmute <name>` | Restore a channel to rendering |
+| `/solo <name>` | Mute all channels except this one |
+| `/unsolo` | Restore all channels to previous mute state |
 
-### Current (already built)
-- Node names with edges showing topology
-- Terminal nodes styled differently (double circle)
-
-### Eval Overlay (v3 addition)
-```mermaid
-graph TD
-    IsTheUserGettingDressed["IsTheUserGettingDressed<br/>0.92"]:::pass
-    AnticipateUsersDay["AnticipateUsersDay<br/>0.85"]:::pass
-    RecommendOOTD["RecommendOOTD<br/>0.72"]:::warn
-
-    IsTheUserGettingDressed --> AnticipateUsersDay
-    AnticipateUsersDay --> RecommendOOTD
-
-    classDef pass fill:#d4edda,stroke:#28a745
-    classDef fail fill:#f8d7da,stroke:#dc3545
-    classDef warn fill:#fff3cd,stroke:#ffc107
-```
-
-**What to show:**
-- Per-node eval scores (from graph-aware metrics)
-- Color coding: green (>0.8), yellow (0.5-0.8), red (<0.5)
-- Field descriptions on hover (useful in mermaid.live)
-- Edge labels for transition frequency (from dataset)
-
-**What NOT to show:**
-- Full field values (too noisy)
-- Trace-level detail (belongs in CLI output, not diagram)
-
-## Zero-Config Eval: Can You Auto-Generate Meaningful Evals From Graph Structure?
-
-**Short answer:** Yes, for structural correctness. No, for quality.
-
-**What can be auto-generated (HIGH confidence):**
-
-1. **Completion check** -- graph runs to terminal node without exception
-2. **Type correctness** -- each trace node matches graph topology (existing `node_transition_metric`)
-3. **Field population** -- all plain fields on all nodes are non-null, non-empty
-4. **Trace shape** -- trace visits expected node types, length within bounds
-5. **Edge validity** -- each transition is a valid edge in the graph
-
-**What CANNOT be auto-generated:**
-
-1. **Output quality** -- "Is this outfit recommendation good?" requires domain knowledge
-2. **Input diversity** -- meaningful test inputs require understanding the domain
-3. **Edge case coverage** -- knowing what inputs trigger different paths requires human judgment
-4. **Business logic correctness** -- field values being correct (not just present) needs labeled data
-
-**The strategy:** Tier 0 (structural) is fully auto-generated. It's a smoke test that catches crashes, type errors, and stuck loops. It's NOT a quality test. Make this extremely clear in docs and CLI output:
+### Output Format
 
 ```
-$ bae eval examples.ootd --input '...'
-
-STRUCTURAL EVAL (checks correctness, not quality)
-  [PASS] Graph completed
-  [PASS] Types correct
-  [PASS] Fields populated
-
-To evaluate output QUALITY, add a dataset:
-  bae eval examples.ootd --dataset examples.jsonl
+[py]    x = 42
+[ai]    The graph has 3 nodes: IsTheUserGettingDressed -> AnticipateUsersDay -> RecommendOOTD
+[graph] Step 1: IsTheUserGettingDressed (resolved 2 deps)
+[graph] Step 2: AnticipateUsersDay (resolved 1 dep, 1 recall)
+[graph] Step 3: RecommendOOTD (terminal)
+[otel]  span: bae.graph.run duration=3.2s nodes=3
 ```
 
-**Confidence:** HIGH for structural checks. The information needed is already in `Graph.nodes`, `Graph.edges`, `Graph.terminal_nodes`, and the Pydantic model schemas.
+### Channel as Python Object
 
-## LLM-as-Judge Accessibility
+Channels should also be accessible from the namespace:
+```python
+ch = channels["ai"]      # get channel object
+ch.muted = True           # programmatic mute
+ch.write("custom msg")    # write to channel from code
+```
 
-How to make LLM-as-judge evaluation accessible to developers who've never written a rubric.
+## Namespace Introspection: Expected Behavior
 
-### Auto-Generated Rubric From Field Descriptions
+### What /ns Shows
 
-Bae has a unique advantage: `Field(description=...)` on node fields already contains evaluation criteria. A node like:
+```
+py> /ns
+Namespace (12 objects):
+
+  Bae Types:
+    Node          class    Base class for graph nodes
+    Graph         class    Agent graph from type hints
+    Dep           class    Field annotation for dep injection
+    Recall        class    Field annotation for trace recall
+
+  Session:
+    ai            Agent    AI agent (claude-sonnet-4)
+    graph         Graph    3 nodes, 1 terminal
+    result        Result   GraphResult with 3-node trace
+    _             Node     RecommendOOTD (terminal)
+    _trace        list     [IsTheUser..., Anticipate..., Recommend...]
+
+  User:
+    x             int      42
+    my_func       func     my_func(a: int, b: str) -> bool
+```
+
+### What /ns <object> Shows
+
+```
+py> /ns graph
+Graph: 3 nodes, 1 terminal
+
+  Start: IsTheUserGettingDressed
+    Fields: user_message (str, plain), is_dressed (bool, plain)
+    Returns: AnticipateUsersDay
+
+  AnticipateUsersDay
+    Fields: weather (Weather, Dep), dressed_status (str, Recall), ...
+    Returns: RecommendOOTD
+
+  RecommendOOTD (terminal)
+    Fields: top (str, plain), bottom (str, plain), footwear (str, plain)
+    Returns: None
+```
+
+### Implementation
+
+Namespace introspection uses:
+- `type(obj).__name__` for type names
+- `inspect.signature(obj)` for callable signatures
+- bae's `classify_fields(node_cls)` for field annotation info (Dep/Recall/plain)
+- `Graph.nodes`, `Graph.edges`, `Graph.terminal_nodes` for topology
+- Custom `__cortex_repr__` protocol on bae objects for rich display
+
+## AI Agent Object: Expected Behavior
+
+### The `ai` Object
 
 ```python
-class RecommendOOTD(Node):
-    top: str = Field(description="a specific garment for the upper body")
-    bottom: str = Field(description="a specific garment for the lower body")
-    footwear: str = Field(description="specific shoes or boots")
+# Natural language interaction (same as NL mode)
+ai("what does this graph do?")
+# -> Reads namespace, generates response on [ai] channel
+
+# Direct LM protocol access (wraps bae's LM)
+node = await ai.fill(RecommendOOTD, {"weather": "rainy"})
+# -> Calls lm.fill() with the given context
+
+chosen = await ai.choose_type([OptionA, OptionB], context)
+# -> Calls lm.choose_type()
+
+# Configuration
+ai.model                    # "claude-sonnet-4-20250514"
+ai.backend                  # ClaudeCLIBackend instance
+ai.temperature = 0.7        # Adjust generation params
+
+# Introspection
+dir(ai)                     # ['fill', 'choose_type', 'model', 'backend', ...]
 ```
 
-...can auto-generate a judge prompt:
+### AI Context Assembly
+
+When `ai("explain _trace")` is called, the agent needs context. The context assembly protocol:
+
+1. Serialize the current namespace to a summary (not full dump -- too large)
+2. Include specifically referenced variables (`_trace` was mentioned)
+3. Include the REPL command history (last N commands)
+4. Include bae graph topology if a graph is in namespace
+5. Send assembled context + user message to LM
+
+This is NOT a full RAG pipeline. It's a focused context window assembly that leverages the namespace as structured state.
+
+## OTel Instrumentation: Expected Behavior
+
+### Span Hierarchy
 
 ```
-Evaluate each field of this output. For each field, answer YES or NO:
-
-1. top: "oversized cashmere sweater"
-   Criteria: Is this "a specific garment for the upper body"?
-   Answer YES or NO, then explain briefly.
-
-2. bottom: "dark wash jeans"
-   Criteria: Is this "a specific garment for the lower body"?
-   Answer YES or NO, then explain briefly.
-...
+cortex.session                           # root span, entire REPL session
+  cortex.command [input="x = 42"]        # per-input span
+  cortex.command [input="> explain"]     # NL command
+    gen_ai.invoke_agent                  # AI invocation
+      gen_ai.fill [model=claude-sonnet]  # LM call
+  cortex.command [input="! run ootd"]    # graph command
+    bae.graph.run [graph=ootd]           # graph execution
+      bae.node.resolve [node=IsThe...]   # per-node
+      bae.node.resolve [node=Antic...]
+      bae.node.resolve [node=Recom...]
 ```
 
-This gives quality evaluation with ZERO rubric-writing effort. The `description` strings become the criteria.
+### Attributes Following GenAI Semantic Conventions
 
-### Best Practices to Encode
+| Attribute | Value Example | Convention |
+|-----------|---------------|------------|
+| `gen_ai.operation.name` | `invoke_agent`, `fill`, `choose_type` | OTel GenAI semconv |
+| `gen_ai.agent.name` | `cortex.ai` | OTel GenAI semconv |
+| `gen_ai.request.model` | `claude-sonnet-4-20250514` | OTel GenAI semconv |
+| `gen_ai.usage.input_tokens` | `1234` | OTel GenAI semconv |
+| `gen_ai.usage.output_tokens` | `567` | OTel GenAI semconv |
+| `cortex.mode` | `py`, `nl`, `graph` | Custom |
+| `cortex.channel` | `ai`, `py`, `graph` | Custom |
+| `bae.node.type` | `RecommendOOTD` | Custom |
+| `bae.graph.start` | `IsTheUserGettingDressed` | Custom |
 
-From research on LLM-as-judge patterns:
+### Integration Points
 
-1. **Yes/no questions over subjective scales** -- "Is this a specific garment?" not "Rate garment specificity 1-5"
-2. **Ask for reasoning before scoring** -- judge explains, then scores. Improves quality.
-3. **Use a stronger model as judge** -- if graph uses claude-sonnet, judge with claude-opus
-4. **Minimum 30-50 examples** for meaningful aggregate scores
-5. **Field-level scoring, not output-level** -- score each field independently, then aggregate
+OTel spans are emitted via decorators or context managers on:
+- REPL command dispatch (per input)
+- LM backend calls (fill, choose_type) -- bae's existing LM protocol
+- Graph execution loop steps (bae's graph.arun)
+- Dep resolution (bae's resolver)
 
-### Progressive Judge Complexity
+The `[otel]` channel receives human-readable span summaries. A Jaeger exporter sends structured trace data for visualization.
 
-| Level | Effort | What It Does |
-|-------|--------|--------------|
-| `--judge` | 0 minutes | Auto-generates rubric from Field descriptions |
-| `--judge --rubric "Is this weather-appropriate?"` | 1 minute | Adds custom criteria to auto-generated rubric |
-| `--judge --rubric-file rubric.txt` | 5 minutes | Full custom rubric from file |
-| `--metric my_module:custom_judge` | 30+ minutes | Full custom metric with LLM judge calls inside |
+## MVP Recommendation
 
-## The Progressive Path: No Evals to Evals in CI
+Build in this order, where each phase is independently useful:
 
-How a team goes from zero to production evals, mapped to bae's tier system.
+### Phase 1: REPL Shell + Namespace
+**Prioritize:**
+1. prompt_toolkit async REPL with top-level await
+2. Shared namespace with bae objects pre-loaded
+3. Mode dispatcher (Py default, prefix-based NL and graph)
+4. Mode indicator in prompt
+5. History persistence
 
-### Day 1: "Does it even work?"
-```bash
-bae eval my_graph --input '{"query": "hello"}'
-# Tier 0: structural check, 30 seconds
-```
+**Why first:** Everything else builds on having a working REPL with a namespace. This is the foundation.
 
-### Week 1: "Let me save some good outputs"
-```bash
-bae run my_graph --input '{"query": "hello"}'
-# Like the output? Save it:
-bae dataset add my_graph --input '{"query": "hello"}'
-# Repeat 5-10 times with different inputs
-```
+### Phase 2: Channel I/O
+**Prioritize:**
+1. Channel registry and labeled output
+2. Python stdout/stderr capture to `[py]` channel
+3. Mute/unmute/solo commands
+4. Render layer with color-coded prefixes
 
-### Week 2: "Regression testing"
-```bash
-bae eval my_graph --dataset my_examples.jsonl
-# Tier 1: example-based, catches regressions
-```
+**Why second:** Without channels, all output is interleaved and noisy. Channels are the I/O primitive that every subsequent feature writes to.
 
-### Week 3: "Quality measurement"
-```bash
-bae eval my_graph --dataset my_examples.jsonl --judge
-# Tier 2: LLM-as-judge with auto-generated rubric
-```
+### Phase 3: AI Agent Object
+**Prioritize:**
+1. `ai` object in namespace with `__call__` for NL
+2. `ai.fill()` and `ai.choose_type()` wrapping bae's LM
+3. AI output routed to `[ai]` channel
+4. Context assembly from namespace
 
-### Week 4: "Optimization"
-```bash
-bae optimize my_graph --dataset my_examples.jsonl --metric my_metrics:quality
-bae eval my_graph --dataset my_examples.jsonl --compare .compiled/baseline .compiled/latest
-# Tier 3: custom metrics feeding DSPy optimizers
-```
+**Why third:** The AI agent depends on both the namespace (phase 1) and channels (phase 2). Building it third means it can leverage both.
 
-### Month 2: "CI/CD"
-```yaml
-# .github/workflows/eval.yml
-- run: bae eval my_graph --dataset examples.jsonl --judge --fail-under 0.8
-```
+### Phase 4: Namespace Introspection
+**Prioritize:**
+1. `/ns` command showing namespace contents
+2. `/ns <object>` showing object details
+3. Bae-aware display (Graph topology, Node fields, GraphResult trace)
+
+**Why fourth:** Nice-to-have polish. The REPL is fully functional without it, but introspection makes it discoverable and learnable.
+
+### Phase 5: OTel Instrumentation
+**Prioritize:**
+1. Span decorators on REPL command dispatch
+2. Span decorators on LM calls (existing bae backends)
+3. `[otel]` channel for human-readable span output
+4. Optional Jaeger exporter
+
+**Why fifth:** Observability is valuable but not load-bearing. It can be added without changing any existing code (decorators/context managers).
+
+**Defer:**
+- Ephemeral spawned interfaces (HitL) -- too complex for initial build, Ghostty API still evolving
+- Sticky mode switching -- per-line prefix is sufficient for v4.0
+- Full TUI layout -- scrollback terminal output is sufficient
 
 ## Key Insights From Research
 
-### 1. The Universal Eval Pattern Is Dataset + Task + Metric
+### 1. prompt_toolkit is the Right Foundation
 
-Every framework converges on the same three primitives: (1) labeled data, (2) the thing being evaluated, (3) a scoring function. DSPy calls them Example/Program/Metric. Braintrust calls them Dataset/Task/Scorer. Inspect calls them Dataset/Solver/Scorer. Bae should not invent new terminology -- use the standard primitives.
+prompt_toolkit + ptpython patterns give you async REPL, syntax highlighting, multiline editing, tab completion, dynamic prompts, and bottom toolbars for free. Building on IPython would mean fighting its event loop ownership and display system. Building from stdlib `code.InteractiveConsole` would mean reimplementing everything prompt_toolkit gives for free.
 
-### 2. The DX Gap Is "What Metric Do I Write?"
+### 2. Explicit Mode Switching Beats Heuristic Detection
 
-The number one barrier to eval adoption is metric definition. Developers stare at `def metric(example, pred) -> float` and don't know what to put inside. DSPy's docs acknowledge this: "getting this right on the first try is unlikely." Bae's auto-generated structural and judge metrics remove this barrier entirely for the first two tiers.
+xonsh proves that implicit mode detection creates ambiguity. IPython's `%` prefix and Aider's `/` slash commands prove that explicit prefix characters are intuitive and unambiguous. For cortex, Python should be the default mode (it's a Python REPL), with NL and graph as explicitly prefixed alternatives.
 
-### 3. Graph Structure Is an Eval Advantage
+### 3. Channels are Labels on asyncio.Queues
 
-No other framework has typed graph topology to introspect. Promptfoo evaluates prompts. DSPy evaluates programs. Braintrust evaluates tasks. None of them can say "the graph should visit nodes A, B, C in order and the transition from B to C should produce field X with property Y." Bae's graph structure is rich metadata for evaluation that no competitor can match.
+The channel abstraction is simpler than it sounds. It's a dict of `{name: asyncio.Queue}` with a render loop that reads from unmuted queues and prints with colored prefixes. No pub/sub framework, no message broker. Just labeled queues with a filter.
 
-### 4. Traces Are Organic Datasets
+### 4. AI-as-Object is the Real Innovation
 
-DSPy needs only 20-200 examples. Bae traces already contain input/output pairs for every node transition. Running the graph 20 times with different inputs generates a training set. The `trace_to_examples()` function already exists. The DX gap is making this discoverable and ergonomic.
+Every existing AI coding tool treats the AI as "the system" -- it controls the loop, you give it instructions. Cortex inverts this: the AI is an object in YOUR namespace. You call it like a function. You compose it with Python code. You pass it bae types and get bae types back. This is the difference between "AI-first tool" and "Python-first tool with AI."
 
-### 5. DSPy Optimization Needs Good Metrics to Be Useful
+### 5. OTel GenAI Conventions Are Young but Directionally Correct
 
-BootstrapFewShot and MIPROv2 are only as good as the metric they optimize against. The current `node_transition_metric` (type checking) means optimization can only improve type prediction accuracy -- it can't improve output quality. Quality metrics are the prerequisite for useful optimization.
+The semantic conventions for GenAI agent spans are in Development status. They may change. But the span hierarchy pattern (agent -> tool -> LM call) and key attributes (model, tokens, operation name) are stable enough to build against. Using them now means cortex's telemetry is compatible with Datadog, Jaeger, and other OTel consumers.
 
-### 6. Compiled Artifacts Need Conventions, Not Infrastructure
+### 6. Ghostty's Programmatic API is Not Ready for HitL
 
-DSPy's save/load is simple (JSON files). What's missing is conventions: where to save, how to name, how to track which compilation is "current." This is a docs + conventions problem, not a code problem.
-
-## Confidence Assessment
-
-| Claim | Confidence | Reasoning |
-|-------|------------|-----------|
-| Universal eval pattern is dataset + task + metric | HIGH | Verified across 6 frameworks -- all converge on this. |
-| Zero-config structural eval is feasible from graph topology | HIGH | Graph.nodes, edges, terminal_nodes already contain needed info. |
-| Auto-generated judge rubric from Field descriptions is novel | HIGH | No framework does this. Bae's Field(description=...) is unique metadata source. |
-| Progressive complexity tiers (0-3) will work in practice | MEDIUM | Pattern is sound but untested. Each tier needs validation. |
-| 20-200 examples is sufficient for DSPy optimization | HIGH | Stated explicitly in DSPy official docs. |
-| Trace-to-dataset pipeline is the right organic growth model | MEDIUM | Braintrust validates the pattern. Bae's traces are structurally suitable. |
-| Mermaid eval overlay is useful for debugging | MEDIUM | LangGraph visualization is popular. Eval overlay is speculative but logical. |
-| Compiled artifact conventions are sufficient (no versioning system needed) | HIGH | DSPy community uses simple file naming. W&B integration exists for teams who want more. |
+Ghostty supports splits, tabs, and AppleScript on macOS, but the full programmatic scripting API is still under discussion (GitHub discussion #2353). Building HitL around Ghostty-specific APIs would be fragile. Start with inline prompts in the REPL (works everywhere), and add terminal spawning as a progressive enhancement.
 
 ## Sources
 
 **Official Documentation (HIGH confidence):**
-- [DSPy Metrics](https://dspy.ai/learn/evaluation/metrics/) -- Metric function protocol, examples
-- [DSPy Evaluation Overview](https://dspy.ai/learn/evaluation/overview/) -- Dataset requirements, workflow
-- [DSPy Optimizers](https://dspy.ai/learn/optimization/optimizers/) -- BootstrapFewShot, MIPROv2, parameters
-- [DSPy Saving and Loading](https://dspy.ai/tutorials/saving/) -- Artifact storage, versioning caveats
-- [DSPy Cheatsheet](https://dspy.ai/cheatsheet/) -- Quick reference for all patterns
+- [prompt_toolkit docs](https://python-prompt-toolkit.readthedocs.io/) -- REPL building, full-screen apps, async support
+- [ptpython async embed example](https://github.com/prompt-toolkit/ptpython/blob/main/examples/asyncio-python-embed.py) -- Async REPL with custom namespace
+- [Python `inspect` module](https://docs.python.org/3/library/inspect.html) -- Runtime introspection
+- [Python `code` module](https://docs.python.org/3/library/code.html) -- InteractiveConsole namespace management
+- [Python `ast` module](https://docs.python.org/3/library/ast.html) -- Code vs non-code detection
+- [asyncio.Queue](https://docs.python.org/3/library/asyncio-queue.html) -- Channel primitive
+- [asyncio.TaskGroup](https://docs.python.org/3/library/asyncio-task.html) -- Structured concurrency (Python 3.11+)
+- [OTel GenAI agent spans](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-agent-spans/) -- Semantic conventions for agent tracing
+- [OTel GenAI spans](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/) -- Semantic conventions for LM calls
+- [OTel AI Agent Observability blog](https://opentelemetry.io/blog/2025/ai-agent-observability/) -- Evolving standards
 
-**Framework Documentation (MEDIUM confidence):**
-- [Promptfoo CLI](https://www.promptfoo.dev/docs/usage/command-line/) -- CLI command patterns
-- [Promptfoo Intro](https://www.promptfoo.dev/docs/intro/) -- Declarative eval config
-- [DeepEval Getting Started](https://deepeval.com/docs/getting-started) -- Pytest-based eval pattern
-- [DeepEval CI/CD](https://deepeval.com/docs/evaluation-unit-testing-in-ci-cd) -- Eval in CI
-- [Braintrust How to Eval](https://www.braintrust.dev/articles/how-to-eval) -- Dataset/Task/Scorer pattern
-- [Braintrust CI/CD Tools](https://www.braintrust.dev/articles/best-ai-evals-tools-cicd-2025) -- CI integration patterns
-- [Inspect AI](https://inspect.aisi.org.uk/) -- Dataset/Solver/Scorer primitives
+**Framework References (MEDIUM confidence):**
+- [xonsh shell](https://xon.sh/) -- Multi-mode shell (Python + subprocess)
+- [Aider](https://aider.chat/docs/) -- Chat mode switching pattern
+- [Open Interpreter](https://github.com/openinterpreter/open-interpreter) -- AI-as-REPL pattern
+- [Rich library live display](https://rich.readthedocs.io/en/latest/live.html) -- Async terminal updates
+- [Docker container logs](https://docs.docker.com/reference/cli/docker/container/logs/) -- Multiplexed stream protocol
+- [Docker SDK multiplex docs](https://docker-py.readthedocs.io/en/stable/user_guides/multiplex.html) -- Labeled output streams
+- [IPython rich display](https://ipython.readthedocs.io/en/stable/config/integrating.html) -- Custom object representation
+- [Ghostty scripting discussion](https://github.com/ghostty-org/ghostty/discussions/2353) -- API status
 
-**LLM-as-Judge Research (MEDIUM confidence):**
-- [Monte Carlo Data: LLM-as-Judge Best Practices](https://www.montecarlodata.com/blog-llm-as-judge/) -- 7 best practices
-- [Evidently AI: LLM-as-Judge Guide](https://www.evidentlyai.com/llm-guide/llm-as-a-judge) -- Patterns and anti-patterns
-- [Confident AI: LLM-as-Judge Explained](https://www.confident-ai.com/blog/why-llm-as-a-judge-is-the-best-llm-evaluation-method) -- When to use, validation sets
-
-**Ecosystem Surveys (LOW confidence, used for landscape awareness):**
-- [AI Multiply: LLM Eval Landscape 2026](https://research.aimultiple.com/llm-eval-tools/) -- Framework comparison
-- [Confident AI: Top LLM Eval Tools 2025](https://www.confident-ai.com/blog/greatest-llm-evaluation-tools-in-2025) -- Market overview
+**Architecture References (MEDIUM confidence):**
+- [Claude Code vs Cursor comparison](https://www.qodo.ai/blog/claude-code-vs-cursor/) -- AI agent REPL architectures
+- [Unbundled coding AI stack](https://arnav.tech/beyond-copilot-cursor-and-claude-code-the-unbundled-coding-ai-tools-stack) -- AI tool architecture patterns
+- [PEP 762 - REPL-acing the default REPL](https://peps.python.org/pep-0762/) -- Python 3.13+ REPL improvements
 
 ---
 
-*Research conducted: 2026-02-08*
-*Supersedes: 2026-02-07 FEATURES.md (which covered v2 Context Frames)*
-*Focus: Eval/optimization DX for bae v3 milestone*
+*Research conducted: 2026-02-13*
+*Focus: Feature landscape for cortex REPL — bae v4.0 milestone*

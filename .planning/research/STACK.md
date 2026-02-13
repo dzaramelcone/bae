@@ -1,375 +1,368 @@
-# Technology Stack: v3.0 Eval/Optimization DX
+# Technology Stack: v4.0 Cortex REPL
 
 **Project:** Bae - Type-driven agent graphs with DSPy optimization
-**Researched:** 2026-02-08
-**Focus:** Stack additions for eval/optimization developer workflow, CLI tooling, LLM-as-judge, and package scaffolding
-**Overall confidence:** HIGH for DSPy integration, MEDIUM for alternative eval frameworks
+**Researched:** 2026-02-13
+**Focus:** Stack additions for the cortex augmented async Python REPL -- prompt_toolkit REPL shell, OTel spans for context, channel-based I/O, reflective namespace introspection
+**Overall confidence:** HIGH for prompt_toolkit and OTel; HIGH for stdlib channels (no external lib needed); HIGH for introspection (Python 3.14 stdlib)
 
 ---
 
 ## Executive Summary
 
-Bae v3.0's eval/optimization DX needs **3 new dependencies** and leverages **1 existing dependency more deeply** (DSPy). The core insight: DSPy already has everything needed for evals and optimization -- `dspy.Evaluate`, `EvaluationResult`, and three optimizer tiers (BootstrapFewShot, MIPROv2, SIMBA). Bae's job is not to build eval infrastructure but to **wrap DSPy's eval primitives in a zero-friction CLI** that converts bae graph concepts to DSPy concepts transparently.
+Cortex needs **2 new runtime dependencies** (prompt_toolkit, opentelemetry-sdk) and **1 new dev dependency** (pygments). Everything else is Python 3.14 stdlib or already a transitive dependency of pydantic-ai.
 
-For LLM-as-judge, DSPy's own pattern (use `dspy.Predict(Assess)` inside a metric function) is the right approach -- it integrates natively with optimization. External eval frameworks (DeepEval, RAGAS, Braintrust) are overkill for bae's use case and would add dependency bloat.
+The key architectural insight: **do not add a channel library**. Python 3.14's `asyncio.Queue` gained `.shutdown()` in 3.13, which is the one feature aiochannel had over bare queues. Labeled channels are a thin wrapper (dict of str to Queue) -- 20 lines, not a dependency. Similarly, **do not add typing-inspect or typing-inspection** -- Python 3.14's `annotationlib` module (PEP 649/749) plus the existing `inspect.get_annotations()` and `typing.get_type_hints()` provide everything the reflective namespace needs.
 
-New dependencies: `rich` (eval output formatting), `copier` (project scaffolding, dev-only), and no new eval framework -- DSPy covers it.
+`opentelemetry-api` is already a transitive dependency via `pydantic-ai-slim>=1.28.0`. We need `opentelemetry-sdk` explicitly for `TracerProvider`, `SimpleSpanProcessor`, and `InMemorySpanExporter` -- the machinery that creates, processes, and stores spans. The API alone only provides the interface stubs.
+
+prompt_toolkit 3.0.52 is native asyncio (since 3.0). `PromptSession.prompt_async()` integrates directly into the existing event loop. `patch_stdout()` prevents concurrent output (graph execution, AI responses) from corrupting the prompt. `Application.create_background_task()` manages coroutines tied to the application lifecycle. This is the foundation for the three-mode REPL (NL/Py/Graph).
 
 ---
 
 ## Recommended Stack Changes
 
-### Add
+### Add (runtime)
+
+| Package | Version | Purpose | Why This, Why Now |
+|---------|---------|---------|-------------------|
+| `prompt_toolkit` | >=3.0.50 | Async REPL shell with custom key bindings, lexer, completer | Native asyncio since 3.0. `PromptSession.prompt_async()` runs inside the existing event loop without blocking. `patch_stdout()` handles concurrent output from graph execution. Custom `Lexer` + `KeyBindings` enable mode switching (NL/Py/Graph). Only dep is `wcwidth`. Decision was made NOT to use IPython -- prompt_toolkit is what IPython itself is built on, minus the 50MB of unneeded weight. |
+| `opentelemetry-sdk` | >=1.39 | Span creation, processing, in-memory storage | `opentelemetry-api` is already a transitive dep of `pydantic-ai-slim`. But the API is just interfaces -- `TracerProvider`, `SimpleSpanProcessor`, `InMemorySpanExporter` live in the SDK. Cortex needs spans as **first-class context objects** (not just telemetry export), so we need programmatic access to span data via `InMemorySpanExporter.get_finished_spans()`. Transitive deps: `opentelemetry-api`, `opentelemetry-semantic-conventions`, `typing-extensions` -- all already present. |
+
+### Add (dev only)
 
 | Package | Version | Purpose | Why |
 |---------|---------|---------|-----|
-| `rich` | >=14.0 | Eval result tables, progress bars, trace visualization in CLI | Already a transitive dep of typer. Making it explicit enables direct use for eval output formatting (tables, color-coded scores, progress). |
+| `pygments` | >=2.19 | Python syntax highlighting in REPL | prompt_toolkit's `PygmentsLexer` wraps any Pygments lexer. We need `PythonLexer` for Py mode syntax highlighting. Already a transitive dep of `rich` (which is transitive via `typer`), but making it explicit in dev deps ensures the import works. Zero additional download. |
 
-### Add (dev/optional only)
+### Keep (leverage differently for v4)
 
-| Package | Version | Purpose | Why |
-|---------|---------|---------|-----|
-| `copier` | >=9.0 | Project scaffolding via `bae new` command | For `bae new my_domain` -> generates `my_domain/graph.py` + `graph.md`. Install via `uv tool install copier` or `pipx`, not as project dep. Template lives in bae repo. |
-
-### Keep (leverage more deeply)
-
-| Package | Current Version | New v3 Role |
-|---------|----------------|-------------|
-| `dspy` | 3.1.2 (latest: 3.1.3) | `dspy.Evaluate` for eval runs, MIPROv2/SIMBA for optimization, LLM-as-judge via `dspy.Predict(Assess)` inside metric functions |
-| `typer` | >=0.12 (latest: 0.21.1) | New CLI commands: `bae eval`, `bae optimize`, `bae inspect` |
-| `pydantic` | 2.12.5 | Eval dataset schemas, metric result models |
+| Package | Current | v4 Role |
+|---------|---------|---------|
+| `pydantic>=2.0` | 2.12.5 | Namespace objects as Pydantic models; `model_dump()` for span attributes; `model_json_schema()` for AI context |
+| `pydantic-ai>=0.1` | 1.54.0 | AI agent object in namespace; `Agent.instrument_all()` auto-instruments LLM calls with OTel spans that cortex can capture |
+| `typer>=0.12` | 0.21.1 | `bae cortex` CLI entry point launches the REPL |
+| `asyncio` (stdlib) | 3.14 | `asyncio.Queue` with `.shutdown()` for channels; `asyncio.create_task()` for background graph execution; `contextvars` for span propagation across tasks |
 
 ### Do NOT Add
 
 | Temptation | Why Not | What Instead |
 |------------|---------|--------------|
-| **DeepEval** | 50+ metrics is massive scope creep; bae needs 3-5 metric patterns, not 50. DeepEval's Confident AI cloud platform is vendor lock-in. | DSPy metric functions (plain Python). |
-| **RAGAS** | RAG-specific (context_relevancy, faithfulness). Bae is agent graphs, not RAG pipelines. Wrong abstraction. | Custom metrics via DSPy. |
-| **Braintrust / autoevals** | Cloud platform dependency. `autoevals` library is useful standalone but adds 130+ KB for features DSPy already provides natively. | DSPy LLM-as-judge pattern with `dspy.Predict`. |
-| **Promptfoo** | Node.js-based, YAML config paradigm. Bae is Python-native with type hints. Impedance mismatch. | DSPy eval + bae CLI. |
-| **Inspect AI** | Excellent framework but designed for benchmark evals (safety, capability). Bae needs dev-loop evals (quality iteration). Different use case. | DSPy eval for iteration, possibly Inspect for benchmarking later. |
-| **judges** (quotient-ai) | Small, focused library but depends on `instructor`. Redundant with DSPy's built-in `dspy.Predict(Assess)` pattern for LLM-as-judge. | DSPy metric with Assess signature. |
-| **mermaid-py** | Uses external mermaid.ink service for rendering. Bae already generates raw Mermaid text via `Graph.to_mermaid()`. No rendering library needed. | String concatenation in `Graph.to_mermaid()` (already works). |
-| **pymermaider** | Generates class diagrams from code. Bae needs graph (flowchart) diagrams from type hints, which it already does. | Existing `Graph.to_mermaid()`. |
-| **cookiecutter** | No template update support. Copier supports updating projects when template evolves. | Copier for scaffolding. |
+| **IPython / ipykernel** | 50MB+ install. Custom kernel protocol is complex. We need a thin REPL with mode switching, not a notebook kernel. IPython's own REPL is built on prompt_toolkit -- we go one layer deeper for control. | prompt_toolkit `PromptSession` with custom lexer, completer, key bindings. |
+| **aiochannel** | Only advantage over `asyncio.Queue` was closable channels. Python 3.13+ added `Queue.shutdown()` which does exactly this. `QueueShutDown` exception on get/put after shutdown. aiochannel is 69 commits, 41 stars -- not worth the dep for something stdlib now covers. | `asyncio.Queue` with `.shutdown()`. Labeled channels = `dict[str, asyncio.Queue]`. |
+| **trio / anyio** | Bae is asyncio-native throughout (resolver uses `asyncio.gather`, graph uses `asyncio.create_subprocess_exec`). Adding an async compatibility layer adds complexity for zero gain. | Pure asyncio. |
+| **typing-inspect / typing-inspection** | Python 3.14's `annotationlib` module (PEP 649/749) provides `get_annotations()` with `Format.VALUE`, `Format.FORWARDREF`, `Format.STRING`. Bae already uses `typing.get_type_hints()` everywhere. No gap to fill. | `annotationlib.get_annotations()` + `typing.get_type_hints()` + `inspect` module. |
+| **rich** (for REPL output) | prompt_toolkit has its own rendering pipeline (`FormattedText`, `print_formatted_text`, ANSI support). Mixing Rich's console with prompt_toolkit's terminal management causes cursor conflicts. Rich is fine for CLI commands (`bae eval`) but not inside the interactive REPL. | prompt_toolkit's `print_formatted_text()` with ANSI or HTML formatting. |
+| **logfire** | Pydantic's OTel backend. Adds cloud dependency. Cortex needs local in-process span capture, not external telemetry export. | `opentelemetry-sdk` with `InMemorySpanExporter` for local span access. Optional OTLP export for users who want it. |
+| **opentelemetry-instrumentation-asyncio** | Auto-instruments asyncio primitives. Overkill -- cortex needs explicit, domain-meaningful spans ("graph_run", "node_fill", "nl_query"), not automatic instrumentation of every `gather()` and `create_task()`. | Manual `tracer.start_as_current_span()` at domain boundaries. |
 
 ---
 
-## Deep Dive: DSPy Eval/Optimization (Current State)
+## Deep Dive: prompt_toolkit for Async REPL
 
-### DSPy Version: 3.1.3 (Feb 5, 2026)
+### Version: 3.0.52 (Aug 27, 2025)
 
-**Confidence: HIGH** -- verified against [PyPI](https://pypi.org/project/dspy/) and [official docs](https://dspy.ai/)
+**Confidence: HIGH** -- verified on [PyPI](https://pypi.org/project/prompt-toolkit/), [official docs](https://python-prompt-toolkit.readthedocs.io/en/stable/), and [GitHub](https://github.com/prompt-toolkit/python-prompt-toolkit)
 
-### dspy.Evaluate API
+**Requires-Python:** >=3.8 (verified via pip metadata)
+**Dependencies:** `wcwidth` only
 
-The core eval primitive. Bae should wrap this, not replace it.
+### Core Integration: PromptSession + asyncio
+
+prompt_toolkit 3.0 uses asyncio natively. The key pattern for cortex:
 
 ```python
-from dspy.evaluate import Evaluate
+from prompt_toolkit import PromptSession
+from prompt_toolkit.patch_stdout import patch_stdout
 
-evaluator = Evaluate(
-    devset=devset,               # list[dspy.Example]
-    metric=your_metric,          # Callable(example, pred, trace=None) -> float|bool
-    num_threads=4,               # Parallel eval
-    display_progress=True,       # Progress bar
-    display_table=5,             # Show N rows of results
-    max_errors=5,                # Fail after N errors
-    save_as_json="results.json", # Persist results
-)
+async def cortex_loop():
+    session = PromptSession("cortex> ")
 
-result = evaluator(your_program)
-# result.score -> float (e.g., 67.3)
-# result.results -> list[(example, prediction, score)]
+    with patch_stdout():
+        while True:
+            try:
+                text = await session.prompt_async()
+                # dispatch to NL / Py / Graph mode handler
+            except KeyboardInterrupt:
+                continue
+            except EOFError:
+                break
 ```
 
-**Key insight:** `Evaluate.__call__` returns an `EvaluationResult` with `.score` (float percentage) and `.results` (list of (example, prediction, score) tuples). This is everything bae needs to display eval results in a rich CLI table.
+**Critical detail:** `prompt_async()` yields control to the event loop while waiting for input. Background tasks (graph execution, AI inference) continue running. `patch_stdout()` ensures their output appears above the prompt line without corruption.
 
-### DSPy Metric Patterns
+### Key APIs for Cortex
 
-Metrics are plain Python functions. Three patterns relevant to bae:
+| API | Purpose in Cortex | Import Path |
+|-----|-------------------|-------------|
+| `PromptSession` | Persistent REPL session with history | `prompt_toolkit.PromptSession` |
+| `prompt_async()` | Non-blocking input in asyncio loop | method on `PromptSession` |
+| `patch_stdout()` | Concurrent output management | `prompt_toolkit.patch_stdout` |
+| `KeyBindings` | Mode switching (Ctrl+N for NL, Ctrl+P for Py, etc.) | `prompt_toolkit.key_binding.KeyBindings` |
+| `PygmentsLexer` | Python syntax highlighting in Py mode | `prompt_toolkit.lexers.PygmentsLexer` |
+| `Completer` (ABC) | Custom completion per mode | `prompt_toolkit.completion.Completer` |
+| `InMemoryHistory` / `FileHistory` | Session persistence | `prompt_toolkit.history` |
+| `Application.create_background_task()` | Managed background coroutines | method on the underlying `Application` |
+| `print_formatted_text()` | Styled output without Rich conflict | `prompt_toolkit.formatted_text` |
 
-#### Pattern 1: Type-Check Metric (what bae has now)
+### Mode-Switching Architecture
+
+prompt_toolkit supports conditional key bindings via `Filter`:
 
 ```python
-def node_transition_metric(example, pred, trace=None):
-    match = expected_type == predicted_type
-    return match if trace is not None else (1.0 if match else 0.0)
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.filters import Condition
+
+mode = "nl"  # or "py" or "graph"
+
+bindings = KeyBindings()
+
+@Condition
+def is_nl_mode():
+    return mode == "nl"
+
+@bindings.add("c-p", filter=is_nl_mode)
+def switch_to_py(event):
+    nonlocal mode
+    mode = "py"
+    # swap lexer, completer, prompt string
 ```
 
-#### Pattern 2: Field Comparison Metric (zero-config quality)
+The lexer, completer, and prompt string can all be dynamic callables on `PromptSession`, evaluated fresh each prompt cycle.
+
+### Background Task Lifecycle
 
 ```python
-def field_quality_metric(example, pred, trace=None):
-    """Compare expected vs actual field values."""
-    score = 0.0
-    total = 0
-    for field in expected_fields:
-        if getattr(pred, field, None) == getattr(example, field, None):
-            score += 1.0
-        total += 1
-    return score / total if total else 0.0
+# prompt_toolkit manages background tasks tied to the application
+app = session.app
+task = app.create_background_task(run_graph(graph, start_node, lm))
+# Task is cancelled when the application exits
 ```
 
-#### Pattern 3: LLM-as-Judge Metric (the key new capability)
+This integrates with cortex's channel-based I/O: graph execution writes to output channels, the REPL loop reads from them.
+
+---
+
+## Deep Dive: OpenTelemetry SDK for Spans
+
+### Version: 1.39.1 (API and SDK aligned)
+
+**Confidence: HIGH** -- verified via [pip metadata](https://pypi.org/project/opentelemetry-sdk/), [official instrumentation docs](https://opentelemetry.io/docs/languages/python/instrumentation/), and [SDK source](https://github.com/open-telemetry/opentelemetry-python)
+
+**Requires-Python:** >=3.9
+**Dependencies:** `opentelemetry-api`, `opentelemetry-semantic-conventions`, `typing-extensions` -- all already transitive deps of pydantic-ai
+
+### Why Spans as Context Objects
+
+Cortex uses OTel spans not primarily for telemetry export but as **structured context objects**. Each REPL interaction, graph run, node execution, and AI call gets a span. These spans form a tree that the reflective namespace can query:
 
 ```python
-class Assess(dspy.Signature):
-    """Assess the quality of an answer on a given dimension."""
-    assessed_text: str = dspy.InputField()
-    assessment_question: str = dspy.InputField()
-    assessment_answer: bool = dspy.OutputField()
-
-def quality_metric(example, pred, trace=None):
-    assessor = dspy.Predict(Assess)
-    result = assessor(
-        assessed_text=pred.output,
-        assessment_question="Is this response helpful and accurate?"
-    )
-    return result.assessment_answer
+# In the cortex namespace, spans are accessible as context
+ctx.spans          # all spans from current session
+ctx.last_run       # spans from last graph execution
+ctx.last_run.nodes # child spans for each node
 ```
 
-**Critical:** When a metric itself uses `dspy.Predict`, it participates in DSPy's trace during optimization. This means MIPROv2/SIMBA can optimize the judge prompt too -- a capability no external eval framework provides.
-
-### DSPy Optimizer Tiers
-
-Bae should expose these as progressive optimization levels:
-
-| Tier | Optimizer | What It Optimizes | Compute Cost | When to Use |
-|------|-----------|-------------------|--------------|-------------|
-| 1 | `BootstrapFewShot` | Few-shot examples only | Low (1 pass) | First try, <50 examples |
-| 2 | `MIPROv2(auto="light")` | Instructions + examples | Medium (Bayesian search) | Have 50+ examples, want better prompts |
-| 3 | `MIPROv2(auto="medium")` | Instructions + examples | High (more trials) | Production prep |
-| 4 | `MIPROv2(auto="heavy")` | Instructions + examples | Very high | Maximum quality |
-| 5 | `SIMBA` | Self-reflective rules + demos | High (introspective) | Large LLMs, hard tasks |
-
-**Bae already uses tier 1** (BootstrapFewShot in `optimizer.py`). v3 adds tiers 2-5 as CLI options.
-
-### MIPROv2 API (for bae integration)
+### Setup Pattern for Cortex
 
 ```python
-optimizer = dspy.MIPROv2(
-    metric=metric_fn,
-    auto="light",                    # "light" | "medium" | "heavy"
-    max_bootstrapped_demos=4,        # Generated examples
-    max_labeled_demos=4,             # From dataset
-    num_threads=4,                   # Parallel
-    verbose=True,                    # Progress output
-    log_dir="./optimization_logs",   # Save logs
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import (
+    SimpleSpanProcessor,
+    InMemorySpanExporter,
 )
 
-optimized = optimizer.compile(
-    student=dspy_program,
-    trainset=trainset,
-    minibatch=True,                  # Faster for large datasets
-    minibatch_size=35,
-)
+# In-memory exporter for programmatic access
+memory_exporter = InMemorySpanExporter()
+
+provider = TracerProvider()
+provider.add_span_processor(SimpleSpanProcessor(memory_exporter))
+trace.set_tracer_provider(provider)
+
+tracer = trace.get_tracer("bae.cortex")
 ```
 
-### SIMBA API (newer, experimental)
+**SimpleSpanProcessor** (not Batch) because cortex needs immediate access to finished spans. BatchSpanProcessor buffers with a 5-second default delay -- useless for interactive REPL feedback.
+
+### Span Creation at Domain Boundaries
 
 ```python
-optimizer = dspy.SIMBA(
-    metric=metric_fn,
-    max_steps=8,                     # Optimization iterations
-    max_demos=4,                     # Max demos per predictor
-    bsize=32,                        # Mini-batch size
-    num_candidates=6,                # Candidates per iteration
-)
+# Graph execution span
+with tracer.start_as_current_span("graph_run") as span:
+    span.set_attribute("graph.start_node", start_node.__class__.__name__)
+    result = await graph.arun(start_node, lm=lm)
 
-optimized = optimizer.compile(
-    student=dspy_program,
-    trainset=trainset,
-)
-# optimized.candidate_programs -> list of candidates
-# optimized.trial_logs -> optimization history
+# Node execution span (inside graph.arun)
+with tracer.start_as_current_span("node_execute") as span:
+    span.set_attribute("node.type", node_cls.__name__)
+    span.set_attribute("node.routing", strategy[0])
+
+# AI query span (NL mode)
+with tracer.start_as_current_span("nl_query") as span:
+    span.set_attribute("query.text", user_input)
+    response = await agent.run(user_input)
+```
+
+### Async Context Propagation
+
+OTel uses `contextvars` under the hood. In Python 3.14:
+- `await` preserves contextvars (span context follows coroutine chains)
+- `asyncio.create_task()` copies contextvars (child tasks inherit parent span)
+
+This means spans nest correctly across `asyncio.gather()` calls in the resolver. No manual context threading needed.
+
+### InMemorySpanExporter API
+
+```python
+# Get all finished spans as immutable tuple
+spans = memory_exporter.get_finished_spans()
+
+# Each span is a ReadableSpan with:
+# .name           -> str ("graph_run", "node_execute", etc.)
+# .context        -> SpanContext (trace_id, span_id)
+# .parent         -> SpanContext | None (for nesting)
+# .attributes     -> dict (custom key-value pairs)
+# .events         -> list (timestamped log entries)
+# .status         -> Status (OK, ERROR, UNSET)
+# .start_time     -> int (nanosecond timestamp)
+# .end_time       -> int (nanosecond timestamp)
+
+# Clear between sessions
+memory_exporter.clear()
+```
+
+### Integration with pydantic-ai
+
+pydantic-ai already supports OTel via `Agent.instrument_all()`:
+
+```python
+from pydantic_ai import Agent
+
+Agent.instrument_all()
+# Now all agent.run() calls emit OTel spans automatically
+# These appear as children of whatever span is active in cortex
+```
+
+This means LLM calls inside graph execution automatically nest under the graph_run span. Cortex gets visibility into token counts, model names, and latencies for free.
+
+---
+
+## Deep Dive: Channel-Based I/O (stdlib only)
+
+### No External Library Needed
+
+**Confidence: HIGH** -- verified Python 3.14 `asyncio.Queue.shutdown()` exists via runtime check
+
+Python 3.13 added `Queue.shutdown(immediate=False)` and `QueueShutDown` exception. This is the missing feature that previously justified aiochannel. On Python 3.14, `asyncio.Queue` is a complete channel primitive.
+
+### Labeled Channels Pattern
+
+Cortex needs labeled I/O streams (stdout, stderr, ai_response, graph_trace, etc.). This is a thin wrapper:
+
+```python
+import asyncio
+
+class ChannelBus:
+    """Labeled async channels for multiplexed I/O."""
+
+    def __init__(self):
+        self._channels: dict[str, asyncio.Queue] = {}
+
+    def channel(self, label: str) -> asyncio.Queue:
+        if label not in self._channels:
+            self._channels[label] = asyncio.Queue()
+        return self._channels[label]
+
+    async def put(self, label: str, item: object) -> None:
+        await self.channel(label).put(item)
+
+    async def get(self, label: str) -> object:
+        return await self.channel(label).get()
+
+    def shutdown(self, label: str | None = None) -> None:
+        if label:
+            self._channels[label].shutdown()
+        else:
+            for q in self._channels.values():
+                q.shutdown()
+```
+
+This is ~20 lines. It does not warrant a dependency.
+
+### Channel Consumers in the REPL
+
+```python
+async def render_output(bus: ChannelBus):
+    """Background task: read from output channels, render to terminal."""
+    while True:
+        try:
+            msg = await bus.get("display")
+            print_formatted_text(msg)  # prompt_toolkit's output
+        except asyncio.QueueShutDown:
+            break
 ```
 
 ---
 
-## Deep Dive: LLM-as-Judge Approaches
+## Deep Dive: Reflective Namespace (stdlib only)
 
-### Recommendation: DSPy-native Assess pattern
+### No External Library Needed
 
-**Why not external libraries:**
+**Confidence: HIGH** -- verified `annotationlib`, `inspect.get_annotations`, `typing.get_type_hints` all available on Python 3.14
 
-| Library | Approach | Why Not for Bae |
-|---------|----------|-----------------|
-| `judges` (quotient-ai) | Instructor-based classifiers/graders | Adds `instructor` dep. DSPy's `dspy.Predict(Assess)` does the same thing natively. |
-| `autoevals` (Braintrust) | Pre-built LLM scorers (Factuality, etc.) | Useful concepts but the library is external to DSPy. Metric functions wouldn't participate in DSPy optimization traces. |
-| `deepeval` | G-Eval, hallucination detection | 50+ metrics, massive scope. G-Eval pattern is implementable in 10 lines with `dspy.Predict`. |
+### Python 3.14 Introspection Stack
 
-**The killer advantage of DSPy-native LLM-as-judge:** When your metric uses `dspy.Predict`, DSPy can optimize the judge itself. External frameworks evaluate but don't participate in the optimization loop.
+| Tool | Purpose | Source |
+|------|---------|--------|
+| `typing.get_type_hints()` | Resolve type annotations (already used throughout bae) | `typing` stdlib |
+| `annotationlib.get_annotations()` | Access annotations with deferred evaluation (PEP 649) | `annotationlib` stdlib (new in 3.14) |
+| `annotationlib.Format.FORWARDREF` | Safely inspect unresolved forward refs | `annotationlib` stdlib |
+| `inspect.signature()` | Function/method signatures | `inspect` stdlib |
+| `inspect.getmembers()` | List object attributes by predicate | `inspect` stdlib |
+| `inspect.iscoroutinefunction()` | Detect async callables (already used in resolver.py) | `inspect` stdlib |
+| `type.__mro__` | Walk class hierarchy | builtin |
+| `vars()` / `dir()` | Enumerate namespace contents | builtin |
 
-### Bae's LLM-as-Judge Design
+### Reflective Namespace Design
 
-Progressive complexity for metric authoring:
-
-```python
-# Level 0: Zero-config (type-check only -- what exists today)
-# No metric needed, bae provides node_transition_metric
-
-# Level 1: Example-based (user provides expected outputs)
-# Bae generates a field comparison metric automatically
-# User just needs: input -> expected_output pairs
-
-# Level 2: LLM-as-Judge (user provides assessment questions)
-# Bae generates a dspy.Predict(Assess) metric
-# User writes: "Is the outfit recommendation weather-appropriate?"
-
-# Level 3: Custom metric (user writes Python)
-# Full control, plain function signature
-def my_metric(example, pred, trace=None) -> float | bool:
-    ...
-```
-
----
-
-## Deep Dive: CLI Tooling
-
-### Current State
-
-Bae already has a `typer` CLI with:
-- `bae graph show/export/mermaid` -- visualization
-- `bae run` -- execute a graph
-
-### New Commands for v3
-
-| Command | Purpose | Key Dependencies |
-|---------|---------|-----------------|
-| `bae eval <module>` | Run evals against a dataset | `dspy.Evaluate`, `rich` for output |
-| `bae optimize <module>` | Run optimization (bootstrap/mipro/simba) | DSPy optimizers |
-| `bae inspect <module>` | Show graph stats, node signatures, compiled prompts | `rich` tables |
-| `bae new <name>` | Scaffold a new graph project | `copier` (external tool) |
-
-### Typer + Rich Integration
-
-Typer already includes Rich as a dependency. The integration is natural:
+The cortex namespace exposes bae objects with introspection:
 
 ```python
-from rich.console import Console
-from rich.table import Table
-from rich.progress import Progress
+# In cortex, the user's namespace is a dict that auto-introspects
+ns = CortexNamespace()
+ns["graph"] = Graph(start=AnalyzeRequest)
 
-console = Console()
+# The namespace knows what graph is:
+ns.describe("graph")
+# -> Graph with 5 nodes: AnalyzeRequest -> Clarify | Process -> Review -> Done
+# -> Start: AnalyzeRequest (3 plain fields, 1 dep field)
 
-# Eval results table
-table = Table(title="Eval Results")
-table.add_column("Example", style="cyan")
-table.add_column("Score", style="green")
-table.add_column("Prediction", style="white")
-console.print(table)
-
-# Optimization progress
-with Progress() as progress:
-    task = progress.add_task("Optimizing...", total=num_trials)
-    ...
+# Under the hood, this uses:
+# - type(obj) for class detection
+# - typing.get_type_hints() for field types
+# - annotationlib.get_annotations(cls, format=Format.STRING) for display
+# - inspect.signature() for callable signatures
+# - graph._nodes for topology
 ```
 
-### Typer Version Notes
+### annotationlib for Display
 
-Typer 0.21.1 (Jan 2026) supports Python 3.9-3.14. Bae's `>=0.12` floor is fine but should be bumped to `>=0.15` to guarantee Rich markup support in help text.
-
----
-
-## Deep Dive: Mermaid Diagram Generation
-
-### Current State (Already Sufficient)
-
-`Graph.to_mermaid()` already generates Mermaid flowchart syntax from type hints:
+The new `Format.STRING` mode is useful for the REPL -- it converts annotations back to source-like strings:
 
 ```python
-def to_mermaid(self) -> str:
-    lines = ["graph TD"]
-    for node_cls, successors in self._nodes.items():
-        node_name = node_cls.__name__
-        if node_cls.is_terminal():
-            lines.append(f"    {node_name}(({node_name}))")
-        for succ in successors:
-            lines.append(f"    {node_name} --> {succ.__name__}")
-    return "\n".join(lines)
+import annotationlib
+
+class MyNode(Node):
+    query: str
+    context: Annotated[Context, Dep(fetch_context)]
+    history: Annotated[list[Message], Recall()]
+
+# Get displayable annotations
+anns = annotationlib.get_annotations(MyNode, format=annotationlib.Format.STRING)
+# {'query': 'str', 'context': 'Annotated[Context, Dep(fetch_context)]', 'history': 'Annotated[list[Message], Recall()]'}
 ```
 
-### What to Add for v3
-
-No new library needed. Extend existing `to_mermaid()` with:
-
-1. **Field annotations** -- show Dep/Recall/plain fields in node boxes
-2. **Compiled status** -- indicate which nodes have optimized prompts
-3. **Eval scores** -- overlay per-node scores on the diagram
-
-These are string formatting changes, not library additions.
-
-### For Package Scaffolding
-
-When `bae new` scaffolds a project, the template should generate a `graph.md` file that includes the Mermaid diagram as a fenced code block:
-
-````markdown
-# My Graph
-
-```mermaid
-graph TD
-    StartNode --> ProcessNode
-    ProcessNode --> EndNode
-    EndNode((EndNode))
-```
-````
-
-This is a template concern, not a library concern.
-
----
-
-## Deep Dive: Package Scaffolding
-
-### Recommendation: Copier (not Cookiecutter)
-
-**Copier 9.11.3** (Jan 23, 2026) is the right choice for `bae new`:
-
-| Feature | Cookiecutter | Copier |
-|---------|-------------|--------|
-| Template updates | No | Yes -- `copier update` syncs changes |
-| Config format | JSON | YAML |
-| Migrations | No | Yes |
-| Python version | 3.8+ | 3.10+ (fine for bae's 3.14+ requirement) |
-| Install method | pip/pipx | pip/pipx/uv |
-
-### Integration Strategy
-
-Copier is NOT a project dependency. It's an external tool invoked by the CLI:
-
-```python
-@app.command("new")
-def new_project(name: str):
-    """Scaffold a new bae graph project."""
-    import subprocess
-    template_path = Path(__file__).parent / "templates" / "graph-project"
-    subprocess.run(["copier", "copy", str(template_path), name])
-```
-
-If copier is not installed, the CLI should print installation instructions:
-
-```
-Error: copier not found. Install with:
-  uv tool install copier
-  # or: pipx install copier
-```
-
-### Template Structure
-
-```
-bae/templates/graph-project/
-    copier.yml              # Template config (questions)
-    {{project_name}}/
-        __init__.py
-        graph.py.jinja      # Starter graph with 3 nodes
-        evals/
-            __init__.py
-            dataset.json    # Empty eval dataset
-        compiled/
-            .gitkeep        # Compiled artifacts go here
-    graph.md.jinja          # Auto-generated mermaid diagram
-    pyproject.toml.jinja    # With bae dependency
-```
+This gives the reflective namespace clean string representations without eval or repr hacks.
 
 ---
 
@@ -378,13 +371,16 @@ bae/templates/graph-project/
 ```toml
 [project]
 name = "bae"
-version = "0.3.0"
+version = "0.4.0"
+requires-python = ">=3.14"
 dependencies = [
-    "pydantic>=2.11",
+    "pydantic>=2.0",
     "pydantic-ai>=0.1",
-    "dspy>=3.1",             # Bump from >=2.0; need Evaluate, MIPROv2, SIMBA
-    "typer>=0.15",           # Bump from >=0.12; Rich markup support
-    "rich>=14.0",            # Make explicit (was transitive via typer)
+    "dspy>=2.0",
+    "typer>=0.12",
+    # v4.0: cortex REPL
+    "prompt-toolkit>=3.0.50",
+    "opentelemetry-sdk>=1.39",
 ]
 
 [project.optional-dependencies]
@@ -392,61 +388,95 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
+    "pygments>=2.19",
 ]
 ```
 
-**Note on DSPy version floor:** Bumping to `>=3.1` because MIPROv2 auto parameter and SIMBA optimizer are features of the 3.x line. The `EvaluationResult` return type from `Evaluate.__call__` was also finalized in 3.x.
+**Why prompt-toolkit >=3.0.50:** The 3.0.x line is the stable async-native branch. 3.0.50+ includes Python 3.13/3.14 compatibility fixes. Floor at 3.0.50 rather than 3.0.52 to allow minor flexibility.
 
-**Note on Rich:** Already a transitive dependency of Typer, but making it explicit allows `from rich.table import Table` without relying on transitive installation. Zero additional download.
+**Why opentelemetry-sdk >=1.39:** Matches the opentelemetry-api version already pulled in by pydantic-ai. The API and SDK versions are released in lockstep. >=1.39 ensures `InMemorySpanExporter.force_flush()` and other recent fixes.
+
+**Why pygments in dev only:** Only needed for `PygmentsLexer(PythonLexer)` in the REPL's Py mode. Already a transitive dep of rich/typer in most environments, but explicit in dev ensures tests can verify syntax highlighting without relying on transitive resolution.
+
+**What did NOT change:** `dspy>=2.0`, `pydantic>=2.0`, `pydantic-ai>=0.1`, `typer>=0.12` floors stay the same. No reason to bump them for cortex features.
 
 ---
 
-## DSPy Evolution: What Changed Since 2024
+## Dependency Weight Analysis
 
-For context on bae's existing integration and what's new:
+| Package | Install Size | Transitive Deps | Already Installed? |
+|---------|-------------|------------------|--------------------|
+| `prompt-toolkit` | ~1.5 MB | `wcwidth` (~50 KB) | No -- new |
+| `opentelemetry-sdk` | ~400 KB | `opentelemetry-api` (already), `opentelemetry-semantic-conventions` (already), `typing-extensions` (already) | API yes, SDK no |
+| `pygments` (dev) | ~8 MB | None | Yes (transitive via rich) |
+| **Total new weight** | **~2 MB** | **1 new transitive dep (wcwidth)** | |
 
-### What Bae Already Uses (v1.0, Still Valid)
+Minimal footprint. Two new runtime deps, one new transitive dep (`wcwidth`).
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| `dspy.Signature` / `dspy.make_signature` | Stable | Core API, no changes |
-| `dspy.Predict` | Stable | Core API, no changes |
-| `BootstrapFewShot` | Stable | Working in `optimizer.py` |
-| `dspy.Example` | Stable | Working in `trace_to_examples()` |
+---
 
-### What's New (Available for v3.0)
+## Integration Points with Existing Bae Architecture
 
-| Feature | Added In | Use for Bae |
-|---------|----------|-------------|
-| `dspy.Evaluate` returning `EvaluationResult` | DSPy 3.x | Replace manual eval loops with structured evaluation |
-| `MIPROv2` with `auto` parameter | DSPy 2.5+ | One-line optimization: `MIPROv2(metric, auto="light")` |
-| `SIMBA` optimizer | DSPy 3.x | Self-reflective optimization for harder tasks |
-| `Evaluate.save_as_json` / `save_as_csv` | DSPy 3.x | Persist eval results without custom code |
-| `EvaluationResult.results` | DSPy 3.x | Per-example scores for detailed analysis |
-| `metric_threshold` on optimizers | DSPy 3.x | Stop optimization when quality target reached |
-| `log_dir` on MIPROv2 | DSPy 3.x | Optimization run logging for inspection |
+### asyncio Event Loop
 
-### What Bae Should Upgrade
+Bae's existing async architecture (`Graph.arun()`, `resolve_fields()`, `asyncio.gather()` in resolver) runs inside an event loop. Cortex's prompt_toolkit REPL **also** runs inside an event loop via `prompt_async()`. These must share the same loop.
 
-| Current | Upgrade To | Reason |
-|---------|-----------|--------|
-| Manual eval in test scripts | `dspy.Evaluate` wrapper | Structured results, parallel eval, progress display |
-| `BootstrapFewShot` only | `BootstrapFewShot` -> `MIPROv2` -> `SIMBA` progression | Progressive optimization intensity |
-| `node_transition_metric` (type-only) | Quality metrics (field comparison, LLM-as-judge) | Current metric only checks "did you pick the right type?" -- says nothing about output quality |
-| Manual save/load in `optimizer.py` | DSPy's built-in `save`/`load` + bae wrapper | Already using `predictor.save()`, just needs better DX around it |
+**Pattern:** Cortex owns the event loop. Graph execution is dispatched as a background task within the same loop:
+
+```python
+async def cortex_main():
+    session = PromptSession()
+    with patch_stdout():
+        while True:
+            text = await session.prompt_async()
+            if is_graph_command(text):
+                # Run graph in the same event loop, not blocking the prompt
+                task = asyncio.create_task(graph.arun(start_node, lm=lm))
+                # Results flow back via channels
+```
+
+### LM Protocol
+
+The existing `LM` protocol (`make`, `decide`, `choose_type`, `fill`) is already async. It works unchanged inside cortex -- the LM calls happen inside `graph.arun()` which is an asyncio task.
+
+For the AI agent object in the cortex namespace, pydantic-ai's `Agent` is also async-native. Its `.run()` method is a coroutine that fits naturally.
+
+### OTel Span Nesting
+
+Span hierarchy for a cortex session:
+
+```
+cortex_session                        # root span
+  repl_turn (turn=1)                  # one prompt-response cycle
+    nl_query                          # NL mode: AI interprets user intent
+  repl_turn (turn=2)
+    graph_run                         # Graph mode: execute a graph
+      node_execute (AnalyzeRequest)   # per-node spans
+        dep_resolve (fetch_context)   # dep resolution
+        lm_fill                       # LLM call (auto-instrumented by pydantic-ai)
+      node_execute (Process)
+        lm_fill
+      node_execute (Done)
+  repl_turn (turn=3)
+    py_exec                           # Py mode: exec() user code
+```
+
+The `InMemorySpanExporter` captures all of these. The reflective namespace can query them.
 
 ---
 
 ## Version Compatibility Matrix
 
-| Component | Minimum | Latest | Installed | Bae Requires |
-|-----------|---------|--------|-----------|-------------|
-| Python | 3.10 (DSPy) | 3.14 | 3.14 | >=3.14 |
-| `dspy` | 3.1.0 | 3.1.3 | 3.1.2 | >=3.1 |
-| `pydantic` | 2.11 | 2.12.5 | 2.12.5 | >=2.11 |
-| `typer` | 0.15 | 0.21.1 | >=0.12 | >=0.15 |
-| `rich` | 14.0 | 14.3.2 | (transitive) | >=14.0 |
-| `copier` | 9.0 | 9.11.3 | (external tool) | >=9.0 (tool, not dep) |
+| Component | Requires-Python | Latest | Bae Requires | Verified |
+|-----------|----------------|--------|-------------|----------|
+| Python | -- | 3.14.3 | >=3.14 | Runtime check |
+| `prompt-toolkit` | >=3.8 | 3.0.52 | >=3.0.50 | [PyPI](https://pypi.org/project/prompt-toolkit/) |
+| `opentelemetry-sdk` | >=3.9 | 1.39.1 | >=1.39 | [PyPI](https://pypi.org/project/opentelemetry-sdk/) |
+| `opentelemetry-api` | >=3.9 | 1.39.1 | (transitive via pydantic-ai) | pip metadata |
+| `pygments` | >=3.8 | 2.19.2 | >=2.19 (dev) | pip metadata |
+| `wcwidth` | >=3.0 | (latest) | (transitive via prompt-toolkit) | pip metadata |
+| `asyncio.Queue.shutdown` | >=3.13 | stdlib | >=3.14 (bae floor) | Runtime check: `True` |
+| `annotationlib` | >=3.14 | stdlib | >=3.14 (bae floor) | Runtime check: available |
 
 ---
 
@@ -454,15 +484,19 @@ For context on bae's existing integration and what's new:
 
 | Claim | Confidence | Verification |
 |-------|------------|--------------|
-| DSPy 3.1.3 is latest; `dspy.Evaluate` returns `EvaluationResult` | HIGH | [PyPI](https://pypi.org/project/dspy/), [DSPy docs](https://dspy.ai/api/evaluation/Evaluate/) |
-| MIPROv2 `auto` parameter accepts "light"/"medium"/"heavy" | HIGH | [DSPy MIPROv2 docs](https://dspy.ai/api/optimizers/MIPROv2/) |
-| SIMBA exists with `compile(student, trainset)` API | HIGH | [DSPy SIMBA docs](https://dspy.ai/api/optimizers/SIMBA/) |
-| DSPy LLM-as-judge pattern uses `dspy.Predict(Assess)` in metrics | HIGH | [DSPy metrics docs](https://dspy.ai/learn/evaluation/metrics/) |
-| Rich is a transitive dep of Typer | HIGH | [Typer docs](https://typer.tiangolo.com/) -- Rich is standard dependency |
-| Copier 9.11.3 supports template updates | HIGH | [PyPI](https://pypi.org/project/copier/), [Copier docs](https://copier.readthedocs.io/) |
-| External eval frameworks (DeepEval, RAGAS) are overkill for bae | MEDIUM | Architectural judgment based on bae's scope vs framework scope |
-| `judges` library depends on `instructor` | MEDIUM | [PyPI](https://pypi.org/project/judges/) -- checked deps |
-| Typer 0.15+ has Rich markup support | MEDIUM | [Typer release notes](https://typer.tiangolo.com/release-notes/) -- inferred from changelog |
+| prompt_toolkit 3.0.52 is latest; `prompt_async()` is the async entry point | HIGH | [PyPI](https://pypi.org/project/prompt-toolkit/), [official docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/advanced_topics/asyncio.html) |
+| `patch_stdout()` prevents concurrent output corruption | HIGH | [Official asyncio example](https://github.com/prompt-toolkit/python-prompt-toolkit/blob/main/examples/prompts/asyncio-prompt.py), [docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/asking_for_input.html) |
+| `Application.create_background_task()` exists | HIGH | [API reference](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/reference.html) |
+| `KeyBindings` + `Condition` filter enables mode switching | HIGH | [Official docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/asking_for_input.html) |
+| OTel SDK 1.39.1 `InMemorySpanExporter.get_finished_spans()` returns `tuple[ReadableSpan, ...]` | HIGH | [SDK source](https://github.com/open-telemetry/opentelemetry-python/blob/main/opentelemetry-sdk/src/opentelemetry/sdk/trace/export/in_memory_span_exporter.py) |
+| `SimpleSpanProcessor` passes spans immediately (no batching delay) | HIGH | [SDK export docs](https://opentelemetry-python.readthedocs.io/en/latest/sdk/trace.export.html) |
+| `opentelemetry-api` is transitive dep of `pydantic-ai-slim` | HIGH | pip metadata: `pydantic-ai-slim` requires `opentelemetry-api>=1.28.0` |
+| `Agent.instrument_all()` auto-instruments LLM calls with OTel | HIGH | [pydantic-ai docs](https://ai.pydantic.dev/logfire/), [DeepWiki](https://deepwiki.com/pydantic/pydantic-ai/4.2-instrumentation-and-monitoring) |
+| `asyncio.Queue.shutdown()` available in Python 3.14 | HIGH | Runtime check on Python 3.14.3: `True` |
+| `annotationlib` module available in Python 3.14 | HIGH | Runtime check: `Format` enum has VALUE, VALUE_WITH_FAKE_GLOBALS, FORWARDREF, STRING |
+| `contextvars` propagation in asyncio (spans nest across tasks) | HIGH | [OTel async context example](https://github.com/open-telemetry/opentelemetry-python/blob/main/docs/examples/basic_context/async_context.py), [Python docs](https://docs.python.org/3/library/asyncio-task.html) |
+| Rich output conflicts with prompt_toolkit terminal management | MEDIUM | Architectural inference from both libraries managing terminal state. prompt_toolkit's `print_formatted_text` is the safe alternative inside a running Application. |
+| aiochannel is unnecessary given Queue.shutdown() | HIGH | [Python 3.13 Queue docs](https://docs.python.org/3.13/library/asyncio-queue.html), [aiochannel README](https://github.com/tudborg/aiochannel) -- feature parity now in stdlib |
 
 ---
 
@@ -470,33 +504,30 @@ For context on bae's existing integration and what's new:
 
 ### Primary (HIGH confidence)
 
-- [DSPy Evaluate API](https://dspy.ai/api/evaluation/Evaluate/) -- Evaluate class constructor, `__call__` method, EvaluationResult
-- [DSPy EvaluationResult](https://dspy.ai/api/evaluation/EvaluationResult/) -- Result structure with score and results list
-- [DSPy Metrics](https://dspy.ai/learn/evaluation/metrics/) -- Metric authoring patterns including LLM-as-judge
-- [DSPy MIPROv2 API](https://dspy.ai/api/optimizers/MIPROv2/) -- Constructor, compile method, auto parameter
-- [DSPy SIMBA API](https://dspy.ai/api/optimizers/SIMBA/) -- Constructor, compile method, introspective optimization
-- [DSPy Cheatsheet](https://dspy.ai/cheatsheet/) -- Recommended eval/optimization workflow progression
-- [DSPy Optimizers Overview](https://dspy.ai/learn/optimization/optimizers/) -- Optimizer comparison and selection guide
-- [DSPy PyPI](https://pypi.org/project/dspy/) -- Version 3.1.3, Feb 5 2026
-- [Typer PyPI](https://pypi.org/project/typer/) -- Version 0.21.1, Jan 6 2026
-- [Rich PyPI](https://pypi.org/project/rich/) -- Version 14.3.2, Feb 1 2026
-- [Copier PyPI](https://pypi.org/project/copier/) -- Version 9.11.3, Jan 23 2026
+- [prompt_toolkit asyncio docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/advanced_topics/asyncio.html) -- `run_async()`, `prompt_async()`, event loop integration
+- [prompt_toolkit input docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/asking_for_input.html) -- PromptSession, lexer, completer, key bindings, history, patch_stdout
+- [prompt_toolkit API reference](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/reference.html) -- Application.create_background_task, cancel_and_wait_for_background_tasks
+- [prompt_toolkit REPL tutorial](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/tutorials/repl.html) -- Complete REPL example with PygmentsLexer, WordCompleter, style
+- [prompt_toolkit asyncio example](https://github.com/prompt-toolkit/python-prompt-toolkit/blob/main/examples/prompts/asyncio-prompt.py) -- PromptSession + patch_stdout + background task pattern
+- [OTel Python instrumentation guide](https://opentelemetry.io/docs/languages/python/instrumentation/) -- TracerProvider setup, span creation, attributes, events, status, nesting
+- [OTel InMemorySpanExporter source](https://github.com/open-telemetry/opentelemetry-python/blob/main/opentelemetry-sdk/src/opentelemetry/sdk/trace/export/in_memory_span_exporter.py) -- get_finished_spans, clear, shutdown, export
+- [OTel async context example](https://github.com/open-telemetry/opentelemetry-python/blob/main/docs/examples/basic_context/async_context.py) -- Span propagation across async boundaries
+- [Python 3.14 annotationlib docs](https://docs.python.org/3/library/annotationlib.html) -- Format enum, get_annotations(), ForwardRef, deferred evaluation
+- [Python 3.14 asyncio.Queue docs](https://docs.python.org/3/library/asyncio-queue.html) -- Queue.shutdown(), QueueShutDown exception
+- [pydantic-ai instrumentation docs](https://ai.pydantic.dev/logfire/) -- Agent.instrument_all(), InstrumentationSettings, OTel semantic conventions
 
 ### Secondary (MEDIUM confidence)
 
-- [Braintrust autoevals](https://github.com/braintrustdata/autoevals) -- Pre-built LLM scorers, evaluated and decided against
-- [judges library](https://github.com/quotient-ai/judges) -- LLM-as-judge evaluators, evaluated and decided against
-- [DeepEval](https://deepeval.com/docs/getting-started) -- Comprehensive LLM eval framework, evaluated and decided against
-- [RAGAS](https://docs.ragas.io/en/stable/) -- RAG evaluation framework, not applicable to agent graphs
-- [Inspect AI](https://inspect.aisi.org.uk/) -- AISI eval framework, different use case (benchmarks vs dev-loop)
-- [Promptfoo](https://www.promptfoo.dev/) -- Node.js eval toolkit, wrong ecosystem
-- [Copier vs Cookiecutter comparison](https://medium.com/@gema.correa/from-cookiecutter-to-copier-uv-and-just-the-new-python-project-stack-90fb4ba247a9)
+- [pydantic-ai OTel DeepWiki](https://deepwiki.com/pydantic/pydantic-ai/4.2-instrumentation-and-monitoring) -- Observability architecture, span names, event modes
+- [OTel SDK export docs](https://opentelemetry-python.readthedocs.io/en/latest/sdk/trace.export.html) -- SimpleSpanProcessor vs BatchSpanProcessor
+- [aiochannel GitHub](https://github.com/tudborg/aiochannel) -- Closable queue API, evaluated and decided against
 
 ### Previous Research (this project)
 
-- v2.0 STACK.md (2026-02-07) -- DAG resolution, Annotated metadata, field categorization (all still valid, not repeated here)
+- v3.0 STACK.md (2026-02-08) -- DSPy eval/optimization, Rich, Copier, typer CLI (all still valid, not repeated here)
+- v2.0 STACK.md (2026-02-07) -- DAG resolution, Annotated metadata, field categorization
 - v1.0 codebase STACK.md (2026-02-04) -- Base stack analysis
 
 ---
 
-*Stack research for v3.0 eval/optimization DX: 2026-02-08*
+*Stack research for v4.0 cortex REPL: 2026-02-13*

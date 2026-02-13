@@ -1,488 +1,521 @@
-# Pitfalls: v3.0 Eval/Optimization DX
+# Domain Pitfalls: Cortex -- Augmented Async Python REPL
 
-**Domain:** Adding eval frameworks, optimization DX, CLI tooling, and compiled artifact management to an existing agent graph framework
-**Researched:** 2026-02-08
-**Confidence:** HIGH for DX/DSPy pitfalls (grounded in codebase analysis + verified patterns), MEDIUM for LLM-as-judge and dataset pitfalls (WebSearch-verified against multiple sources)
+**Domain:** Adding an async REPL shell with channel-based I/O, reflective namespace, AI integration, and OTel instrumentation to an existing async Python agent graph framework
+**Researched:** 2026-02-13
+**Confidence:** HIGH for prompt_toolkit/asyncio integration (official docs + known issues verified), HIGH for asyncio channel pitfalls (verified against multiple sources + codebase analysis), MEDIUM for OTel async context propagation (official docs + community reports), MEDIUM for reflective namespace issues (inferred from Python internals + REPL precedents)
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites, misleading eval results, or developer abandonment.
+Mistakes that cause rewrites, deadlocks, or architectural dead ends.
 
 ---
 
-### Pitfall 1: "Accessible Evals" That Produce Misleading Results
+### Pitfall 1: Event Loop Ownership Conflict Between prompt_toolkit and Graph Execution
 
 **What goes wrong:**
-The stated goal is to make evals "super accessible and friendly." The most dangerous outcome is eval tooling that's easy to use but gives developers false confidence in their graph's quality. A zero-config eval that reports "92% accuracy" on a bad metric with a tiny dataset is worse than no eval at all -- it tells the developer "ship it" when they shouldn't.
+prompt_toolkit 3.0 uses asyncio natively. It calls `asyncio.run()` internally when you use `PromptSession.prompt()` (the sync API). Bae's `Graph.run()` also calls `asyncio.run()` internally (line 217 of graph.py). If cortex's REPL loop calls `Graph.run()` from within the prompt_toolkit event loop, you get `RuntimeError: asyncio.run() cannot be called from a running event loop`. The two systems fight over who owns the event loop.
 
 **Why it happens in bae specifically:**
-Bae's current only metric is `node_transition_metric` -- it checks whether the LLM predicted the correct *type name* of the next node. This is a structural check, not a quality check. It answers "did the graph take the right path?" but not "did the LLM produce a good outfit recommendation?" or "was the vibe check accurate?" If the zero-config eval defaults to this metric, developers will optimize for routing correctness and mistake it for overall quality.
+Bae has a sync/async split: `Graph.run()` wraps `Graph.arun()` via `asyncio.run()`. The same pattern exists in `CompiledGraph.run()`. This sync wrapper is designed for script-level callers who have no event loop. But cortex IS an event loop -- it is an async REPL running inside `asyncio.run()`. If cortex calls `graph.run()` instead of `await graph.arun()`, the nested `asyncio.run()` explodes.
 
-The `ootd.py` example illustrates this perfectly: `node_transition_metric` would report 100% if the graph always routes `IsTheUserGettingDressed -> AnticipateUsersDay -> RecommendOOTD`. But that tells you nothing about whether the outfit is good, whether the vibe check captured the user's mood, or whether the final response is natural.
+This is not hypothetical. The exact same issue plagues IPython's async REPL: "IPykernel has a persistent asyncio loop running, while Terminal IPython starts and stops a loop for each code block." Projects like `nest_asyncio` exist solely to work around this. ptpython's `--asyncio` flag exists because the problem is that common.
 
 **Consequences:**
-- Developer thinks graph is "optimized" when only routing is optimized
-- Actual output quality (outfit relevance, tone, accuracy) never measured
-- False confidence leads to shipping bad product and blaming bae when users complain
-- Developer loses trust in the entire eval system and abandons it
+- `RuntimeError` crash on every graph execution from the REPL
+- If worked around with `nest_asyncio`, subtle reentrancy bugs emerge (gather() within gather(), shared dep_cache mutation under concurrent resolution)
+- Users cannot `await graph.arun(...)` from the REPL without cortex properly embedding async execution in its event loop
 
 **Warning signs:**
-- All evals report high scores without custom metrics
-- Developers never write domain-specific metrics
-- `node_transition_metric` is the only metric used in production
-- Eval results don't change when you deliberately make the graph worse at producing good content
+- Any call to `asyncio.run()` from within the REPL crashes
+- Import of `nest_asyncio` appears in the codebase
+- Users must remember `await graph.arun()` instead of `graph.run()` and there is no error message telling them why
 
 **Prevention:**
-1. **Make the zero-config tier honest about what it measures.** Default eval output should say "Routing accuracy: 92% (structural only -- does not measure output quality)" with an explicit callout that this is table stakes, not quality.
-2. **Force a "metric moment" early.** The first time a developer runs `bae eval`, show a message: "You're using the default routing metric. For meaningful evals, add a quality metric. Run `bae eval --help-metrics` to see how."
-3. **Provide a one-liner LLM-as-judge metric** that's easy to adopt as a step up from routing-only. Something like `bae.metrics.llm_judge("Is this a good outfit recommendation?")`. Low friction, meaningfully better than default.
-4. **Show metric coverage in eval output.** "3 nodes evaluated. Routing: all. Quality: 0/3 nodes have quality metrics." This creates healthy pressure to add quality metrics without blocking the developer.
+1. **Cortex must own the event loop.** The REPL runs inside `asyncio.run(main())`. All graph execution goes through `await graph.arun()`, never `graph.run()`. The sync wrappers are for external scripts, not for the REPL.
+2. **Make `graph.run()` detect a running loop and raise a clear error.** Instead of the cryptic `asyncio.run() cannot be called from a running event loop`, detect and say: `"graph.run() cannot be used inside cortex. Use 'await graph.arun(...)' instead."`
+3. **Auto-await in the REPL namespace.** If the user types `graph.run(...)`, cortex should detect this returns a coroutine from `arun` and auto-await it, similar to IPython's autoawait feature. Or better: make the REPL's default code execution async so all top-level awaits work.
+4. **Never use `nest_asyncio`.** It papers over the problem but introduces reentrancy hazards with bae's `asyncio.gather()` calls in the resolver. If two graph executions share a dep_cache and both resolve concurrently via nested event loops, the cache mutations race.
 
-**Phase to address:** Phase 1 (eval foundation). The progressive complexity tiers must be designed with this pitfall in mind from day one. The default tier must be honest, and the upgrade path must be frictionless.
+**Detection:** Unit test that calls `graph.run()` from within a running event loop and asserts the error message is clear, not a raw RuntimeError.
+
+**Phase to address:** Phase 1 (REPL foundation). Event loop ownership is the first design decision. Everything else depends on getting this right.
 
 ---
 
-### Pitfall 2: Metric Design that Optimizes for the Wrong Thing
+### Pitfall 2: prompt_toolkit Output Corruption From Concurrent Graph Streams
 
 **What goes wrong:**
-DSPy's optimization loop will relentlessly optimize whatever metric you give it. If the metric is poorly designed -- too easy to game, measuring a proxy rather than the real goal, or not discriminating enough between good and bad outputs -- BootstrapFewShot will find demonstrations that maximize the metric without improving actual quality. The optimizer is a perfect employee: it does exactly what you measure, not what you mean.
+When a graph executes in the background (or multiple graphs execute concurrently), their output -- LLM streaming tokens, dep resolution logs, trace updates -- writes to stdout. Without `patch_stdout()`, these writes corrupt the prompt_toolkit input line, producing garbled terminal output where the user's partially-typed input intermixes with graph output.
+
+Even with `patch_stdout()`, there are documented issues: prints near application exit get swallowed (prompt-toolkit/python-prompt-toolkit#1079), thread-based printing causes exceptions in interactive mode (prompt-toolkit/python-prompt-toolkit#1040), and if a print is not inside the `patch_stdout()` context, it ruins the terminal for other widgets.
 
 **Why it happens in bae specifically:**
-Bae's `node_transition_metric` uses case-insensitive *substring matching*:
+Bae's `ClaudeCLIBackend` shells out to `claude` CLI via `asyncio.create_subprocess_exec()` and reads stdout. During LLM fill operations, stdout from the subprocess flows through asyncio pipes. If cortex wants to stream LLM responses (showing tokens as they arrive), those writes must go through prompt_toolkit's patched stdout. But the subprocess stdout is a pipe, not sys.stdout -- `patch_stdout()` does not intercept it.
+
+Additionally, bae's resolver uses `asyncio.gather()` to resolve deps concurrently. Multiple dep functions might print or log simultaneously. In a REPL context, these concurrent writes are visible to the user and must be properly interleaved.
+
+**Consequences:**
+- Terminal becomes garbled when graph output intermixes with the prompt line
+- User loses their partially-typed input when background output scrolls the terminal
+- LLM streaming tokens appear in random positions relative to the input prompt
+- After terminal corruption, the user must restart cortex
+
+**Warning signs:**
+- Output appears on the same line as the input prompt
+- Terminal state (cursor position, color) is wrong after a graph completes
+- Background task output disappears (swallowed by `patch_stdout` on exit)
+- Tests pass but the REPL visually breaks in practice
+
+**Prevention:**
+1. **All output must go through a cortex channel, never raw stdout.** Graph execution output, LLM streaming, dep resolution logs -- everything routes through an output channel that cortex's display layer renders above the prompt line via `patch_stdout()`.
+2. **Use prompt_toolkit's `print_formatted_text()` instead of `print()`.** This function respects the patched stdout context and properly renders above the prompt.
+3. **Wrap `patch_stdout()` around the entire REPL session, not individual prompts.** The official example shows `with patch_stdout(): background_task = ...; await interactive_shell()`. This is the correct scope.
+4. **Never allow raw print() from within graph execution.** Enforce this by routing all output through a `Channel` that cortex controls. The channel buffers output and flushes through `patch_stdout()`.
+5. **Test terminal rendering manually.** Automated tests cannot catch visual corruption. The REPL needs manual QA with concurrent graph execution.
+
+**Phase to address:** Phase 1 (REPL foundation) for `patch_stdout` setup. Phase 2 (channel I/O) for the output channel architecture.
+
+---
+
+### Pitfall 3: Channel Deadlock From Bounded Queue + Synchronous Consumer
+
+**What goes wrong:**
+Channel-based I/O between the REPL and graph execution uses `asyncio.Queue` for message passing. If the queue is bounded (has a `maxsize`) and the consumer is blocked (e.g., waiting for user input in `prompt_async()`), producers block on `queue.put()` waiting for space. The consumer is waiting for the user, the producer is waiting for the consumer -- deadlock.
+
+This is the classic bounded-buffer deadlock, but in asyncio it manifests differently: since everything runs on one thread, a deadlock means the event loop itself is blocked. No coroutines advance. The REPL appears frozen.
+
+**Why it happens in bae specifically:**
+Cortex will have at least two concurrent activities: (1) the prompt session waiting for user input, and (2) background graph execution producing results. If graph results flow through a bounded queue and the REPL loop is:
 
 ```python
-match = expected_norm in predicted_norm or predicted_norm in expected_norm
+while True:
+    user_input = await session.prompt_async()  # Blocks here
+    # ... queue.get() happens only after user presses enter
 ```
 
-This means `"End"` matches `"EndNode"`, `"The next node should be EndNode"` matches `"EndNode"`, and critically, `"Node"` would match anything containing "Node". The metric is deliberately lenient to handle LLM output variation, but this leniency means BootstrapFewShot can select demonstrations that produce sloppy outputs (like "EndNode maybe?") and still get 100% scores.
+Then the graph cannot put results into a full queue because nobody is calling `queue.get()` -- the REPL is waiting for the user. The graph blocks, the user sees nothing, and assumes the REPL crashed.
 
-When developers write their own metrics for v3.0, they'll face the same trap: metrics that are too easy produce useless optimization, and metrics that are too strict produce no demonstrations (BootstrapFewShot can't bootstrap if the metric never returns True).
+This is compounded by bae's use of `asyncio.gather()` in the resolver. If a dep function tries to write to the output channel during resolution, and the channel is full, the entire gather stalls -- including other deps that have nothing to do with the channel.
 
 **Consequences:**
-- Optimization "succeeds" but output quality doesn't improve
-- Compiled prompts with demonstrations that game the metric
-- Developer confusion: "I optimized but it's not better"
-- Over-optimization: prompts become hyper-specialized to the training set
+- REPL freezes when graph execution fills the output queue
+- User sees no output and thinks the system is hung
+- Dep resolution stalls because one dep's output write blocks the entire gather
+- Ctrl+C may not work cleanly because the event loop is blocked
 
 **Warning signs:**
-- Optimization completes very quickly with 100% metric scores
-- Compiled prompts perform worse on new inputs than uncompiled prompts
-- All bootstrapped demonstrations look similar (overfitting)
-- Metric returns True for outputs a human would reject
+- REPL freezes intermittently during long-running graph executions
+- Adding more concurrent graph executions makes freezes more common
+- Removing the queue maxsize "fixes" the freeze (but introduces memory issues)
+- Ctrl+C takes unusually long to respond
 
 **Prevention:**
-1. **Provide metric validation tooling.** Before optimization, run the metric against a few known-good and known-bad examples. If it returns True for known-bad outputs, warn: "Your metric may be too lenient."
-2. **Document the trace parameter contract.** DSPy metrics must return `bool` when `trace is not None` (bootstrap mode -- stricter, used for selecting demonstrations) and `float` when `trace is None` (evaluation mode -- more nuanced). Bae should document this and provide a helper: `bae.metrics.dual_mode(strict_fn, score_fn)` that handles the mode switch.
-3. **Ship example metrics for common patterns.** "Field completeness" (are all output fields non-empty?), "LLM-as-judge" (does a judge LLM rate the output well?), "Schema conformance" (does the output parse cleanly?). These are better starting points than `node_transition_metric`.
-4. **Warn when BootstrapFewShot gets 100%.** If all bootstrapped demos pass the metric, flag: "All demos passed -- consider a stricter metric to differentiate good from great."
+1. **Output channels must be unbounded or use a drain pattern.** For display output (things the user sees), use `asyncio.Queue()` without maxsize. The user's terminal is the natural backpressure -- if they can't read fast enough, the queue buffers. Memory growth is bounded in practice because graph output is finite per execution.
+2. **Separate the prompt wait from the output consumer.** Use `asyncio.wait()` with `FIRST_COMPLETED` to multiplex between user input and output messages:
+   ```python
+   input_task = asyncio.create_task(session.prompt_async())
+   output_task = asyncio.create_task(output_queue.get())
+   done, pending = await asyncio.wait(
+       {input_task, output_task}, return_when=asyncio.FIRST_COMPLETED
+   )
+   ```
+   This way the REPL processes output messages even while waiting for user input.
+3. **Never put a bounded queue between graph execution and output.** If you need backpressure for graph execution scheduling (e.g., limit concurrent graph runs), use a semaphore at the admission point, not a bounded output queue.
+4. **Use `queue.put_nowait()` for fire-and-forget output.** If the queue is unbounded, `put_nowait()` never blocks. If it must be bounded, catch `QueueFull` and drop the oldest message (display backpressure -- losing old output is acceptable for streaming display).
 
-**Phase to address:** Phase 1 (eval foundation) for metric helpers and documentation. Phase 2 (optimization DX) for validation tooling.
+**Detection:** Test with a graph that produces output faster than the consumer reads. Verify no deadlock after 100 messages.
+
+**Phase to address:** Phase 2 (channel I/O architecture). The multiplexing pattern is the core of the REPL's event handling.
 
 ---
 
-### Pitfall 3: Compiled Artifacts Silently Go Stale
+### Pitfall 4: asyncio.gather() Exception Handling Destroys Sibling Tasks
 
 **What goes wrong:**
-Compiled artifacts (`.json` files from `save_optimized()`) contain few-shot demonstrations baked from a specific graph structure, specific node field schemas, and a specific LLM model. When any of these change, the compiled artifacts become stale -- they contain demonstrations for fields that no longer exist, or examples from a model that behaves differently. But the system silently loads them anyway, because `load_optimized()` just checks if the file exists.
+Bae's resolver uses `asyncio.gather()` (without `return_exceptions=True`) to resolve deps concurrently. If one dep raises an exception, `asyncio.gather()` propagates that exception immediately to the caller -- but **the other tasks in the gather continue running on the event loop**. They are not cancelled. They are orphaned.
+
+In a REPL context, this means a failed dep resolution leaks running tasks. If the user retries, new tasks spawn alongside the old orphaned ones. Over time, orphaned tasks accumulate, consuming memory and potentially making stale LLM calls.
+
+Worse: if the user hits Ctrl+C during a graph execution, `CancelledError` propagates into the gather. If a sibling coroutine is mid-LLM-call (e.g., `ClaudeCLIBackend._run_cli_json` with a subprocess running), the cancellation may not clean up the subprocess. The subprocess continues running after the REPL reports cancellation.
 
 **Why it happens in bae specifically:**
-Bae's current `load_optimized()` creates a fresh predictor with `node_to_signature(node_cls)` and loads state from JSON. If the node class changed (added a field, renamed a field, changed a Dep), the signature has changed but the loaded state is for the old signature. DSPy's `Predict.load()` doesn't validate signature compatibility -- it just overwrites the demos list.
+The resolver's gather calls (lines 383 and 451 of resolver.py) use bare `asyncio.gather()` without `return_exceptions=True`:
 
-The `save_optimized` format is `{NodeClassName}.json` -- no version, no hash, no metadata about what graph/model/schema produced it. Two months from now, Dzara changes `RecommendOOTD` to add a `style_notes` field. The compiled artifact still has demos without `style_notes`. `OptimizedLM` loads it, the demos show the LLM an old schema, and the LLM gets confused.
-
-**Consequences:**
-- Compiled prompts contain demonstrations for stale schemas
-- LLM sees old-format examples and produces outputs that don't match current schema
-- No error, no warning -- just degraded quality that's hard to diagnose
-- Developer blames the LLM or the graph when the real problem is stale compiled artifacts
-
-**Warning signs:**
-- Graph changes don't improve (or worsen) eval scores despite re-running evals
-- LLM output fields don't match expected schema
-- OptimizedLM silently falls back to naive predictor without explanation
-- Developer hasn't re-run optimization after schema changes
-
-**Prevention:**
-1. **Hash the node signature into the compiled artifact.** When saving, include a hash of the node's field names + types + instruction. When loading, compare hashes. If they don't match, warn loudly: "Compiled artifact for RecommendOOTD is stale (schema changed). Re-run optimization."
-2. **Include metadata in compiled artifacts.** Save alongside the demos: `{"bae_version": "3.0", "node_hash": "abc123", "compiled_at": "2026-02-08", "model": "claude-sonnet-4", "dataset_size": 50}`. This makes staleness visible.
-3. **`bae compile --check` command.** Validates all compiled artifacts against current graph schemas without re-running optimization. Quick, cheap, run it in CI.
-4. **Never silently fall back.** If `OptimizedLM` loads a stale artifact, it should warn, not silently use it. If the artifact is incompatible, raise or fall back to naive with a visible log line.
-
-**Phase to address:** Phase 2 (compiled artifact management). Build hashing and staleness detection into save/load from the start.
-
----
-
-### Pitfall 4: BootstrapFewShot Selects Suboptimal Demonstrations
-
-**What goes wrong:**
-BootstrapFewShot stops searching after finding K demonstrations that pass the metric. These may not be the best K demonstrations -- just the first K that pass. With a lenient metric (like `node_transition_metric`), this means the first 4 examples that produce the right type name become the baked demonstrations, regardless of whether they represent high-quality outputs.
-
-**Why it happens in bae specifically:**
-Bae's current BootstrapFewShot config is:
 ```python
-BootstrapFewShot(
-    metric=node_transition_metric,
-    max_bootstrapped_demos=4,
-    max_labeled_demos=8,
-    max_rounds=1,
+results = await asyncio.gather(
+    *[_resolve_one(fn, dep_cache, trace) for fn in to_resolve]
 )
 ```
 
-`max_rounds=1` means one pass through the training data. `max_bootstrapped_demos=4` means it stops at 4. The first 4 passing examples become the demonstrations forever. With a routing-only metric, these could be 4 examples where the LLM happened to output the right type name but gave terrible content.
-
-DSPy offers `BootstrapFewShotWithRandomSearch` and `BootstrapFewShotWithOptuna` that generate many candidate demo sets and search for the best combination. Bae doesn't expose these or provide a path to them.
+This is correct for batch execution (fail fast on error) but dangerous in an interactive REPL where:
+- The user expects to recover from errors and retry
+- Background subprocesses (Claude CLI) must be killed on cancellation
+- Task leaks accumulate across REPL interactions
 
 **Consequences:**
-- Compiled prompts contain mediocre demonstrations
-- Optimization plateaus quickly
-- Developer can't improve beyond initial BootstrapFewShot results
-- No path from "basic optimization" to "serious optimization"
+- Failed dep resolution leaks running tasks (LLM calls continue in background)
+- Ctrl+C does not cleanly stop graph execution (subprocesses orphaned)
+- Memory grows over time from accumulated orphaned tasks
+- Stale LLM responses arrive after the user has moved on, potentially corrupting shared state
 
 **Warning signs:**
-- Eval scores plateau after first optimization run
-- Changing `max_rounds` or `max_bootstrapped_demos` doesn't improve scores
-- Demonstrations in compiled artifacts are of varying quality
-- Advanced users ask "how do I use MIPROv2 with bae?"
+- After cancelling a graph run, CPU/network activity continues
+- `asyncio.all_tasks()` shows growing task count across REPL interactions
+- Subprocess PIDs survive after cancellation (visible in `ps`)
+- Stale output appears after an error or cancellation
 
 **Prevention:**
-1. **Expose optimizer selection in CLI and API.** `bae optimize --optimizer bootstrap` (default), `bae optimize --optimizer mipro`, `bae optimize --optimizer gepa`. Make it easy to upgrade.
-2. **Document the progression.** "Start with BootstrapFewShot (cheap, fast). If you plateau, try MIPROv2 (optimizes instructions too). For production, consider GEPA."
-3. **Don't hard-code BootstrapFewShot config.** Let users pass `max_rounds`, `max_bootstrapped_demos`, `max_labeled_demos` as CLI flags or config. The current hard-coded `max_rounds=1` is too conservative for serious use.
-4. **Show demo quality in eval output.** After optimization, show the actual demonstrations that were selected. Let the developer inspect them and judge quality.
+1. **Use `asyncio.TaskGroup` (Python 3.11+) instead of bare `gather()` for REPL-context resolution.** TaskGroup automatically cancels sibling tasks when one fails, and propagates CancelledError cleanly. Since bae requires Python 3.14, this is available. However, this is a change to existing resolver code and must not break batch execution.
+2. **Alternatively, wrap graph execution in a TaskGroup at the cortex level.** Cortex creates a TaskGroup for each graph run. All tasks spawned during that run (dep resolution, LLM calls, subprocess management) live in the group. Cancellation of the group cancels everything.
+3. **Register subprocess cleanup.** When `ClaudeCLIBackend` creates a subprocess, register it for cleanup. On CancelledError, `process.kill()` is called in a finally block (the timeout path already does this, but the cancellation path does not).
+4. **Monitor task leaks in development.** Add a debug mode that logs `len(asyncio.all_tasks())` after each REPL interaction. Alert if task count grows monotonically.
 
-**Phase to address:** Phase 2 (optimization DX). The optimizer abstraction should make it easy to swap optimizers without changing graph code.
+**Phase to address:** Phase 1 (REPL execution model). The task lifecycle model must be defined before graph execution is wired into the REPL.
 
 ---
 
-### Pitfall 5: Eval Dataset is Too Small or Not Representative
+### Pitfall 5: OTel Context Propagation Breaks Across asyncio.gather() Boundaries
 
 **What goes wrong:**
-DSPy recommends "Even 20 input examples can be useful, though 200 goes a long way." But for bae's graphs, each "example" is an entire graph execution trace. Collecting 200 full traces of the OOTD graph means 200 different user messages, weather conditions, calendar states, and outfit recommendations. This is expensive (each trace costs multiple LLM calls) and time-consuming.
+OpenTelemetry Python uses `contextvars` for span context propagation. In normal async code, `await` preserves context -- a child coroutine inherits the parent's span context. But `asyncio.create_task()` copies context at creation time, and `asyncio.gather()` creates tasks internally. When bae's resolver resolves multiple deps in parallel via `gather()`, each dep task gets a copy of the parent context at the moment the task is created. If one dep modifies the context (e.g., starts a child span), the other deps don't see it.
 
-Developers will start with 5-10 examples, get mediocre results, and either: (a) conclude optimization doesn't work for their use case, or (b) optimize on too-small data and overfit.
+This is correct behavior for independent deps. But it means the trace structure is flat: all concurrent deps appear as siblings under the parent span, not as a sequential chain. More problematically, if an OTel span is started before the gather and ended after the gather, the span correctly parents all dep spans. But if a dep itself creates a sub-span and that sub-span is not ended (due to an exception), the span leaks -- it persists in the contextvar as an unclosed span, and subsequent operations in that context see a stale parent.
 
 **Why it happens in bae specifically:**
-Bae's `trace_to_examples()` converts a graph trace into DSPy Examples -- one per node transition. A 3-node OOTD trace produces 2 examples. To get 20 examples per node type, you need at least 10 full graph executions. With branching graphs (5+ node types), you need more executions to cover all paths.
+Bae's dep resolution topology is a DAG resolved level-by-level via `asyncio.gather()`. Each level's deps run concurrently. An OTel trace of a graph execution should show:
 
-The current pipeline has no tooling for: generating diverse traces, managing eval datasets, or validating dataset coverage across graph paths.
+```
+graph.arun
+  resolve_fields (node 1)
+    dep_a  \
+    dep_b  / concurrent (siblings in trace)
+  lm.fill (node 1)
+  resolve_fields (node 2)
+    dep_c
+  lm.fill (node 2)
+```
+
+If deps are not properly instrumented, the trace shows all deps and fills as flat siblings under `graph.arun` -- losing the per-node grouping. Worse, if a dep starts a span and fails without ending it, subsequent spans in the same context have a wrong parent.
+
+The `run_in_executor` path is also relevant: if any dep function uses blocking I/O via `run_in_executor`, the context does NOT propagate to the executor thread automatically. Only `asyncio.to_thread()` (Python 3.9+) propagates contextvars. Raw `run_in_executor` loses the OTel context entirely, producing orphan spans.
 
 **Consequences:**
-- Optimization on 5 traces overfits to those specific inputs
-- Uncommon graph paths never get demonstrated
-- Compiled prompts work great for "ugh i just got up" but fail for edge cases
-- Developer falsely concludes "optimization didn't help" because they tested on training data
+- Trace hierarchy is flat instead of reflecting the per-node, per-level DAG structure
+- Span leaks from failed deps corrupt subsequent trace context
+- `run_in_executor` calls produce orphan spans (no parent)
+- Performance overhead from creating many short-lived spans in hot paths (dep resolution runs on every node)
 
 **Warning signs:**
-- Training and eval scores are both high, but production quality is low
-- All traces in the dataset have similar inputs
-- Some node types have 0 examples (branching paths never taken)
-- Optimization completes instantly (not enough data to bootstrap)
+- OTel traces show all operations as flat siblings instead of nested tree
+- Some spans have no parent (orphans) despite being part of a graph execution
+- Span count grows without bound across REPL interactions
+- Switching from sequential to concurrent dep resolution changes trace shape unexpectedly
 
 **Prevention:**
-1. **Provide dataset generation helpers.** `bae dataset generate --module examples.ootd --count 50 --vary user_message` runs the graph with varied inputs and saves traces. Even a naive variation strategy (GPT to generate diverse user messages) is better than hand-crafting 5 examples.
-2. **Show coverage in eval output.** "Dataset: 20 traces, 40 transitions. StartNode: 20 examples. AnticipateUsersDay: 20 examples. RecommendOOTD: 20 examples." Flag any node type with fewer than 10 examples.
-3. **Split train/eval automatically.** When running `bae optimize`, auto-split the dataset (80/20). Show train score AND eval score. If train >> eval, warn: "Possible overfitting."
-4. **Document minimum dataset sizes.** "For BootstrapFewShot: minimum 10 examples per node type. For MIPROv2: minimum 50 per node type. For GEPA: minimum 200 per node type." Give developers a target.
-5. **Persistent dataset storage.** `my_domain/evals/dataset.json` with append-on-run capability. Every `bae run` can optionally save its trace to the dataset.
+1. **Create spans at the right granularity.** Span per graph execution (top-level), span per node step, span per LM call. Do NOT span individual dep resolutions unless they involve I/O (LLM calls). Pure-compute deps should be attributes on the node span, not separate spans.
+2. **Always use `with tracer.start_as_current_span()` context manager, never manual `span.start()`/`span.end()`.** The context manager guarantees cleanup even on exception. Manual start/end is the primary source of span leaks.
+3. **Use `asyncio.to_thread()` instead of `run_in_executor()` when calling blocking code.** `to_thread` propagates contextvars automatically. If `run_in_executor` is unavoidable, manually copy context: `ctx = contextvars.copy_context(); loop.run_in_executor(None, ctx.run, fn)`.
+4. **Test trace structure.** Export spans to an in-memory exporter in tests. Assert parent-child relationships match expected DAG structure. Assert no orphan spans. Assert span count is bounded.
+5. **Use head-based sampling in the REPL.** In a REPL, the user runs many short interactions. Without sampling, every keystroke and tab-completion generates spans. Use `TraceIdRatioBased` sampling or only create spans for graph executions, not REPL input handling.
 
-**Phase to address:** Phase 1 (eval foundation) for dataset format and storage. Phase 2 (optimization DX) for generation helpers and coverage reporting.
+**Phase to address:** Phase 4 (OTel instrumentation). Should be addressed after the REPL and channel architecture are stable, because instrumentation wraps those layers.
 
 ---
 
 ## Moderate Pitfalls
 
-Mistakes that cause delays, frustrating DX, or technical debt.
+Mistakes that cause bugs, confusing behavior, or technical debt.
 
 ---
 
-### Pitfall 6: LLM-as-Judge Bias and Cost Explosion
+### Pitfall 6: Reflective Namespace Holds References That Prevent GC
 
 **What goes wrong:**
-LLM-as-judge is the natural "step up" from structural metrics for evaluating output quality. But LLM judges have well-documented biases: position bias (~40% decision flips when answer order swaps), verbosity bias (~15% score inflation for longer outputs), and self-enhancement bias (5-7% boost for outputs from the same model family). Additionally, running a judge LLM on every eval example adds significant cost -- if the eval dataset has 200 examples and each judge call costs $0.01, that's $2 per eval run, which adds up during iteration.
+A reflective REPL namespace exposes graph nodes, traces, results, and LM backends as live objects the user can inspect and manipulate. These objects hold references to other objects (traces hold all intermediate nodes, nodes hold Pydantic models with nested structures, LM backends hold agent caches). If the namespace retains references to old graph results, those entire object trees are pinned in memory.
+
+In a long REPL session, the user runs many graphs. Each result stays in the namespace (e.g., `result`, `_`, `_1`, `_2`, ...). Each result's trace holds every node instance from that execution. The memory footprint grows linearly with the number of executions, never shrinking because the namespace holds the references.
 
 **Why it happens in bae specifically:**
-Bae's graphs produce rich, multi-field outputs (OOTD has 6 fields including lists and URLs). A judge LLM needs to evaluate multiple dimensions -- is the outfit weather-appropriate? Is the tone right? Are the accessories coherent? A single "rate 1-5" prompt conflates all dimensions. But separate prompts per dimension multiply cost.
+Bae's `GraphResult.trace` is a `list[Node]`, and each `Node` is a Pydantic `BaseModel` that may hold complex nested data (the OOTD example has nodes with weather data, outfit recommendations, URLs, etc.). The dep_cache (keyed by callable identity) holds resolved dep values for the lifetime of a graph run. If the namespace retains the dep_cache or the GraphResult, all dep values are pinned.
 
-If bae ships a default `llm_judge` metric, developers will use it without understanding the biases. They'll see "Judge score: 4.2/5" and trust it, not realizing the judge inflates scores for verbose responses or penalizes concise ones.
+Additionally, `PydanticAIBackend._agents` is a dict cache that grows without bound -- each unique `(output_types, allow_none)` tuple creates a new Agent. In a REPL where the user experiments with many different node types, this cache grows indefinitely.
 
 **Consequences:**
-- Judge scores are systematically biased in ways developers don't see
-- Cost of eval runs discourages frequent evaluation
-- Developers optimize for "what the judge likes" rather than "what users want"
-- Judge model updates silently change evaluation standards (drift)
+- Memory grows linearly with REPL usage, never shrinking
+- Long REPL sessions eventually OOM
+- User cannot free memory without restarting cortex
+- Pydantic model instances pin their validators, which pin their classes
 
 **Warning signs:**
-- Judge scores are consistently high (4+/5) even for mediocre outputs
-- Adding more text to outputs always improves scores
-- Switching judge models changes scores significantly
-- Eval runs are expensive enough that developers skip them
+- Process memory grows steadily during a REPL session
+- `gc.get_referrers(old_result)` shows the namespace dict as the retainer
+- `PydanticAIBackend._agents` dict grows without bound
+- `del result` doesn't actually free the memory (other references from `_`, `__`, etc.)
 
 **Prevention:**
-1. **Document biases explicitly.** When the LLM-as-judge metric is used, show: "Note: LLM judges have known biases (verbosity, position). Use for relative comparisons, not absolute quality."
-2. **Provide multi-criteria judging.** Instead of one "rate overall quality" prompt, decompose: `relevance`, `coherence`, `tone`. Score each separately. This reduces conflation and makes biases more visible.
-3. **Cache judge results aggressively.** Same output + same judge prompt = same score. Don't re-judge unchanged outputs. This reduces cost during iteration.
-4. **Make judge cost visible.** After eval, show: "Judge cost: $0.47 (23 LLM calls). Cached: 177 results reused." Transparency prevents surprise bills.
-5. **Offer a free alternative.** For quick iteration, provide heuristic metrics that don't call an LLM: field completeness, output length bounds, regex checks. These are free, fast, and useful as guardrails alongside the judge.
+1. **Limit history depth.** Keep only the last N results in the namespace (e.g., `_1` through `_10`). Older results are explicitly `del`-ed from the namespace and the references are dropped.
+2. **Weak references for optional history.** If extended history is desired, store `weakref.ref()` to old results. When memory pressure triggers GC, old results can be collected.
+3. **Clear dep_cache after each graph run.** The dep_cache is per-run already (created at line 257 of graph.py), but if cortex's namespace holds a reference to a function's closure that captured the cache, it persists. Ensure dep_cache is not exposed in the namespace.
+4. **Bound the Agent cache.** Add a `maxsize` or LRU policy to `PydanticAIBackend._agents`. In a REPL, the user might experiment with many type combinations. The cache should evict old entries.
+5. **Provide `%clear` / `%gc` magic.** Give the user explicit control to purge old results and force garbage collection.
 
-**Phase to address:** Phase 2 (metric library). Ship heuristic metrics first, LLM-as-judge second.
+**Phase to address:** Phase 2 (reflective namespace). Design the namespace retention policy before exposing objects.
 
 ---
 
-### Pitfall 7: CLI Config File Hell
+### Pitfall 7: AI Context Explosion From Accumulating REPL History
 
 **What goes wrong:**
-Eval frameworks are notorious for config complexity. Promptfoo's YAML-heavy workflow "makes it hard to customize or scale" and "adds friction for developers." If bae's CLI requires a `bae.yaml` or `bae.toml` with deeply nested configuration for eval datasets, metrics, optimizers, and output formats, developers will bounce at the setup step.
+When cortex integrates AI assistance (e.g., "explain this trace", "optimize this node"), the AI call must include context: the current namespace state, recent execution history, graph definitions, error messages. In a long REPL session, this context grows without bound. Eventually, the context exceeds the model's window, and the AI either truncates silently (producing wrong answers from partial context) or errors out.
+
+Multi-agent systems amplify this: "if a root agent passes its full history to a sub-agent, and that sub-agent does the same, you trigger a context explosion where the token count skyrockets."
 
 **Why it happens in bae specifically:**
-Bae's v3.0 goal includes CLI commands for "create, run, eval, optimize, inspect." Each command needs configuration: which graph module, which dataset, which metric, which optimizer, which output format, where to save artifacts. If all of this requires a config file, the developer has to learn the config schema before running their first eval.
+Bae's graph execution traces contain rich, multi-field nodes. A single OOTD trace has 3+ nodes, each with 5-6 fields. Ten graph executions produce 30+ nodes in the history. If the AI context includes the full REPL history ("here's everything the user has done"), token count explodes:
 
-The existing CLI already has a good pattern: `bae graph show examples.ootd` -- module path as argument, sensible defaults. But eval is more complex than visualization. The temptation is to add a config file for the complex parts.
+- Namespace state (all live objects serialized): 500-2000 tokens
+- Per-execution trace: 200-500 tokens
+- 10 executions of history: 2000-5000 tokens
+- Graph definition (node classes, field types): 500-1000 tokens
+- Current error/question: 100-300 tokens
+- System prompt: 500-1000 tokens
+- **Total: 3800-9800 tokens before the AI even responds**
+
+At 20+ executions, context hits 15K+ tokens. The AI starts "confidently producing incorrect results" because it works with partial context after truncation.
 
 **Consequences:**
-- Developer has to create a config file before running first eval
-- Config file format becomes an API surface to maintain
-- Config validation errors are a new class of bug
-- Migration pain when config format changes between bae versions
+- AI answers degrade as REPL session length increases
+- Token costs grow linearly with session length
+- Silent truncation produces confident but wrong AI responses
+- User loses trust in AI assistance after it gives bad advice from stale context
 
 **Warning signs:**
-- `bae eval` requires a config file (no zero-config path)
-- Config file has more than 20 options
-- Developers copy-paste config files from examples without understanding them
-- Config file format changes between minor versions
+- AI responses become less accurate later in a session
+- AI "forgets" things it correctly referenced earlier
+- Token usage metrics show linear growth per interaction
+- AI responses reference objects that no longer exist in the namespace
 
 **Prevention:**
-1. **CLI arguments first, config file optional.** `bae eval examples.ootd` should work with zero config. Every option should be a CLI flag before it's a config key. Config file is for power users who want to save their CLI args.
-2. **Convention over configuration.** If the module is `examples.ootd`, look for `examples/ootd_evals/` for eval data by convention. Don't require explicit paths.
-3. **`bae init` generates minimal config.** If the developer wants a config file, `bae init` generates one with comments explaining each option. But it's never required.
-4. **Progressive config complexity.** Start with zero config, add flags as needed: `bae eval examples.ootd --metric quality --dataset evals/ootd.json --optimizer mipro`. Each flag adds one dimension. Never require all dimensions at once.
+1. **Scope AI context to the current task, not the full history.** When the user asks "explain this trace", send only: the current trace, the graph definition, and the question. Do not send all previous traces.
+2. **Summarize, don't serialize.** Instead of sending `result.trace` as full JSON, send a summary: "3-node trace: IsTheUserGettingDressed -> AnticipateUsersDay -> RecommendOOTD. Final output: top='sweater', bottom='joggers'." Summaries compress 500 tokens to 50.
+3. **Use a sliding window.** Keep only the last 3-5 REPL interactions in the AI context. Older interactions are dropped unless the user explicitly references them.
+4. **Make context budget explicit.** Track token count of AI context. If approaching 80% of window, warn: "AI context is large (12K tokens). Consider starting a new session for better responses."
+5. **Never include the full namespace.** Only include objects the user explicitly references in their query. "Explain _1" sends `_1`, not `_1` through `_10`.
 
-**Phase to address:** Phase 1 (CLI foundation). Design the CLI argument structure before touching config files.
+**Phase to address:** Phase 3 (AI integration). Design the context scoping strategy before implementing AI commands.
 
 ---
 
-### Pitfall 8: Progressive Complexity Tiers With Cliff Effects
+### Pitfall 8: Streaming LLM Output Conflicts With REPL Input
 
 **What goes wrong:**
-Progressive complexity means "start simple, add sophistication as needed." The pitfall is cliff effects -- sharp jumps in complexity between tiers. Tier 0 (zero-config) is trivial, but to get to Tier 1 (custom metrics), the developer has to learn DSPy Examples, understand the `trace` parameter, write a function with a specific signature, and figure out how to pass it to the optimizer. The gap between "just works" and "slightly customized" is a cliff.
+When an AI-assisted command or a graph execution streams LLM tokens (showing output as it's generated), those tokens write to the terminal. If the user starts typing before streaming completes, the streaming output and user input intermix. The user sees garbled text: "Here is the analy[user types 'he']sis of your tra[user types 'lp']ce..."
+
+This is distinct from Pitfall 2 (background output corruption) because streaming is foreground -- the user is watching and waiting for the stream, but decides to type before it finishes.
 
 **Why it happens in bae specifically:**
-Bae's optimization pipeline is tightly coupled to DSPy internals. Writing a custom metric requires understanding:
-1. `dspy.Example` structure (which fields, `with_inputs()`)
-2. The `pred` object shape (which attribute has the prediction?)
-3. The `trace` parameter convention (None = eval mode, not None = bootstrap mode)
-4. How `node_to_signature()` maps node fields to signature fields
-
-None of this is bae-specific knowledge -- it's DSPy plumbing. If bae doesn't abstract these details, the tier jump requires learning a second framework.
+Bae's `ClaudeCLIBackend` uses subprocess stdout pipes for LLM output. The output arrives as a complete blob (the CLI blocks until done). But if cortex adds native API streaming (via PydanticAI's streaming support), tokens arrive incrementally. The REPL must decide: is the user allowed to type while streaming? If yes, how do you prevent visual corruption?
 
 **Consequences:**
-- Developers use zero-config tier forever because the next tier is too hard
-- Developers who attempt custom metrics make subtle errors (wrong return type, wrong field names)
-- The "progressive" complexity isn't progressive -- it's binary (zero-config or DSPy expert)
-- Documentation for the custom tier is actually DSPy documentation, creating a maintenance burden
+- Streaming output and user input visually intermix
+- User must wait for streaming to complete before typing (poor DX)
+- Ctrl+C during streaming may not cancel cleanly (stream continues in background)
+- Terminal state corruption if streaming uses ANSI codes that aren't properly reset
 
 **Warning signs:**
-- No one uses custom metrics despite the feature existing
-- Developer questions are about DSPy internals, not bae concepts
-- Custom metric examples are 20+ lines of boilerplate
-- Error messages from custom metrics reference DSPy types the developer hasn't seen
+- User input appears inside streaming output text
+- Streaming continues after user presses Ctrl+C
+- Terminal colors or cursor position are wrong after streaming
+- Tests pass but visual rendering is broken
 
 **Prevention:**
-1. **Abstract DSPy from the metric interface.** Bae metrics should take bae types, not DSPy types. `def my_metric(node: Node, output: Node, trace: list[Node]) -> float` is understandable. `def my_metric(example: dspy.Example, pred, trace=None) -> float | bool` is not.
-2. **Provide a metric builder.** `bae.metrics.field_score("final_response", judge="Is this a helpful response?")` creates a metric without the developer writing a function.
-3. **Small step between tiers.** Zero-config -> add one line (`metric = bae.metrics.llm_judge("Is this good?")`) -> write a custom function (`def my_metric(output: RecommendOOTD) -> float`). Each step adds one concept.
-4. **Error messages at the bae level.** If a custom metric returns the wrong type, say "Metric must return float (got str). See `bae eval --help-metrics`." Don't let DSPy's error messages leak through.
+1. **Streaming output goes to a dedicated region.** Use prompt_toolkit's output abstraction to write streaming tokens above the prompt line (same as `patch_stdout` behavior). The user can type at any time; streaming appears above their input.
+2. **Gate input during foreground AI operations.** When the user runs an AI command (e.g., `/explain`), disable the prompt until streaming completes. Show a spinner or progress indicator instead of the prompt. This is simpler and avoids the multiplexing complexity.
+3. **Cancellation must kill the stream.** If the user presses Ctrl+C during streaming, the LLM call must be cancelled immediately. For subprocess-based backends (ClaudeCLI), this means `process.kill()`. For API-based backends (PydanticAI), this means aborting the HTTP stream.
+4. **Reset terminal state after streaming.** Any ANSI codes (colors, bold) used during streaming must be reset before the prompt reappears. Use prompt_toolkit's style system rather than raw ANSI codes.
 
-**Phase to address:** Phase 1 (eval foundation). The metric abstraction layer is the most important design decision.
+**Phase to address:** Phase 3 (AI integration). Streaming display is an AI integration concern.
 
 ---
 
-### Pitfall 9: Mermaid Diagrams as Write-Only Artifacts
+### Pitfall 9: Reflective Namespace Leaks Internal State
 
 **What goes wrong:**
-Auto-generated mermaid diagrams (`graph.to_mermaid()`) are useful for initial understanding but become stale documentation. The existing CLI (`bae graph show`) generates diagrams, but if the v3.0 scaffolding auto-generates `graph.md` files with embedded mermaid, those files will drift from the actual graph code. Developers won't update them because they're auto-generated, but they also won't re-generate them because they forgot the diagram exists.
+A reflective namespace exposes bae's internals (nodes, graphs, LM backends, traces) for user inspection. If the namespace exposes mutable internal state, the user (or AI) can accidentally mutate it, corrupting subsequent graph executions. For example, if the namespace exposes the LM backend instance and the user modifies `lm._agents`, subsequent graph executions use the mutated cache.
+
+More subtly: Pydantic models with `model_config = ConfigDict(arbitrary_types_allowed=True)` can hold unpicklable values. If cortex provides a "save session" feature that pickles the namespace, it crashes on these objects. And if cortex provides tab-completion over the namespace, inspecting complex objects (e.g., calling `repr()` on a large trace) can block the event loop if `repr` triggers expensive computation.
 
 **Why it happens in bae specifically:**
-Bae's `to_mermaid()` generates structural diagrams showing nodes and edges. But for eval DX, developers also want to see: which nodes have quality metrics, which have compiled artifacts, which paths have eval coverage. If the diagram only shows structure, it's useful once (at graph creation) and never again.
+Bae's `Node` is a Pydantic BaseModel with `arbitrary_types_allowed=True`. Dep-annotated fields can hold any Python object (the result of the dep function). If a dep function returns, say, an HTTP client or a database connection, that object is in the trace, and the trace is in the namespace. Pickling the namespace for session save hits these non-serializable objects.
 
-The v3.0 goal includes "autogenerated mermaid diagrams" in scaffolded packages. If these are static files committed to git, they're stale the moment a node is added.
+The `dep_cache` in graph.py stores an `LM_KEY = object()` sentinel. If exposed in the namespace, this sentinel is confusing and the cache is mutable.
 
 **Consequences:**
-- Diagrams in docs don't match actual graph structure
-- Developers distrust auto-generated docs
-- Maintenance burden: "update the diagram" becomes a chore
-- Diagrams show structure but not the eval/optimization state developers care about
+- User accidentally mutates internal LM state, breaking graph execution
+- Session save fails on unpicklable objects in the namespace
+- Tab-completion hangs on expensive `__repr__` methods
+- Internal implementation details leak into the user-facing API
 
 **Warning signs:**
-- `graph.md` shows 3 nodes but the graph actually has 5
-- No one runs `bae graph mermaid` after initial setup
-- Diagrams don't include eval-relevant information
-- PRs with node changes don't update diagrams
+- User can modify `lm._agents` and break subsequent runs
+- `pickle.dumps(namespace)` raises `PicklingError`
+- Tab-completion pauses for seconds when expanding a complex object
+- User sees internal objects (`dep_cache`, `LM_KEY`) in the namespace
 
 **Prevention:**
-1. **Generate on demand, don't persist.** `bae graph show` generates live from code. Don't save `.md` files with embedded diagrams. If a developer wants a diagram in their docs, they run a command and paste.
-2. **If persisting, include a freshness check.** Add a comment: `<!-- Generated from examples.ootd on 2026-02-08. Run 'bae graph mermaid examples.ootd' to regenerate. -->` and optionally `bae graph check` that compares generated vs stored.
-3. **Make diagrams eval-aware.** Show eval state on the diagram: nodes with quality metrics get a green border, nodes with only routing metrics get yellow, nodes with no metrics get red. This makes the diagram useful beyond initial setup.
-4. **Keep diagrams minimal.** Don't try to show every field, every dep, every recall. Node names and edges are enough for the diagram. Details go in `bae inspect`.
+1. **Namespace exposes views, not internals.** Wrap exposed objects in read-only proxies or provide accessor functions. `cortex.graph` returns a read-only view of the graph. `cortex.trace` returns a copy of the trace, not the live list.
+2. **No pickle for session state.** Use JSON serialization for saveable state. Non-serializable objects (LM backends, live connections) are recreated on session load, not saved.
+3. **Lazy repr with depth limits.** Override `__repr__` for namespace objects to be shallow. For traces, show `[3 nodes: IsTheUserGettingDressed -> ... -> RecommendOOTD]` not the full Pydantic dump. Set a repr depth limit for tab-completion.
+4. **Separate user namespace from runtime namespace.** User's variables live in one dict, bae's runtime state lives in another. The user can inspect bae state through accessor functions but cannot accidentally assign to it.
 
-**Phase to address:** Phase 3 (scaffolding/DX). Don't invest in diagram persistence until the eval system is stable.
+**Phase to address:** Phase 2 (reflective namespace design). The namespace boundary is a design decision, not an implementation detail.
 
 ---
 
-### Pitfall 10: Package Scaffolding That Creates Migration Pain
+### Pitfall 10: asyncio.Queue.shutdown() Semantics and Graceful REPL Exit
 
 **What goes wrong:**
-Scaffolding tools (like `bae init my_domain`) generate project structures with specific file layouts, naming conventions, and configuration patterns. If the scaffolded structure is over-opinionated -- requiring specific directory names, specific file patterns, or specific import structures -- developers can't adopt bae incrementally. They either scaffold a fresh project or fight the conventions.
+When the user exits cortex (Ctrl+D, `exit()`, or `/quit`), all background tasks must be cleanly shut down: in-progress graph executions cancelled, LLM subprocesses killed, OTel spans flushed, output channels drained. `asyncio.Queue` in Python 3.13+ supports `.shutdown()` to signal producers and consumers that the queue is closing. But if cortex supports Python 3.14 (as bae requires), the shutdown semantics interact poorly with tasks blocked on `queue.get()` or `queue.put()`.
+
+Specifically: after `shutdown()`, calls to `get()` raise `QueueShutDown` on an empty queue, but calls on a non-empty queue succeed (draining remaining items). If a consumer is blocked on `get()` when shutdown is called, it wakes up with `QueueShutDown`. But if the consumer has a `try/except` that catches generic exceptions and retries, it spins in a tight loop catching `QueueShutDown` and retrying.
 
 **Why it happens in bae specifically:**
-The v3.0 goal includes "package scaffolding: `my_domain/graph.py` + `graph.md`." If `bae init` generates a rigid structure:
-```
-my_domain/
-  graph.py      # must export `graph`
-  evals/
-    dataset.json
-    metrics.py
-  compiled/
-    *.json
-  graph.md
-```
-...then developers with existing code must reorganize to fit. And if the convention changes in v3.1, all scaffolded projects break.
+Cortex will have multiple async tasks: the prompt loop, the output display loop, background graph executions. On exit, all must stop. If shutdown order is wrong:
+- Shutting down the output queue before cancelling graph tasks means graph tasks try to write to a shut-down queue and get `QueueShutDown`
+- Cancelling graph tasks before shutting down the output queue means remaining output is lost (user never sees final results)
+- If the OTel exporter has a flush timeout and the event loop exits before flush completes, traces are lost
 
 **Consequences:**
-- Developers with existing graphs can't adopt the eval DX without restructuring
-- Scaffold conventions become an API surface that's hard to change
-- Too many generated files overwhelm developers ("I just wanted to eval my graph")
-- Convention disagreements (is it `evals/` or `eval/`? `compiled/` or `.compiled/`?)
+- REPL exit hangs (tasks don't terminate)
+- REPL exit crashes (unhandled QueueShutDown exceptions)
+- Final output lost (queue shut down before drain)
+- OTel traces from the last interaction lost (exporter not flushed)
 
 **Warning signs:**
-- `bae init` generates more than 3 files
-- Developers need to move existing code to fit the scaffold
-- CLI commands fail because files aren't in expected locations
-- Scaffold conventions change between versions
+- `asyncio.run()` prints "Task was destroyed but it is pending!" warnings on exit
+- REPL takes several seconds to exit (timeout waiting for tasks)
+- User's last graph result is missing from output
+- OTel backend shows missing final traces
 
 **Prevention:**
-1. **Scaffolding should be additive, not prescriptive.** `bae init` creates the minimum: an eval config pointing to the developer's existing graph module. It doesn't move code or create directory structures.
-2. **Convention discovery, not convention enforcement.** The CLI should look for graphs by module path (already works: `bae graph show examples.ootd`), not by file location. If the developer puts their eval dataset in `tests/eval_data.json` instead of `evals/dataset.json`, that should work.
-3. **Scaffold minimal, document maximal.** Generate one file with comments explaining the recommended structure. Don't generate the structure itself.
-4. **No scaffold at all for v3.0.** Start with the CLI commands working on arbitrary module paths. Add scaffolding later if developers ask for it. YAGNI.
+1. **Define a shutdown sequence.** (1) Signal graph tasks to cancel. (2) Wait for graph tasks to complete/cancel with a timeout. (3) Drain output queue. (4) Shut down output queue. (5) Flush OTel exporter. (6) Exit.
+2. **Use `asyncio.timeout()` around shutdown steps.** If any step takes more than 2 seconds, force-kill and move to the next step. Do not hang forever.
+3. **Register signal handlers for SIGINT/SIGTERM.** Cortex should handle Ctrl+C gracefully by triggering the shutdown sequence, not by letting the default handler raise KeyboardInterrupt (which leaves tasks orphaned).
+4. **Test exit behavior.** Automated test that starts cortex, runs a graph, and exits. Assert no "Task was destroyed" warnings, no zombie subprocesses, and OTel export completes.
 
-**Phase to address:** Phase 3 (DX polish). Don't build scaffolding until the eval/optimize workflow is proven without it.
+**Phase to address:** Phase 1 (REPL lifecycle). Graceful startup and shutdown are part of the core REPL architecture.
 
 ---
 
-### Pitfall 11: Eval Framework Disconnected from the Compile Loop
+### Pitfall 11: OTel Instrumentation Performance Overhead in Hot Paths
 
 **What goes wrong:**
-If eval and optimization are separate workflows -- `bae eval` reports scores, `bae optimize` runs BootstrapFewShot, but there's no connection between them -- developers don't know when to re-optimize, how optimization affected eval scores, or whether their latest code change regressed quality.
+OTel span creation has non-zero overhead: context copying, attribute serialization, span ID generation. In bae's dep resolution, which runs `asyncio.gather()` over potentially many deps per node, creating a span per dep per node per graph execution can add measurable latency. For a graph with 5 nodes, each with 3 deps, that's 15 dep spans per execution. In a REPL where the user runs graphs rapidly, the overhead accumulates.
+
+Span attribute filtering can cut trace volumes by 70%, but the span creation overhead itself (before filtering) is unavoidable once instrumentation is added.
 
 **Why it happens in bae specifically:**
-Bae's current architecture has `optimize_node()` and `node_transition_metric()` in the same file but they're not part of an integrated workflow. The developer must manually: (1) collect traces, (2) convert to examples, (3) run optimization, (4) save artifacts, (5) load artifacts, (6) run evals to see if optimization helped. Each step is a separate function call with no orchestration.
+Bae's dep resolution is the hottest path: it runs on every node transition, potentially making LLM calls (for Node-as-Dep) and running user functions. If every dep resolution creates a span, every dep function call creates a child span, and every LM call creates a span, the trace tree for a single graph execution can have 50+ spans.
+
+In a REPL context, the user expects instant responsiveness. Even 5ms of OTel overhead per span, times 50 spans, is 250ms of added latency per graph execution. This is noticeable.
 
 **Consequences:**
-- Developer optimizes once, never again
-- No baseline comparison: "was this optimization actually better?"
-- No regression detection: "did my last code change break things?"
-- Eval and optimization feel like separate tools instead of one workflow
+- Graph execution measurably slower with instrumentation enabled
+- REPL feels sluggish compared to running graphs without cortex
+- Users disable instrumentation to get performance, losing observability
+- Span volume overwhelms the OTel backend (if exporting to a service)
 
 **Warning signs:**
-- Developer runs `bae optimize` once and never again
-- No before/after comparison in optimization output
-- Eval scores aren't saved or tracked over time
-- Developer can't answer "is my graph better than yesterday?"
+- `time graph.arun(...)` shows different timing with and without OTel
+- OTel backend shows thousands of spans per minute during active REPL use
+- REPL input-to-output latency increases after enabling instrumentation
+- Span export queue backs up (exporter can't keep up)
 
 **Prevention:**
-1. **`bae optimize` should eval before and after.** Run eval with current compiled artifacts (baseline), optimize, run eval again, show delta: "Routing: 85% -> 93% (+8%). Quality: 3.2 -> 3.8 (+0.6)."
-2. **Save eval results with timestamps.** `my_domain/evals/history.json` with timestamped eval runs. `bae eval --history` shows trend.
-3. **`bae eval --compare compiled naive` shows the value of optimization.** Run the graph with and without compiled artifacts, compare scores.
-4. **Integrate eval into `bae run`.** After a graph run, optionally score it: `bae run examples.ootd --eval`. This makes eval part of the development loop, not a separate chore.
+1. **Span at the right granularity.** One span per graph execution, one span per node step, one span per LM call. Pure-compute deps do NOT get their own spans -- they get attributes on the node span. Only I/O deps (LM calls, HTTP, DB) get spans.
+2. **Use span events, not child spans, for lightweight annotations.** `span.add_event("dep_resolved", {"name": "weather", "duration_ms": 12})` is much cheaper than creating a child span.
+3. **Default to sampled instrumentation.** In the REPL, sample 1-in-10 graph executions by default. `cortex.trace_all()` enables 100% sampling when the user is debugging.
+4. **Lazy instrumentation.** Don't create spans unless an OTel exporter is configured. Check `tracer.is_recording()` before creating spans. If no exporter, the overhead is near zero.
+5. **Benchmark.** Before shipping, measure graph execution time with and without instrumentation. Set a budget: OTel overhead must be <5% of total execution time.
 
-**Phase to address:** Phase 2 (optimization DX). The eval-optimize loop should be a single command with before/after reporting.
-
----
-
-### Pitfall 12: Node-Level vs Graph-Level Eval Confusion
-
-**What goes wrong:**
-Bae's optimization is node-level (each node gets its own predictor, its own demonstrations). But quality is often graph-level -- "was the overall output good?" Developers think in graph-level terms ("is my outfit recommendation pipeline good?") but the eval infrastructure works at node-level. This creates a mismatch where developers write graph-level metrics but the optimizer needs node-level metrics.
-
-**Why it happens in bae specifically:**
-`optimize_node()` takes a single `node_cls` and filters the trainset to examples for that node type. The metric evaluates one node transition at a time. But the developer's quality question -- "is the final outfit recommendation good?" -- depends on all nodes working together. The vibe check quality affects the outfit quality, but they're evaluated independently.
-
-**Consequences:**
-- Node-level metrics miss cross-node quality issues
-- Developer writes a metric for the terminal node only, ignoring intermediate quality
-- Optimizing one node degrades another (no joint optimization)
-- Eval scores per-node are high but end-to-end quality is low
-
-**Warning signs:**
-- All node-level metrics are high but users complain about output quality
-- Developer only writes metrics for the terminal node
-- Optimizing one node changes another node's behavior unexpectedly
-- No end-to-end eval exists
-
-**Prevention:**
-1. **Provide both node-level and graph-level eval.** `bae eval examples.ootd` evaluates end-to-end (graph-level). `bae eval examples.ootd --per-node` breaks it down. Default to graph-level because that's what developers care about.
-2. **Graph-level metrics that inspect the trace.** A graph-level metric receives the full trace and the terminal node. It can check: "was the vibe check good AND the outfit appropriate AND the tone right?"
-3. **Document the relationship.** "Node-level optimization improves individual transitions. Graph-level eval measures overall quality. Use both: optimize per-node, evaluate per-graph."
-4. **Show cross-node effects.** After optimization, show: "Optimized AnticipateUsersDay. Graph-level eval changed from 3.5 to 3.8. RecommendOOTD node-level changed from 4.0 to 4.2." This surfaces cross-node effects.
-
-**Phase to address:** Phase 1 (eval foundation). The eval framework should support both levels from the start, defaulting to graph-level.
+**Phase to address:** Phase 4 (OTel instrumentation). Design the span strategy based on measured overhead, not speculation.
 
 ---
 
 ## Minor Pitfalls
 
-Mistakes that cause annoyance but are fixable.
+Mistakes that cause annoyance or require cleanup.
 
 ---
 
-### Pitfall 13: Eval Output That's Hard to Read
+### Pitfall 12: User Code Exceptions Crash the REPL
 
 **What goes wrong:**
-Eval output is either too verbose (raw JSON of every example) or too sparse (a single number). Developers need a middle ground: summary scores, worst-performing examples, and actionable next steps.
+In a standard Python REPL, if user code raises an exception, the REPL prints the traceback and returns to the prompt. It never crashes. Cortex must provide the same guarantee: no user-typed code should be able to crash the REPL process. This includes bae-specific exceptions (`BaeError`, `DepError`, `FillError`, `RecallError`) that might propagate from graph execution.
 
-**Why it happens in bae specifically:**
-The current CLI output for `bae run` is minimal: trace list and final node. For eval, there's no CLI output at all -- it's all programmatic. When v3.0 adds `bae eval`, the first version will likely dump all results, overwhelming the developer.
+Bae's convention is to "let errors propagate" (from CONVENTIONS.md: "Never use try-except unless reraising"). This is correct for library code but dangerous for REPL code. The REPL is the outermost exception boundary -- it must catch everything.
 
 **Prevention:**
-1. **Summary first, details on request.** Default: "Eval: 85% routing, 3.8/5 quality (23 examples). Worst: example #7 (quality: 1.2)." Add `--verbose` for per-example detail.
-2. **Show actionable next steps.** "To improve: add quality metrics for AnticipateUsersDay (currently routing-only). Run `bae optimize` to compile."
-3. **Color-code results.** Green for passing, yellow for marginal, red for failing. Make it visually scannable.
+1. **Catch all exceptions at the REPL eval boundary.** After executing user code, catch `Exception` (not `BaseException` -- let `KeyboardInterrupt` and `SystemExit` through) and print the traceback.
+2. **Attach trace context to bae exceptions.** `BaeError`, `DepError`, etc. already have `.trace` attributes. In the REPL, display these alongside the traceback: "Error at node AnticipateUsersDay (step 2 of 3)."
+3. **Never catch `CancelledError` at the REPL boundary.** CancelledError (a BaseException in Python 3.9+) must propagate to cancel tasks properly.
 
-**Phase to address:** Phase 2 (CLI polish).
+**Phase to address:** Phase 1 (REPL error handling). The exception boundary is part of the core REPL loop.
 
 ---
 
-### Pitfall 14: Ignoring the Cost of Eval Runs
+### Pitfall 13: Tab-Completion Triggers Expensive Operations
 
 **What goes wrong:**
-Each eval run that involves LLM calls costs money. During rapid iteration, a developer might run `bae eval` 20 times in an hour, each time making 50+ LLM calls. Without cost tracking or caching, the eval bill surprises them.
+prompt_toolkit supports custom completers for tab-completion. If cortex provides completion for namespace objects (e.g., typing `result.` shows `trace`, `node`, `result`), the completer must inspect the object. For Pydantic models, this means calling `dir()` or accessing `model_fields`. For large objects, `dir()` can trigger `__getattr__` methods that perform computation, and `repr()` for completion tooltips can be expensive.
+
+If the completer runs synchronously (blocking the event loop), the REPL freezes on every tab press.
 
 **Prevention:**
-1. **Show estimated cost before running.** "This eval will make ~50 LLM calls (~$0.50). Proceed? [Y/n]" (or `--yes` to skip).
-2. **Cache aggressively.** If the input and graph haven't changed, reuse cached traces. Only re-eval changed nodes.
-3. **Offer a dry-run mode.** `bae eval --dry-run` shows what would be evaluated without making LLM calls.
-4. **Track cumulative cost.** `bae eval --cost-report` shows total spend across all eval runs.
+1. **Completers must be async or cached.** Use prompt_toolkit's `ThreadedCompleter` to run completion in a thread pool, keeping the event loop responsive.
+2. **Cache completion results.** Recompute completions only when the namespace changes (new assignment), not on every tab press.
+3. **Limit completion depth.** Complete `result.` but not `result.trace[0].` unless explicitly requested. One level of attribute completion is sufficient.
+4. **Timeout completion.** If completion takes more than 100ms, return empty results rather than blocking.
 
-**Phase to address:** Phase 2 (optimization DX).
+**Phase to address:** Phase 2 (reflective namespace). Completion is a namespace concern.
 
 ---
 
-### Pitfall 15: DSPy Version Coupling
+### Pitfall 14: Dep Functions With Side Effects Behave Differently in REPL vs Script
 
 **What goes wrong:**
-DSPy is actively developed and has breaking changes between versions. If bae's eval/optimization DX tightly couples to DSPy internals (Example format, Predict API, optimizer class signatures), DSPy updates break bae.
+In a script, `graph.run()` executes once and exits. In the REPL, the user runs the graph many times. Dep functions that have side effects (writing to a file, incrementing a counter, making an API call) execute on every run. If a dep function assumes it runs once (e.g., initializes a database schema), running it 10 times from the REPL causes 10 schema initializations.
 
-**Why it happens in bae specifically:**
-Bae already imports `dspy.teleprompt.BootstrapFewShot`, `dspy.Predict`, `dspy.Example`, and `dspy.make_signature`. The v3.0 eval DX will add more DSPy surface area: `MIPROv2`, `GEPA`, metric conventions. Each import is a coupling point. DSPy moved from `dspy.teleprompt` to `dspy.optimizers` at some point, and class signatures evolve.
+Bae's `dep_cache` is per-run (created at line 257 of graph.py: `dep_cache: dict = {LM_KEY: lm}`). It does NOT persist across REPL interactions. So a dep that was cached in run 1 is re-executed in run 2. This is correct but surprising: the user might expect caching to persist across runs.
 
 **Prevention:**
-1. **Wrap DSPy imports in a single adapter module.** `bae._dspy_compat` handles all DSPy imports and provides stable internal APIs. If DSPy changes, only one module needs updating.
-2. **Pin DSPy version in requirements.** Don't float. Test against specific DSPy versions.
-3. **Abstract optimizer creation.** `bae.optimizers.create("bootstrap", ...)` instead of direct `BootstrapFewShot(...)` construction. The factory handles version differences.
+1. **Document dep lifecycle clearly.** "Dep functions are called once per graph run. They are not cached across runs. Side effects will execute on every run."
+2. **Provide an optional persistent dep cache.** `cortex.dep_cache` that persists across runs for deps the user marks as cacheable. Not default behavior -- opt-in.
+3. **Warn about side-effect deps in REPL mode.** If a dep function writes to a file or makes HTTP calls, show a note: "Dep `fetch_weather` made an HTTP call. This will re-execute on every graph run."
 
-**Phase to address:** Phase 1 (foundation). Establish the adapter pattern before adding more DSPy surface area.
+**Phase to address:** Phase 2 (reflective namespace / execution model). The dep lifecycle in REPL context needs documentation.
+
+---
+
+### Pitfall 15: Python 3.14 asyncio Changes Affect Event Loop Behavior
+
+**What goes wrong:**
+Bae requires Python 3.14+. Python 3.14 includes changes to asyncio that may affect cortex:
+- The new REPL (PEP 756) exposed internal imports to the top-level environment (cpython#118908), causing namespace pollution
+- asyncio's event loop management continues to evolve, with deprecation of `get_event_loop()` in favor of `get_running_loop()`
+- `asyncio.Runner` (added in 3.11) is the recommended way to manage event loop lifecycle
+
+Since cortex will create its own async REPL, it must be aware of these changes to avoid relying on deprecated patterns.
+
+**Prevention:**
+1. **Use `asyncio.Runner` for event loop management.** Instead of `asyncio.run()`, use `Runner` for more control over the event loop lifecycle (shutdown behavior, exception handling).
+2. **Use `asyncio.get_running_loop()`, never `get_event_loop()`.** The latter is deprecated for contexts where a loop may not be running.
+3. **Test on Python 3.14 specifically.** Don't assume 3.12/3.13 behavior carries over. Run the REPL test suite on 3.14 nightlies.
+4. **Isolate cortex's namespace from Python's REPL internals.** If Python 3.14's new REPL leaks `os` and `sys` into the top-level scope, cortex's namespace must be independent (use a custom namespace dict, not the module's globals).
+
+**Phase to address:** Phase 1 (REPL foundation). Python version behavior is a foundation concern.
 
 ---
 
@@ -490,76 +523,83 @@ Bae already imports `dspy.teleprompt.BootstrapFewShot`, `dspy.Predict`, `dspy.Ex
 
 | Phase | Pitfall | Risk | Mitigation Priority |
 |-------|---------|------|---------------------|
-| Phase 1 (Eval Foundation) | #1: Accessible evals that mislead | CRITICAL | Honest default metrics, forced "metric moment" |
-| Phase 1 (Eval Foundation) | #2: Metric design that optimizes wrong thing | CRITICAL | Metric validation, dual-mode helpers |
-| Phase 1 (Eval Foundation) | #5: Dataset too small or not representative | HIGH | Dataset helpers, coverage reporting |
-| Phase 1 (Eval Foundation) | #7: CLI config file hell | HIGH | CLI args first, config optional |
-| Phase 1 (Eval Foundation) | #8: Progressive complexity cliff effects | HIGH | Abstract DSPy from metric interface |
-| Phase 1 (Eval Foundation) | #12: Node-level vs graph-level confusion | HIGH | Support both, default to graph-level |
-| Phase 1 (Eval Foundation) | #15: DSPy version coupling | MEDIUM | Adapter module, pinned version |
-| Phase 2 (Optimization DX) | #3: Compiled artifacts go stale | HIGH | Signature hashing, staleness check |
-| Phase 2 (Optimization DX) | #4: BootstrapFewShot suboptimal demos | MEDIUM | Expose optimizer selection, configurable params |
-| Phase 2 (Optimization DX) | #6: LLM-as-judge bias and cost | MEDIUM | Document biases, cache results, show cost |
-| Phase 2 (Optimization DX) | #11: Eval disconnected from compile loop | HIGH | Before/after in optimize command |
-| Phase 2 (Optimization DX) | #13: Hard-to-read eval output | MEDIUM | Summary-first output |
-| Phase 2 (Optimization DX) | #14: Eval run cost surprises | LOW | Cost tracking, caching |
-| Phase 3 (DX Polish) | #9: Mermaid diagrams as write-only | LOW | Generate on demand, eval-aware |
-| Phase 3 (DX Polish) | #10: Scaffolding migration pain | MEDIUM | Additive not prescriptive, YAGNI |
+| Phase 1 (REPL Foundation) | #1: Event loop ownership conflict | CRITICAL | cortex owns the loop, graph uses arun() only |
+| Phase 1 (REPL Foundation) | #2: Output corruption from concurrent streams | CRITICAL | patch_stdout + output channel |
+| Phase 1 (REPL Foundation) | #4: gather() exception handling leaks tasks | HIGH | TaskGroup or cortex-level task management |
+| Phase 1 (REPL Foundation) | #10: Graceful shutdown sequence | HIGH | Defined shutdown order with timeouts |
+| Phase 1 (REPL Foundation) | #12: User code crashes REPL | MEDIUM | Exception boundary at eval layer |
+| Phase 1 (REPL Foundation) | #15: Python 3.14 asyncio changes | MEDIUM | Use Runner, get_running_loop(), test on 3.14 |
+| Phase 2 (Channel I/O + Namespace) | #3: Channel deadlock from bounded queue | CRITICAL | Unbounded output queue + multiplexed wait |
+| Phase 2 (Channel I/O + Namespace) | #6: Namespace holds GC-preventing references | HIGH | History depth limit, weak refs, cache bounds |
+| Phase 2 (Channel I/O + Namespace) | #9: Namespace leaks internal state | HIGH | Read-only views, JSON serialization |
+| Phase 2 (Channel I/O + Namespace) | #13: Tab-completion triggers expensive ops | MEDIUM | ThreadedCompleter, caching, depth limits |
+| Phase 2 (Channel I/O + Namespace) | #14: Side-effect deps re-execute in REPL | LOW | Documentation, optional persistent cache |
+| Phase 3 (AI Integration) | #7: AI context explosion from history | HIGH | Scoped context, summaries, sliding window |
+| Phase 3 (AI Integration) | #8: Streaming conflicts with REPL input | MEDIUM | Dedicated output region or gated input |
+| Phase 4 (OTel Instrumentation) | #5: OTel context breaks across gather | HIGH | Correct span granularity, context manager spans |
+| Phase 4 (OTel Instrumentation) | #11: OTel performance overhead | MEDIUM | Right granularity, events not spans, sampling |
 
 ## Key Design Decisions Forced by Pitfalls
 
-These pitfalls force design decisions that should be made before coding starts:
+These pitfalls force design decisions that must be made before coding starts:
 
-1. **What does the default eval measure, and how honest is it about what it doesn't measure?** (Pitfall #1)
-   The zero-config tier must be transparent about its limitations. This is a UX decision, not a technical one.
+1. **Who owns the event loop?** (Pitfall #1)
+   Cortex must own the single event loop. All graph execution goes through `arun()`. The sync `run()` wrappers must detect a running loop and error clearly. This is a non-negotiable architectural constraint.
 
-2. **What is the metric interface -- DSPy types or bae types?** (Pitfall #8)
-   If metrics take `(example: dspy.Example, pred, trace=None)`, developers need to learn DSPy. If metrics take `(output: Node, trace: list[Node]) -> float`, the abstraction is clean but bae must translate internally. This is the most consequential API design decision in v3.0.
+2. **How do concurrent outputs reach the terminal?** (Pitfalls #2, #3, #8)
+   All output flows through cortex-controlled channels. The REPL multiplexes between user input and output consumption. Output channels are unbounded (display output is finite per execution). Streaming uses prompt_toolkit's output abstraction, not raw stdout.
 
-3. **Are compiled artifacts self-describing or opaque?** (Pitfall #3)
-   Adding metadata (hash, model, date, dataset size) to compiled artifacts costs almost nothing at save time but prevents an entire class of staleness bugs. Decide this before the first artifact is saved.
+3. **What is the task lifecycle model?** (Pitfalls #4, #10)
+   Each graph execution lives in a TaskGroup. Cancellation of the group cancels all subtasks. REPL exit triggers an ordered shutdown sequence with timeouts. No orphaned tasks, no leaked subprocesses.
 
-4. **Is eval graph-level or node-level by default?** (Pitfall #12)
-   Developers think in graph-level terms. DSPy optimizes node-level. The eval framework must bridge this gap.
+4. **What does the namespace expose?** (Pitfalls #6, #9)
+   The namespace exposes read-only views of bae state, not mutable internals. History is bounded. Non-serializable objects are not exposed. The user namespace and the runtime namespace are separate.
 
-5. **Is configuration via CLI args or files?** (Pitfall #7)
-   CLI-first is simpler and follows the existing `bae graph show` pattern. Config files are optional extras. This should be a firm design principle.
+5. **Where do OTel spans go?** (Pitfalls #5, #11)
+   Spans at graph/node/LM-call granularity only. Dep resolution uses events, not spans. Context manager spans only (no manual start/end). Sampling by default. Zero overhead when no exporter configured.
 
-## The Central Risk: False Confidence
+## The Central Risk: Event Loop Sovereignty
 
-Pitfalls #1, #2, #5, #6, and #12 all point to the same root risk: **the eval system tells the developer their graph is good when it isn't.** This happens through:
+Pitfalls #1, #2, #3, #4, #8, #10, and #15 all stem from the same root: **cortex is adding an interactive event loop owner to a framework designed for batch execution.** Bae's existing code assumes it controls when the event loop starts and stops (`asyncio.run()` in `graph.run()` and `CompiledGraph.run()`). Cortex reverses this assumption: the REPL owns the event loop, and graph execution is a guest.
 
-- Metrics that measure the wrong thing (#1, #2)
-- Datasets too small to catch edge cases (#5)
-- Biased judges that inflate scores (#6)
-- Node-level evals that miss graph-level failures (#12)
+Every pitfall in Phase 1 is about establishing this sovereignty cleanly:
+- The REPL owns the loop (#1)
+- Output goes through the REPL's display system (#2)
+- Channel communication respects the loop's single-threaded nature (#3)
+- Task lifecycle is managed by the REPL, not by individual graph runs (#4)
+- Shutdown is orchestrated by the REPL (#10)
 
-The mitigation is consistent: **be honest about what the eval measures and what it doesn't.** Every eval output should answer: "What did we measure? What didn't we measure? How confident are we?"
+If this sovereignty is established correctly in Phase 1, Phases 2-4 build on a solid foundation. If it's compromised (e.g., by using `nest_asyncio` to paper over the loop conflict), every subsequent phase inherits the instability.
 
 ## Sources
 
-**HIGH confidence (official documentation, codebase analysis):**
-- [DSPy Metrics documentation](https://dspy.ai/learn/evaluation/metrics/) -- metric design, trace parameter contract
-- [DSPy Evaluation Overview](https://dspy.ai/learn/evaluation/overview/) -- dataset requirements, evaluation best practices
-- [DSPy Optimizers](https://dspy.ai/learn/optimization/optimizers/) -- BootstrapFewShot limitations, optimizer progression
-- [DSPy BootstrapFewShot API](https://dspy.ai/api/optimizers/BootstrapFewShot/) -- configuration options
-- Bae codebase analysis (optimizer.py, optimized_lm.py, compiler.py, cli.py, resolver.py, examples/ootd.py)
+**HIGH confidence (official documentation, verified behavior):**
+- [prompt_toolkit 3.0 asyncio integration](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/advanced_topics/asyncio.html) -- `prompt_async()`, `patch_stdout()`, `run_async()` patterns
+- [prompt_toolkit asyncio-prompt.py example](https://github.com/prompt-toolkit/python-prompt-toolkit/blob/main/examples/prompts/asyncio-prompt.py) -- Canonical pattern for async REPL with background tasks
+- [Python asyncio documentation](https://docs.python.org/3/library/asyncio-task.html) -- `gather()` semantics, `TaskGroup`, cancellation behavior
+- [Python asyncio.Queue documentation](https://docs.python.org/3/library/asyncio-queue.html) -- `shutdown()` semantics (Python 3.13+)
+- [OpenTelemetry Python async context example](https://github.com/open-telemetry/opentelemetry-python/blob/main/docs/examples/basic_context/async_context.py) -- contextvars propagation
+- [OpenTelemetry asyncio instrumentation](https://opentelemetry-python-contrib.readthedocs.io/en/latest/instrumentation/asyncio/asyncio.html) -- Async task instrumentation
+- [CPython issue #118908](https://github.com/python/cpython/issues/118908) -- New REPL namespace leakage
+- Bae codebase analysis (graph.py:217 asyncio.run, resolver.py:383,451 asyncio.gather, lm.py:404 create_subprocess_exec)
 
 **MEDIUM confidence (WebSearch verified against multiple sources):**
-- [HoneyHive: Avoiding Common Pitfalls in LLM Evaluation](https://www.honeyhive.ai/post/avoiding-common-pitfalls-in-llm-evaluation) -- 5 pitfall categories with solutions
-- [Justice or Prejudice? Quantifying Biases in LLM-as-a-Judge](https://arxiv.org/abs/2410.02736) -- 12 bias types, position/verbosity/self-enhancement quantified
-- [Confident AI: LLM Evaluation Metrics](https://www.confident-ai.com/blog/llm-evaluation-metrics-everything-you-need-for-llm-evaluation) -- false confidence, metric limitations
-- [Braintrust: Best Prompt Evaluation Tools 2025](https://www.braintrust.dev/articles/best-prompt-evaluation-tools-2025) -- promptfoo DX limitations, dataset management
-- [Langfuse: LLM Evaluation 101](https://langfuse.com/blog/2025-03-04-llm-evaluation-101-best-practices-and-challenges) -- continuous evaluation practices
-- [Weaviate: DSPy Optimizers](https://weaviate.io/blog/dspy-optimizers) -- BootstrapFewShot suboptimal selection
-- [The Data Quarry: Working with DSPy Optimizers](https://thedataquarry.com/blog/learning-dspy-3-working-with-optimizers/) -- practical optimizer experiences
-- [UX Patterns for CLI Tools](https://www.lucasfcosta.com/blog/ux-patterns-cli-tools) -- progressive disclosure, time to value
+- [Armin Ronacher: "I'm not feeling the async pressure"](https://lucumr.pocoo.org/2020/1/1/async-pressure/) -- Backpressure patterns in asyncio, unbounded queue dangers
+- [Debug Context Propagation in Async Applications](https://oneuptime.com/blog/post/2026-02-06-debug-context-propagation-async-applications/view) -- OTel context loss across thread boundaries, orphan span identification
+- [asyncio.gather() swallows cancellation](https://bugs.python.org/issue32684) -- gather with return_exceptions=True hides CancelledError
+- [OpenTelemetry Performance Impact](https://oneuptime.com/blog/post/2026-01-07-opentelemetry-performance-impact/view) -- Span creation overhead, sampling strategies
+- [IPython autoawait documentation](https://ipython.readthedocs.io/en/stable/interactive/autoawait.html) -- Nested event loop problem and solutions
+- [prompt_toolkit patch_stdout issues](https://github.com/prompt-toolkit/python-prompt-toolkit/issues/1079) -- Missing prints on exit
+- [prompt_toolkit thread printing exceptions](https://github.com/prompt-toolkit/python-prompt-toolkit/issues/1040) -- Thread safety limitations
+- [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) -- Context scoping, history management
+- [CPython asyncio REPL issue](https://github.com/python/cpython/issues/142784) -- Event loop lifecycle management
+- [asyncio.to_thread contextvars propagation](https://bugs.python.org/issue34014) -- run_in_executor vs to_thread context behavior
 
-**LOW confidence (inferred from patterns, not directly verified):**
-- DSPy `Predict.load()` signature compatibility behavior -- inferred from code inspection, not verified with DSPy tests
-- Cross-node optimization effects -- logical inference, not empirically verified
-- GEPA optimizer availability and API -- referenced in DSPy docs but not verified via Context7
+**LOW confidence (inferred from patterns, needs validation):**
+- OTel span overhead quantification (5ms per span) -- extrapolated from benchmarks, not measured in bae
+- PydanticAIBackend._agents cache growth -- inferred from code inspection, not profiled
+- Python 3.14 specific asyncio changes -- based on Python 3.13+ patterns, not 3.14 release notes
 
 ---
-*Pitfalls research for: Bae v3.0 Eval/Optimization DX*
-*Researched: 2026-02-08*
+*Pitfalls research for: Bae v4.0 Cortex -- Augmented Async Python REPL*
+*Researched: 2026-02-13*
