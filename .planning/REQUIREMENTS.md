@@ -92,44 +92,44 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REPL-01 | — | Pending |
-| REPL-03 | — | Pending |
-| REPL-04 | — | Pending |
-| REPL-05 | — | Pending |
-| REPL-06 | — | Pending |
-| REPL-07 | — | Pending |
-| REPL-08 | — | Pending |
-| REPL-10 | — | Pending |
-| REPL-11 | — | Pending |
-| REPL-12 | — | Pending |
-| REPL-13 | — | Pending |
-| REPL-14 | — | Pending |
-| STORE-01 | — | Pending |
-| STORE-02 | — | Pending |
-| STORE-03 | — | Pending |
-| STORE-04 | — | Pending |
-| CHAN-01 | — | Pending |
-| CHAN-02 | — | Pending |
-| CHAN-03 | — | Pending |
-| CHAN-04 | — | Pending |
-| CHAN-05 | — | Pending |
-| NS-01 | — | Pending |
-| NS-02 | — | Pending |
-| NS-03 | — | Pending |
-| NS-04 | — | Pending |
-| AI-01 | — | Pending |
-| AI-02 | — | Pending |
-| AI-03 | — | Pending |
-| AI-04 | — | Pending |
-| AI-05 | — | Pending |
-| AI-06 | — | Pending |
-| AI-07 | — | Pending |
+| REPL-01 | Phase 14: Shell Foundation | Pending |
+| REPL-03 | Phase 14: Shell Foundation | Pending |
+| REPL-04 | Phase 14: Shell Foundation | Pending |
+| REPL-05 | Phase 14: Shell Foundation | Pending |
+| REPL-06 | Phase 19: Task Lifecycle | Pending |
+| REPL-07 | Phase 14: Shell Foundation | Pending |
+| REPL-08 | Phase 14: Shell Foundation | Pending |
+| REPL-10 | Phase 19: Task Lifecycle | Pending |
+| REPL-11 | Phase 19: Task Lifecycle | Pending |
+| REPL-12 | Phase 14: Shell Foundation | Pending |
+| REPL-13 | Phase 14: Shell Foundation | Pending |
+| REPL-14 | Phase 14: Shell Foundation | Pending |
+| STORE-01 | Phase 15: Session Store | Pending |
+| STORE-02 | Phase 15: Session Store | Pending |
+| STORE-03 | Phase 15: Session Store | Pending |
+| STORE-04 | Phase 15: Session Store | Pending |
+| CHAN-01 | Phase 16: Channel I/O | Pending |
+| CHAN-02 | Phase 16: Channel I/O | Pending |
+| CHAN-03 | Phase 16: Channel I/O | Pending |
+| CHAN-04 | Phase 16: Channel I/O | Pending |
+| CHAN-05 | Phase 16: Channel I/O | Pending |
+| NS-01 | Phase 17: Namespace | Pending |
+| NS-02 | Phase 17: Namespace | Pending |
+| NS-03 | Phase 17: Namespace | Pending |
+| NS-04 | Phase 17: Namespace | Pending |
+| AI-01 | Phase 18: AI Agent | Pending |
+| AI-02 | Phase 18: AI Agent | Pending |
+| AI-03 | Phase 18: AI Agent | Pending |
+| AI-04 | Phase 18: AI Agent | Pending |
+| AI-05 | Phase 18: AI Agent | Pending |
+| AI-06 | Phase 18: AI Agent | Pending |
+| AI-07 | Phase 18: AI Agent | Pending |
 
 **Coverage:**
 - v4.0 requirements: 32 total
-- Mapped to phases: 0
-- Unmapped: 32 ⚠️
+- Mapped to phases: 32
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-13*
-*Last updated: 2026-02-13 after reframe — session store, NL-first, clean bae integration*
+*Last updated: 2026-02-13 after roadmap revision (NL-first reframe, session store early)*
