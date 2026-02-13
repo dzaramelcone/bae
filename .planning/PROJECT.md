@@ -40,14 +40,33 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 
 ### Active
 
-(None — define in next milestone)
+<!-- Current scope: v4.0 Cortex -->
+
+(Defining in v4.0 milestone)
 
 ### Out of Scope
 
-- BindFor explicit writes — implicit trace search is clean enough (YAGNI)
+- Bind for explicit writes — implicit trace search is clean enough (YAGNI)
 - Validation error retry loops — DSPy optimization may solve this
 - Dynamic fan-out (runtime N) — async __call__ with manual gather is the escape hatch
 - Declarative fan-out (DepMap etc) — deferred until real use case demands it
+- Engineering method graph — build after REPL works
+- Semantic/vector search on context — deferred
+- DuckDB query backends — deferred
+- Celery distribution — YAGNI, architecture must not preclude it
+- Hot reloading / self-augmenting code — deferred
+- State snapshots/restore — deferred
+
+## Current Milestone: v4.0 Cortex
+
+**Goal:** Augmented async Python REPL where human and AI collaborate in a shared namespace — cortex is the core, bae provides agentic coherence.
+
+**Target features:**
+- Async REPL shell (prompt_toolkit + asyncio)
+- Channel-based I/O with multiplexed labeled streams
+- Reflective shared namespace with Python introspection
+- AI agent as a first-class Python object in the namespace
+- OTel span instrumentation for context tracking
 
 ## Context
 
@@ -60,6 +79,8 @@ Three LM backends: PydanticAIBackend, ClaudeCLIBackend, DSPyBackend — each wit
 Reference implementation: `examples/ootd.py` — 3-node outfit recommendation graph with deps, recalls, and LLM-filled fields.
 
 346 tests (336 pass, 10 skip, 0 fail) + 5/5 E2E.
+
+v4.0 architecture: Custom REPL on prompt_toolkit (not extending IPython). Three modes (NL chat, Py exec, Graph bae-run) sharing one Python namespace. Channel-based IO multiplexing with labeled streams (like Docker container prefixes). AI object lives in namespace, callable from any mode. OTel spans for context tracking. Ephemeral spawned interfaces (Ghostty tabs, browser, VS Code) for HitL checkpoints. Brain naming theme — core module = "cortex".
 
 ## Constraints
 
@@ -103,4 +124,4 @@ Reference implementation: `examples/ootd.py` — 3-node outfit recommendation gr
 - Bump Python requirement to 3.14 stable when available
 
 ---
-*Last updated: 2026-02-13 after v3.0 milestone*
+*Last updated: 2026-02-13 after v4.0 Cortex milestone start*

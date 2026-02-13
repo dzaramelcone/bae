@@ -5,15 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Planning next milestone
+**Current focus:** v4.0 Cortex — defining requirements
 
 ## Current Position
 
-Phase: None (between milestones)
-Status: v3.0 shipped, planning next
-Last activity: 2026-02-13
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-13 — Milestone v4.0 started
 
-Progress: v1.0 ✓ | v2.0 ✓ | v3.0 ✓
+Progress: v1.0 ✓ | v2.0 ✓ | v3.0 ✓ | v4.0 ◆
 
 ## Performance Metrics
 
