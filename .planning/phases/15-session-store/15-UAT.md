@@ -1,9 +1,9 @@
 ---
 status: complete
 phase: 15-session-store
-source: [15-01-SUMMARY.md, 15-02-SUMMARY.md]
-started: 2026-02-13T22:00:00Z
-updated: 2026-02-13T22:00:00Z
+source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md]
+started: 2026-02-13T22:35:00Z
+updated: 2026-02-13T22:50:00Z
 ---
 
 ## Current Test
@@ -12,57 +12,69 @@ updated: 2026-02-13T22:00:00Z
 
 ## Tests
 
-### 1. PY mode input recorded
-expected: Launch cortex, type `x = 42`, then `store()`. Session shows entries including `[PY:input] x = 42`.
+### 1. PY mode input and expression output recorded
+expected: Launch cortex, type `x = 42` then `x`. Then `store()`. Session entries include PY inputs and the expression result output.
 result: pass
 
-### 2. PY mode output recorded
-expected: Type `1 + 1` in PY mode. Then `store()`. Session entries include `[PY:output] 2` with direction=output.
+### 2. print() stdout captured and recorded
+expected: Type `print('hello world')` in PY mode. The text "hello world" appears on screen AND `store()` shows a stdout entry containing "hello world".
 result: pass
 
-### 3. Bash mode records stdout and stderr
-expected: Switch to BASH mode (Shift+Tab until BASH prompt), run `echo hello`. Then switch back to PY and run `store()`. Session entries include `[BASH:output] hello`.
+### 3. Bash mode records output
+expected: Switch to BASH mode (Shift+Tab), run `echo hello`. Switch back to PY, run `store()`. Session entries include the bash output.
 result: pass
 
-### 4. store() shows session summary
-expected: After several inputs, `store()` prints a line like `Session <uuid>: N entries` followed by recent entries with mode and direction labels.
+### 4. store() shows clean session summary
+expected: After several inputs, `store()` prints session entries with mode and direction labels. Output is clean text (no `<sqlite3.Row ...>` repr noise). `store()` expression itself produces no extra output line (returns None).
 result: issue
-reported: "print() output from PY mode not captured in store. for loop with 30 print() calls produced visible terminal output but store() shows no record of it. Only expression return values and errors are recorded, not stdout/stderr from print()."
-severity: major
+reported: "Long entries in store() display get truncated mid-line with no ellipsis or indicator. Needs a truncation marker."
+severity: minor
 
 ### 5. store() FTS5 search
-expected: After typing various things, `store('42')` returns only entries containing "42" (e.g., `x = 42` input and `42` output).
-result: pass
-
-### 6. Cross-session persistence
-expected: Exit cortex (Ctrl-D). Relaunch `uv run bae`. Type `store()`. You should see a new session, but `store.sessions()` (or inspecting `.bae/store.db`) shows both the previous and current session.
+expected: After typing various things, `store('hello')` returns only entries containing "hello". Clean output, no Row objects.
 result: issue
-reported: "Cross-session persistence works (new UUID, shared .bae/store.db), but store.sessions() fails with AttributeError because store in namespace is the inspector closure, not the SessionStore instance. No way to list or browse previous sessions from the REPL."
+reported: "FTS5 search works but display tags are inconsistent — store() shows [PY:output] while store('query') shows [PY:repl:output]. Tags are being formatted in different places rather than by a dedicated formatter. Needs refactoring so formatting is a single concern."
+severity: major
+
+### 6. Cross-session browsing via store.sessions()
+expected: Exit cortex (Ctrl-D). Relaunch `uv run bae`. Type `store.sessions()` — returns a list with previous sessions. `store.recent()` and `store.search('hello')` also work directly.
+result: issue
+reported: "Methods work (no AttributeError), but store.sessions(), store.recent(), and store.search() all return raw sqlite3.Row objects. Completely unusable — walls of <sqlite3.Row object at 0x...>. Only __call__ converts to dicts. All public methods need to return dicts or formatted output."
 severity: major
 
 ## Summary
 
 total: 6
-passed: 4
-issues: 2
+passed: 3
+issues: 3
 pending: 0
 skipped: 0
 
 ## Gaps
 
-- truth: "All PY mode output including print() is recorded in the session store"
+- truth: "store() display truncates long entries cleanly with ellipsis"
   status: failed
-  reason: "User reported: print() output from PY mode not captured. Only expression return values and errors recorded, not stdout/stderr."
-  severity: major
+  reason: "User reported: Long entries truncated mid-line with no indicator. Needs ellipsis."
+  severity: minor
   test: 4
   root_cause: ""
   artifacts: []
   missing: []
   debug_session: ""
 
-- truth: "User can list and browse previous sessions from the REPL"
+- truth: "store() and store('query') use consistent tag formatting via a single formatter"
   status: failed
-  reason: "User reported: store.sessions() fails with AttributeError because store in namespace is the inspector closure, not the SessionStore instance. No way to list or browse previous sessions."
+  reason: "User reported: Tags differ between store() and store('query') — [PY:output] vs [PY:repl:output]. Formatting happens in different places, not centralized."
+  severity: major
+  test: 5
+  root_cause: ""
+  artifacts: []
+  missing: []
+  debug_session: ""
+
+- truth: "All SessionStore public methods return usable data (dicts, not raw Row objects)"
+  status: failed
+  reason: "User reported: store.sessions(), store.recent(), store.search() return raw sqlite3.Row objects. Only __call__ converts to dicts."
   severity: major
   test: 6
   root_cause: ""
