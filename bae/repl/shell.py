@@ -7,6 +7,7 @@ import os
 import traceback
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import DynamicCompleter
 from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
@@ -15,6 +16,8 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 from pygments.lexers.python import PythonLexer
 
+from bae.repl.bash import dispatch_bash
+from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
 from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mode
 
@@ -56,11 +59,13 @@ class CortexShell:
         self.mode: Mode = DEFAULT_MODE
         self.namespace: dict = {"asyncio": asyncio, "os": os, "__builtins__": __builtins__}
         self.tasks: set[asyncio.Task] = set()
+        self.completer = NamespaceCompleter(self.namespace)
 
         kb = _build_key_bindings(self)
         self.session = PromptSession(
             message=self._prompt,
             lexer=DynamicLexer(self._lexer),
+            completer=DynamicCompleter(self._completer),
             multiline=True,
             bottom_toolbar=self._toolbar,
             style=Style.from_dict({
@@ -76,6 +81,12 @@ class CortexShell:
         """Colored prompt based on current mode."""
         color = MODE_COLORS[self.mode]
         return [("fg:" + color, "> ")]
+
+    def _completer(self):
+        """Namespace completer in PY mode, none otherwise."""
+        if self.mode == Mode.PY:
+            return self.completer
+        return None
 
     def _lexer(self):
         """Python lexer in PY mode, none otherwise."""
@@ -133,4 +144,4 @@ class CortexShell:
                 elif self.mode == Mode.GRAPH:
                     print("(Graph mode stub) Not yet implemented.")
                 elif self.mode == Mode.BASH:
-                    print("(Bash mode coming in Plan 02.)")
+                    await dispatch_bash(text)
