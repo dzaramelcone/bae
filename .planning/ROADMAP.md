@@ -79,11 +79,11 @@ Plans:
   2. Stored data has structured metadata (timestamps, mode, channel, session ID) queryable for RAG -- not opaque blobs
   3. After exiting and re-launching cortex, the AI retains project context from previous sessions
   4. User can inspect what context is stored (e.g., `store()` or equivalent shows indexed entries)
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 15-01: TBD
-- [ ] 15-02: TBD
+- [ ] 15-01-PLAN.md — SessionStore class with SQLite + FTS5 persistence (TDD)
+- [ ] 15-02-PLAN.md — REPL integration, store() inspector, and integration tests
 
 ### Phase 16: Channel I/O
 **Goal**: All output flows through labeled channels that users can see, filter, and access -- bae graph execution integrates via wrapper pattern without source modifications
