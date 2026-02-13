@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A framework for building agent graphs where nodes are Pydantic models and topology comes from type hints. Nodes are "context frames" — their fields assemble the information the LLM needs to produce the next node. Class names are instructions, return types are output schemas, and Field(description=...) provides explicit per-field hints. Three field sources: Dep(callable) for external data, Recall() for graph state, and plain fields for LLM generation. JSON structured output with constrained decoding for reliable fills.
+A framework for building agent graphs where nodes are Pydantic models and topology comes from type hints. Nodes are "context frames" — their fields assemble the information the LLM needs to produce the next node. Class names are instructions, return types are output schemas, and Field(description=...) provides explicit per-field hints. Three field sources: Dep(callable) for external data, Recall() for graph state, and plain fields for LLM generation. JSON structured output with constrained decoding for reliable fills. Fully async with parallel dep resolution.
 
 ## Core Value
 
@@ -31,27 +31,35 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 - ✓ Terminal node fields = response schema — v2.0
 - ✓ JSON structured fill with constrained decoding — v2.0
 - ✓ Field(description=...) for explicit LLM hints, docstrings inert — v2.0
+- ✓ All LM backends async (PydanticAI, ClaudeCLI, DSPy) — v3.0
+- ✓ Graph run/arun split with asyncio.run() CLI boundary — v3.0
+- ✓ Node.__call__() async — v3.0
+- ✓ Parallel dep resolution via asyncio.gather() — v3.0
+- ✓ Sync/async Dep(callable) mixing — v3.0
+- ✓ Nested model preservation in fill() — v3.0
 
 ### Active
 
-(Defined in `.planning/REQUIREMENTS.md` for v3.0)
+(None — define in next milestone)
 
 ### Out of Scope
 
 - BindFor explicit writes — implicit trace search is clean enough (YAGNI)
 - Validation error retry loops — DSPy optimization may solve this
+- Dynamic fan-out (runtime N) — async __call__ with manual gather is the escape hatch
+- Declarative fan-out (DepMap etc) — deferred until real use case demands it
 
 ## Context
 
-Shipped v2.0 with 9,297 lines of Python (2,718 source + 6,298 test).
+Shipped v3.0 with 10,412 lines of Python.
 
 Tech stack: Python 3.14+, Pydantic, pydantic-ai, dspy, Anthropic SDK.
 
-Three LM backends: PydanticAIBackend, ClaudeCLIBackend, DSPyBackend — each with v1 (make/decide) and v2 (choose_type/fill) methods.
+Three LM backends: PydanticAIBackend, ClaudeCLIBackend, DSPyBackend — each with v1 (make/decide) and v2 (choose_type/fill) methods, all async.
 
 Reference implementation: `examples/ootd.py` — 3-node outfit recommendation graph with deps, recalls, and LLM-filled fields.
 
-323 tests passing (313 unit + 5 e2e gated behind --run-e2e + 5 PydanticAI integration skipped without API key).
+346 tests (336 pass, 10 skip, 0 fail) + 5/5 E2E.
 
 ## Constraints
 
@@ -75,27 +83,18 @@ Reference implementation: `examples/ootd.py` — 3-node outfit recommendation gr
 | LM is implicit | Set once on graph, per-node via NodeConfig | ✓ Good |
 | JSON structured fill | Claude CLI --json-schema for constrained decoding | ✓ Good — replaced XML, ~10-15s per fill |
 | Field(description=...) for LLM hints | Explicit opt-in, docstrings are developer docs | ✓ Good — _build_plain_model preserves FieldInfo |
+| Full async, not threading | Correct long-term play, formulaic conversion | ✓ Good — native async across all backends |
+| Graph run/arun split | Sync wrapper for CLI, async for programmatic use | ✓ Good — clean boundary |
+| Dep supports sync + async callables | Runtime detection via inspect.iscoroutinefunction | ✓ Good — no migration burden |
+| getattr over model_dump in fill | Preserves nested BaseModel instances | ✓ Good — fixed v3.0 gap |
 
-**v2 field annotation summary:**
+**Field annotation summary:**
 
 | Annotation | Meaning | Source |
 |------------|---------|--------|
 | `Dep(fn)` | Bae calls a function to fill this field | External service/function |
 | `Recall()` | Bae searches the trace to fill this field | Prior node in graph execution |
 | *(none)* | LLM fills this field | Previous node's context → LLM generation |
-
-## Current Milestone: v3.0 Async Graphs
-
-**Goal:** Async interface with parallel dep resolution and subgraph composition. Dep(callable) is already the fan-out/join primitive — make it concurrent.
-
-**Target features:**
-- Async Graph.run(), LM protocol, and all backends
-- Parallel dep resolution via asyncio.gather() for independent deps on the same node
-- Async-aware Dep(callable) — sync deps still work, async deps run concurrently
-- Subgraph composition — Dep(fn) where fn runs another graph
-- Nested trace visibility for subgraph execution
-
-**Key insight:** Dep is already the fan-out/join primitive. Multiple Deps on one node = fan-out. The node itself = join point. Making deps async gives parallel LLM calls expressed as type annotations — no orchestration code.
 
 ## Known Issues
 
@@ -104,4 +103,4 @@ Reference implementation: `examples/ootd.py` — 3-node outfit recommendation gr
 - Bump Python requirement to 3.14 stable when available
 
 ---
-*Last updated: 2026-02-08 after v3.0 milestone start*
+*Last updated: 2026-02-13 after v3.0 milestone*

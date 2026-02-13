@@ -1,5 +1,31 @@
 # Project Milestones: Bae
 
+## v3.0 Async Graphs (Shipped: 2026-02-13)
+
+**Delivered:** Full async interface with parallel dep resolution — all three LM backends native async, asyncio.gather() for independent deps, sync/async callable mixing, nested model preservation in fill().
+
+**Phases completed:** 11-13 (9 plans total)
+
+**Key accomplishments:**
+- All three LM backends (PydanticAI, ClaudeCLI, DSPy) converted to native async
+- Graph run/arun split with asyncio.run() CLI boundary
+- Parallel dep resolution via asyncio.gather() with topological ordering
+- Sync/async Dep(callable) mixing with runtime inspect.iscoroutinefunction detection
+- Nested model preservation in fill() — getattr extraction over model_dump() across all backends
+- 346 tests (336 pass, 10 skip, 0 fail), 5/5 E2E
+
+**Stats:**
+- 49 files modified
+- 10,412 lines of Python
+- 3 phases, 9 plans, 37 commits
+- 5 days (2026-02-04 → 2026-02-09)
+
+**Git range:** `feat: convert LM Protocol and backends to async` → `feat: fix nested model preservation in all three fill() backends`
+
+**What's next:** OTel observability, structured logging, PydanticAI backend evaluation
+
+---
+
 ## v2.0 Context Frames (Shipped: 2026-02-08)
 
 **Delivered:** Redesigned the node API around "nodes as context frames" — Dep/Recall field annotations, implicit LM, JSON structured fill with constrained decoding, and explicit Field(description=...) hints.
