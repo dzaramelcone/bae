@@ -7,7 +7,7 @@ import json
 import pytest
 
 from bae.repl.bash import dispatch_bash
-from bae.repl.store import SessionStore, make_store_inspector
+from bae.repl.store import SessionStore
 
 
 @pytest.fixture
@@ -73,27 +73,33 @@ def test_nl_mode_records_stub(store):
 
 
 def test_store_inspector_prints_session(store, capsys):
-    """store() prints session ID and entry count."""
+    """store() prints session ID and entry count, returns None."""
     store.record("PY", "repl", "input", "x = 1")
     store.record("PY", "repl", "output", "None")
     store.record("PY", "repl", "input", "x + 1")
-    inspector = make_store_inspector(store)
-    result = inspector()
+    result = store()
     captured = capsys.readouterr()
     assert f"Session {store.session_id}: 3 entries" in captured.out
-    assert len(result) == 3
+    assert result is None
 
 
 def test_store_inspector_search(store, capsys):
-    """store('query') searches via FTS5 and returns matching entries."""
+    """store('query') searches via FTS5 and prints matching entries, returns None."""
     store.record("PY", "repl", "input", "hello world")
     store.record("PY", "repl", "input", "goodbye moon")
     store.record("BASH", "stdout", "output", "hello again")
-    inspector = make_store_inspector(store)
-    result = inspector("hello")
+    result = store("hello")
     captured = capsys.readouterr()
-    assert len(result) == 2
+    assert result is None
     assert "hello" in captured.out
+
+
+def test_store_sessions_accessible(store):
+    """store.sessions() returns a list including the current session ID."""
+    sessions = store.sessions()
+    assert isinstance(sessions, list)
+    ids = [dict(s)["id"] for s in sessions]
+    assert store.session_id in ids
 
 
 @pytest.mark.asyncio
