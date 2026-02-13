@@ -85,7 +85,7 @@ Plans:
 - [x] 15-01-PLAN.md — SessionStore class with SQLite + FTS5 persistence (TDD)
 - [x] 15-02-PLAN.md — REPL integration, store() inspector, and integration tests
 - [x] 15-03-PLAN.md — Gap closure: stdout capture + callable SessionStore
-- [ ] 15-04-PLAN.md — Gap closure: unified formatting, ellipsis, dict returns
+- [x] 15-04-PLAN.md — Gap closure: unified formatting, ellipsis, dict returns
 
 ### Phase 16: Channel I/O
 **Goal**: All output flows through labeled channels that users can see, filter, and access -- bae graph execution integrates via wrapper pattern without source modifications
@@ -168,11 +168,11 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19
 | 12. Parallel Deps + Migration | v3.0 | 4/4 | Complete | 2026-02-09 |
 | 13. Fix Nested Fill | v3.0 | 1/1 | Complete | 2026-02-09 |
 | 14. Shell Foundation | v4.0 | 3/3 | Complete | 2026-02-13 |
-| 15. Session Store | v4.0 | 3/4 | UAT gaps | 2026-02-13 |
+| 15. Session Store | v4.0 | 4/4 | Complete | 2026-02-13 |
 | 16. Channel I/O | v4.0 | 0/? | Not started | - |
 | 17. Namespace | v4.0 | 0/? | Not started | - |
 | 18. AI Agent | v4.0 | 0/? | Not started | - |
 | 19. Task Lifecycle | v4.0 | 0/? | Not started | - |
 
 ---
-*Last updated: 2026-02-13 after Phase 15 UAT gap closure planning*
+*Last updated: 2026-02-13 after Phase 15 gap closure complete*
