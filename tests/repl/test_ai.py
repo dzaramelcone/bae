@@ -11,7 +11,9 @@ import pytest
 from bae.graph import Graph
 from bae.markers import Dep
 from bae.node import Node
-from bae.repl.ai import AI, _build_context, _load_prompt, _PROMPT_FILE
+from bae.repl.ai import (
+    AI, _build_context, _load_prompt, _PROMPT_FILE, translate_tool_calls,
+)
 
 
 # --- Test fixtures ---
@@ -524,3 +526,91 @@ class TestEvalLoop:
         # No execution
         mock_exec.assert_not_called()
         assert result == "Here's an example:\n```python\nx = 42\n```\nThat's how it works."
+
+
+# --- TestTranslateToolCalls ---
+
+
+class TestTranslateToolCalls:
+    """Tests for translate_tool_calls() pure function: terse tags -> Python code."""
+
+    def test_read_tag(self):
+        """<R:filepath> translates to Python code that reads the file with truncation."""
+        result = translate_tool_calls("<R:src/main.py>")
+        assert result is not None
+        assert "open('src/main.py')" in result or 'open("src/main.py")' in result
+        assert "4000" in result  # _MAX_TOOL_OUTPUT truncation
+
+    def test_write_tag(self):
+        """<W:filepath>content</W> translates to Python code that writes content."""
+        result = translate_tool_calls("<W:out.txt>\nhello world\n</W>")
+        assert result is not None
+        assert "open('out.txt', 'w')" in result or 'open("out.txt", \'w\')' in result
+        assert "hello world" in result
+
+    def test_edit_read_tag(self):
+        """<E:filepath:start-end> translates to Python that reads lines (1-based inclusive)."""
+        result = translate_tool_calls("<E:f.py:10-15>")
+        assert result is not None
+        assert "readlines()" in result
+        assert "[9:15]" in result  # 1-based inclusive -> 0-based slice
+
+    def test_edit_replace_tag(self):
+        """<E:filepath:start-end>content</E> translates to Python that replaces lines."""
+        result = translate_tool_calls("<E:f.py:10-15>\nnew stuff\n</E>")
+        assert result is not None
+        assert "readlines()" in result
+        assert "[9:15]" in result
+        assert "new stuff" in result
+        assert "writelines" in result
+
+    def test_glob_tag(self):
+        """<G:pattern> translates to Python glob search with truncation."""
+        result = translate_tool_calls("<G:src/**/*.py>")
+        assert result is not None
+        assert "glob" in result
+        assert "src/**/*.py" in result
+        assert "recursive=True" in result
+
+    def test_grep_tag(self):
+        """<Grep:pattern> translates to subprocess grep with exclusions and timeout."""
+        result = translate_tool_calls("<Grep:def main>")
+        assert result is not None
+        assert "grep" in result
+        assert "--include=*.py" in result
+        assert ".venv" in result
+        assert ".git" in result
+        assert "__pycache__" in result
+        assert "timeout=10" in result
+
+    def test_no_tags_returns_none(self):
+        """Plain prose with no tool tags returns None."""
+        assert translate_tool_calls("Just some plain text.") is None
+
+    def test_illustrative_fence_ignored(self):
+        """Tool tag inside a markdown fence is not translated."""
+        text = "Example:\n```\n<R:foo.py>\n```\nThat's how it works."
+        assert translate_tool_calls(text) is None
+
+    def test_run_block_ignored(self):
+        """Tool tag inside a <run>...</run> block is not translated."""
+        text = "Running:\n<run>\n<R:foo.py>\n</run>\nDone."
+        assert translate_tool_calls(text) is None
+
+    def test_first_tag_only(self):
+        """Response with two tool tags returns translation for the first only."""
+        text = "<R:first.py>\n<R:second.py>"
+        result = translate_tool_calls(text)
+        assert result is not None
+        assert "first.py" in result
+        assert "second.py" not in result
+
+    def test_tag_must_be_on_own_line(self):
+        """Tag embedded in prose (not on its own line) returns None."""
+        text = "some text <R:foo.py> more text"
+        assert translate_tool_calls(text) is None
+
+    def test_write_without_closing_tag(self):
+        """<W:filepath> with no </W> closing returns None."""
+        text = "<W:foo.txt>\nsome content but no closing tag"
+        assert translate_tool_calls(text) is None
