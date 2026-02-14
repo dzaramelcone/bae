@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from bae.lm import ClaudeCLIBackend
 from bae.repl.ai import AI
@@ -56,3 +60,94 @@ class TestAIIntegration:
         src = inspect.getsource(CortexShell.run)
         assert "Phase 18" not in src
         assert "NL mode coming" not in src
+
+
+class TestConcurrentSessionRouting:
+    """Concurrent AI sessions route namespace mutations correctly."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_sessions_namespace_mutations(self):
+        """Two AI sessions mutating shared namespace concurrently both persist."""
+        shell = CortexShell()
+        ai1 = shell._get_or_create_session("1")
+        ai2 = shell._get_or_create_session("2")
+
+        # Mock _send to return code that mutates namespace
+        ai1._send = AsyncMock(side_effect=[
+            "Setting:\n```python\nfrom_s1 = True\n```",
+            "Done from session 1.",
+        ])
+        ai2._send = AsyncMock(side_effect=[
+            "Setting:\n```python\nfrom_s2 = True\n```",
+            "Done from session 2.",
+        ])
+
+        await asyncio.gather(ai1("prompt 1"), ai2("prompt 2"))
+
+        assert shell.namespace.get("from_s1") is True
+        assert shell.namespace.get("from_s2") is True
+
+    @pytest.mark.asyncio
+    async def test_concurrent_sessions_router_labels(self):
+        """Router.write calls include correct session labels in metadata."""
+        shell = CortexShell()
+        ai1 = shell._get_or_create_session("1")
+        ai2 = shell._get_or_create_session("2")
+
+        ai1._send = AsyncMock(return_value="response 1")
+        ai2._send = AsyncMock(return_value="response 2")
+
+        # Replace router.write with a tracker
+        writes = []
+        original_write = shell.router.write
+
+        def track_write(*args, **kwargs):
+            writes.append((args, kwargs))
+            original_write(*args, **kwargs)
+
+        shell.router.write = track_write
+
+        await asyncio.gather(ai1("p1"), ai2("p2"))
+
+        ai_writes = [(a, kw) for a, kw in writes if kw.get("metadata", {}).get("type") == "response"]
+        labels = {kw["metadata"]["label"] for _, kw in ai_writes}
+        assert "1" in labels
+        assert "2" in labels
+
+
+class TestNLSessionRouting:
+    """@N prefix in NL mode routes to correct AI session."""
+
+    @pytest.mark.asyncio
+    async def test_at_prefix_creates_session(self):
+        """@2 prefix creates session 2 and switches to it."""
+        shell = CortexShell()
+
+        with patch.object(AI, '_send', new_callable=AsyncMock, return_value="ok"):
+            await shell._dispatch("@2 hello")
+            # Session switch happens synchronously in _dispatch
+            assert shell._active_session == "2"
+            assert "2" in shell._ai_sessions
+
+    @pytest.mark.asyncio
+    async def test_session_sticky(self):
+        """After @2, follow-up without prefix stays on session 2."""
+        shell = CortexShell()
+
+        with patch.object(AI, '_send', new_callable=AsyncMock, return_value="ok"):
+            await shell._dispatch("@2 hello")
+            assert shell._active_session == "2"
+            # Follow-up without prefix stays on session 2
+            await shell._dispatch("follow up")
+            assert shell._active_session == "2"
+
+    @pytest.mark.asyncio
+    async def test_at_prefix_switches_back(self):
+        """@1 switches back to session 1 after being on session 2."""
+        shell = CortexShell()
+
+        with patch.object(AI, '_send', new_callable=AsyncMock, return_value="ok"):
+            await shell._dispatch("@2 hello")
+            assert shell._active_session == "2"
+            await shell._dispatch("@1 back to first")
+            assert shell._active_session == "1"
