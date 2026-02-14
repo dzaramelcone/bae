@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 17 of 19 (Namespace)
-Plan: 1 of 2 complete
-Status: In progress
-Last activity: 2026-02-13 -- Namespace seeding and NsInspector (seed(), ns() introspection)
+Plan: 2 of 2 complete
+Status: Phase complete
+Last activity: 2026-02-13 -- Shell namespace wiring and _trace capture (seed(), integration tests)
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [######--] 53%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [######--] 58%
 
 ## Performance Metrics
 
@@ -36,6 +36,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [######--] 53%
 | 16-01 | Channel & ChannelRouter (TDD) | 3min | 2 | 2 |
 | 16-02 | Shell channel integration | 3min | 2 | 3 |
 | 17-01 | Namespace seeding & NsInspector (TDD) | 3min | 2 | 2 |
+| 17-02 | Shell namespace wiring | 2min | 2 | 2 |
 
 ## Accumulated Context
 
@@ -71,6 +72,8 @@ v4.0 architectural decisions:
 - Plain print() for all ns() output -- flows through async_exec stdout capture and [py] channel
 - NsInspector callable class with __repr__ -- typing 'ns' shows usage hint, not function address
 - classify_fields() reused from bae.resolver for ns(Node) field introspection
+- GRAPH mode error handler captures _trace then routes traceback through [graph] channel (matches PY mode pattern)
+- Trace capture pattern: store trace in namespace on success, extract from exception.trace on error
 
 ### Pending Todos
 
@@ -84,6 +87,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 17-01-PLAN.md (Namespace seeding & NsInspector -- plan 1 of 2)
+Stopped at: Completed 17-02-PLAN.md (Shell namespace wiring -- phase 17 complete, 2 of 2 plans done)
 Branch: main
 Resume file: None
