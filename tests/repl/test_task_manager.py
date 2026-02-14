@@ -140,11 +140,12 @@ class TestRevoke:
         tt = tm.submit(slow(), name="rev", mode="nl")
         tm.revoke(tt.task_id)
         assert tt.state == TaskState.REVOKED
-        assert tt.task.cancelled()
+        assert tt.task.cancelling()
         try:
             await tt.task
         except asyncio.CancelledError:
             pass
+        assert tt.task.cancelled()
 
     @pytest.mark.asyncio
     async def test_revoke_kills_process_graceful(self, tm):
