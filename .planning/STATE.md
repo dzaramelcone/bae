@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 20 of 20 (AI Eval Loop)
-Plan: 2 of 3 complete
-Status: In progress
-Last activity: 2026-02-14 -- Multi-session AI management and cross-session memory
+Plan: 3 of 3 complete
+Status: Complete
+Last activity: 2026-02-14 -- AI eval loop: extract-execute-feedback with concurrent session routing
 
 Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##########] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 61 (13 v1.0 + 21 v2.0 + 9 v3.0 + 18 v4.0)
+- Total plans completed: 62 (13 v1.0 + 21 v2.0 + 9 v3.0 + 19 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -47,6 +47,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##########] 100%
 | 19-05 | Shell + toolbar TaskManager integration | 7min | 2 | 8 |
 | 20-01 | Rich markdown + task menu scrollback | 4min | 2 | 5 |
 | 20-02 | Multi-session AI + cross-session memory | 3min | 1 | 5 |
+| 20-03 | AI eval loop + concurrent session tests | 3min | 2 | 3 |
 
 ## Accumulated Context
 
@@ -111,12 +112,15 @@ v4.0 architectural decisions:
 - Session label included in channel metadata for output routing
 - [Phase 20]: Rich Console with force_terminal=True for ANSI capture to StringIO (markdown rendering)
 - [Phase 20]: Task menu prints to scrollback (not toolbar) -- permanent scroll history
+- [Phase 20]: Eval loop runs inside AI.__call__ -- self-contained, testable, not in shell dispatch
+- [Phase 20]: Coroutines from async_exec awaited inline in eval loop (needs results, unlike PY dispatch fire-and-forget)
+- [Phase 20]: CancelledError propagates out of eval loop; all other exceptions fed back as traceback for AI self-correction
+- [Phase 20]: _send() extracted from __call__ for reusable subprocess communication
 
 ### Pending Todos
 
 - Update `tests/traces/json_structured_fill_reference.py` -- drifted from real backend
 - Bump Python requirement to 3.14 stable
-- AI auto code extraction + eval loop → Phase 20 Plan 03
 - AI bash dispatch (Claude XML tool calls need parsing) → deferred past v4.0
 - AI streaming/progressive display for NL responses (currently blocking)
 
@@ -127,6 +131,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 20-01-PLAN.md (Rich markdown rendering + task menu scrollback)
+Stopped at: Completed 20-03-PLAN.md (AI eval loop + concurrent session tests) -- Phase 20 complete
 Branch: main
 Resume file: None
