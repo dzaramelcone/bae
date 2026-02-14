@@ -71,24 +71,28 @@ class Channel:
             )
         self._buffer.append(content)
         if self.visible:
-            self._display(content)
+            self._display(content, metadata=metadata)
 
-    def _display(self, content: str) -> None:
+    def _display(self, content: str, *, metadata: dict | None = None) -> None:
         """Render content with color-coded channel prefix.
 
         Markdown channels render the entire response as one Rich Markdown block,
         preserving headers, code blocks, and lists. Non-markdown channels render
         line-by-line with a color-coded prefix.
         """
+        label_text = self.label
+        if metadata and "label" in metadata:
+            label_text = f"[{self.name}:{metadata['label']}]"
+
         if self.markdown:
-            label = FormattedText([(f"{self.color} bold", self.label)])
+            label = FormattedText([(f"{self.color} bold", label_text)])
             print_formatted_text(label)
             ansi_text = render_markdown(content)
             print_formatted_text(ANSI(ansi_text))
         else:
             for line in content.splitlines():
                 text = FormattedText([
-                    (f"{self.color} bold", self.label),
+                    (f"{self.color} bold", label_text),
                     ("", " "),
                     ("", line),
                 ])

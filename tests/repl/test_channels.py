@@ -73,7 +73,7 @@ def test_channel_write_visible_calls_display(channel):
     """Channel.write() calls _display when visible=True."""
     with patch.object(channel, "_display") as mock_display:
         channel.write("hello")
-        mock_display.assert_called_once_with("hello")
+        mock_display.assert_called_once_with("hello", metadata=None)
 
 
 def test_channel_write_hidden_skips_display(hidden_channel):
@@ -312,6 +312,42 @@ def test_markdown_channel_display(mock_pft):
     label_arg = mock_pft.call_args_list[0][0][0]
     fragments = list(label_arg)
     assert fragments[0] == ("#87d7ff bold", "[ai]")
+
+
+# --- Session label display tests ---
+
+
+@patch("bae.repl.channels.print_formatted_text")
+def test_display_with_session_label(mock_pft):
+    """Channel._display with metadata label produces [ai:2] prefix."""
+    ch = Channel(name="ai", color="#87d7ff")
+    ch._display("hello", metadata={"label": "2"})
+    call_args = mock_pft.call_args[0][0]
+    fragments = list(call_args)
+    assert fragments[0] == ("#87d7ff bold", "[ai:2]")
+
+
+@patch("bae.repl.channels.print_formatted_text")
+def test_display_without_label(mock_pft):
+    """Channel._display without label metadata produces default [ai] prefix."""
+    ch = Channel(name="ai", color="#87d7ff")
+    ch._display("hello")
+    call_args = mock_pft.call_args[0][0]
+    fragments = list(call_args)
+    assert fragments[0] == ("#87d7ff bold", "[ai]")
+
+
+@patch("bae.repl.channels.print_formatted_text")
+def test_display_markdown_with_label(mock_pft):
+    """Markdown channel with label shows [ai:N] prefix before markdown block."""
+    ch = Channel(name="ai", color="#87d7ff", markdown=True)
+    ch._display("# Hello", metadata={"label": "3"})
+    # Two calls: one for the label FormattedText, one for ANSI-rendered markdown
+    assert mock_pft.call_count == 2
+    # First call is the label
+    label_arg = mock_pft.call_args_list[0][0][0]
+    fragments = list(label_arg)
+    assert fragments[0] == ("#87d7ff bold", "[ai:3]")
 
 
 # --- toggle_channels tests ---
