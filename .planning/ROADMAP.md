@@ -143,13 +143,14 @@ Plans:
   1. Ctrl-C while tasks are running opens a menu listing active tasks with option to kill individual ones
   2. Double Ctrl-C kills all running tasks and returns to a bare cortex prompt
   3. User can configure the prompt to show custom content (CPU usage, running task count, cost accumulator, etc.)
-**Plans:** 4 plans
+**Plans:** 5 plans
 
 Plans:
 - [x] 19-01-PLAN.md -- ToolbarConfig class with built-in widgets (TDD)
 - [x] 19-02-PLAN.md -- Task tracking, interrupt handler, kill menu, and subprocess cleanup
 - [x] 19-03-PLAN.md -- Gap closure: background dispatch for toolbar visibility and kill menu activation
-- [ ] 19-04-PLAN.md -- Gap closure: inline kill menu, PY async tracking, double Ctrl-C fix
+- [ ] 19-04-PLAN.md -- Gap closure: TaskManager with lifecycle tracking and process group management (TDD)
+- [ ] 19-05-PLAN.md -- Gap closure: Shell integration, inline kill menu, PY async tracking
 
 ## Progress
 
@@ -176,7 +177,7 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19
 | 16. Channel I/O | v4.0 | 2/2 | Complete | 2026-02-13 |
 | 17. Namespace | v4.0 | 3/3 | Complete | 2026-02-13 |
 | 18. AI Agent | v4.0 | 2/2 | Complete | 2026-02-13 |
-| 19. Task Lifecycle | v4.0 | 3/4 | In Progress | - |
+| 19. Task Lifecycle | v4.0 | 3/5 | In Progress | - |
 
 ---
 *Last updated: 2026-02-13 after Phase 19 gap closure planning*
