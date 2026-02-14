@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bae.repl.modes import Mode
-from bae.repl.shell import CortexShell, _build_key_bindings
+from bae.repl.shell import CortexShell, _build_key_bindings, _print_task_menu
 from bae.repl.tasks import TaskManager
 from bae.repl.toolbar import TASKS_PER_PAGE, ToolbarConfig, render_task_menu
 
@@ -157,12 +157,12 @@ class TestInterruptHandler:
 class TestTaskMenu:
     """Task menu rendering, digit cancel, esc dismiss, pagination."""
 
-    def test_toolbar_renders_task_menu(self, shell):
-        """_task_menu=True -> _toolbar() returns render_task_menu output."""
+    def test_toolbar_renders_normal_even_in_menu_mode(self, shell):
+        """_task_menu=True -> _toolbar() still returns normal toolbar (menu prints to scrollback)."""
         shell._task_menu = True
-        # With no tasks, renders "no tasks running"
         result = shell._toolbar()
-        assert any("no tasks running" in text for _, text in result)
+        # Normal toolbar always rendered, no "no tasks running" -- that's in scrollback now
+        assert len(result) > 0
 
     def test_toolbar_renders_normal(self, shell):
         """_task_menu=False -> _toolbar() returns normal toolbar."""
@@ -234,6 +234,53 @@ class TestTaskMenu:
         assert shell._task_menu_page == 0
 
         # cleanup
+        shell.tm.revoke_all(graceful=False)
+        await asyncio.sleep(0)
+
+    @pytest.mark.asyncio
+    @patch("bae.repl.shell.print_formatted_text")
+    async def test_ctrl_c_prints_task_list_to_scrollback(self, mock_pft, shell):
+        """Ctrl-C with tasks prints numbered list to scrollback via _print_task_menu."""
+        async def sleepy():
+            await asyncio.sleep(100)
+
+        shell.tm.submit(sleepy(), name="alpha", mode="nl")
+        shell.tm.submit(sleepy(), name="beta", mode="nl")
+
+        kb = _build_key_bindings(shell)
+        event = _mock_event(shell)
+
+        handler = _get_handler(kb, "c-c")
+        handler(event)
+
+        # _print_task_menu prints 2 task lines + 1 hint = 3 calls
+        assert mock_pft.call_count == 3
+        assert shell._task_menu is True
+
+        shell.tm.revoke_all(graceful=False)
+        await asyncio.sleep(0)
+
+    @pytest.mark.asyncio
+    @patch("bae.repl.shell.print_formatted_text")
+    async def test_digit_cancel_reprints_remaining(self, mock_pft, shell):
+        """After cancelling a task, remaining tasks are reprinted to scrollback."""
+        async def sleepy():
+            await asyncio.sleep(100)
+
+        shell.tm.submit(sleepy(), name="first", mode="nl")
+        shell.tm.submit(sleepy(), name="second", mode="nl")
+        shell._task_menu = True
+
+        kb = _build_key_bindings(shell)
+        event = _mock_event(shell)
+
+        handler = _get_handler(kb, "1")
+        handler(event)
+
+        # One task cancelled, one remaining -> reprinted (1 task line + 1 hint = 2 calls)
+        assert mock_pft.call_count == 2
+        assert shell._task_menu is True  # still open, one task left
+
         shell.tm.revoke_all(graceful=False)
         await asyncio.sleep(0)
 
