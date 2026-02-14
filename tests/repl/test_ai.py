@@ -1,9 +1,10 @@
-"""Tests for AI callable class, context builder, and code extractor."""
+"""Tests for AI callable class, context builder, code extractor, and eval loop."""
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -318,3 +319,106 @@ class TestCrossSessionContext:
         assert result.startswith("[Previous session context]")
         assert "[PY:repl]" in result
         assert "hello world" in result
+
+
+# --- TestEvalLoop ---
+
+
+class TestEvalLoop:
+    """Tests for AI.__call__ eval loop: extract code -> execute -> feed back."""
+
+    @pytest.fixture
+    def eval_ai(self, mock_lm, mock_router):
+        """AI instance with mocked _send for eval loop testing."""
+        ai = AI(lm=mock_lm, router=mock_router, namespace={}, max_eval_iters=3)
+        ai._send = AsyncMock()
+        return ai
+
+    @pytest.mark.asyncio
+    async def test_eval_loop_no_code_returns_response(self, eval_ai):
+        """Plain text response returns without looping."""
+        eval_ai._send.return_value = "Just a plain answer, no code."
+        result = await eval_ai("hello")
+        assert result == "Just a plain answer, no code."
+        assert eval_ai._send.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_eval_loop_extracts_and_executes(self, eval_ai):
+        """Code block in response triggers async_exec, second response has no code."""
+        eval_ai._send.side_effect = [
+            "Try this:\n```python\nx = 42\n```",
+            "Done, x is 42.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = (None, "")
+            result = await eval_ai("do something")
+        assert result == "Done, x is 42."
+        mock_exec.assert_called_once_with("x = 42", eval_ai._namespace)
+
+    @pytest.mark.asyncio
+    async def test_eval_loop_feeds_back_output(self, eval_ai):
+        """Execution output is fed back to AI as next prompt."""
+        eval_ai._send.side_effect = [
+            "```python\nx = 42\n```",
+            "Got it.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = (42, "")
+            await eval_ai("compute")
+        # Second _send call receives the feedback with the result
+        feedback = eval_ai._send.call_args_list[1][0][0]
+        assert "[Block 1 output]" in feedback
+        assert "42" in feedback
+
+    @pytest.mark.asyncio
+    async def test_eval_loop_iteration_limit(self, eval_ai):
+        """Loop stops after max_eval_iters even if AI keeps producing code."""
+        eval_ai._send.return_value = "```python\nx = 1\n```"
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = (None, "")
+            await eval_ai("loop forever")
+        # 1 initial + 3 feedback rounds (max_eval_iters=3)
+        assert eval_ai._send.call_count == 4
+
+    @pytest.mark.asyncio
+    async def test_eval_loop_awaits_coroutine(self, eval_ai):
+        """Coroutine from async_exec is awaited inline and result fed back."""
+        eval_ai._send.side_effect = [
+            "```python\nawait something()\n```",
+            "Got the result.",
+        ]
+
+        async def fake_coro():
+            return "async_result"
+
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = (fake_coro(), "")
+            await eval_ai("run async")
+        feedback = eval_ai._send.call_args_list[1][0][0]
+        assert "async_result" in feedback
+
+    @pytest.mark.asyncio
+    async def test_eval_loop_catches_exec_error(self, eval_ai):
+        """Execution errors are caught and fed back as traceback, not raised."""
+        eval_ai._send.side_effect = [
+            "```python\nraise ValueError('oops')\n```",
+            "I see the error.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.side_effect = ValueError("oops")
+            result = await eval_ai("break it")
+        assert result == "I see the error."
+        feedback = eval_ai._send.call_args_list[1][0][0]
+        assert "ValueError" in feedback
+        assert "oops" in feedback
+
+    @pytest.mark.asyncio
+    async def test_eval_loop_cancellation_propagates(self, eval_ai):
+        """CancelledError from async_exec propagates out of eval loop."""
+        eval_ai._send.side_effect = [
+            "```python\nawait something()\n```",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.side_effect = asyncio.CancelledError()
+            with pytest.raises(asyncio.CancelledError):
+                await eval_ai("cancel me")

@@ -1,6 +1,7 @@
 """AI agent for natural language interaction in cortex.
 
 Uses Claude CLI subprocess with session persistence for conversation.
+Eval loop: extract code from AI response, execute, feed results back.
 Delegates fill/choose_type to bae's LM protocol.
 """
 
@@ -10,9 +11,12 @@ import asyncio
 import inspect
 import os
 import re
+import traceback
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from bae.repl.exec import async_exec
 
 if TYPE_CHECKING:
     from bae.lm import LM
@@ -50,6 +54,7 @@ class AI:
         label: str = "1",
         model: str = "claude-sonnet-4-20250514",
         timeout: int = 60,
+        max_eval_iters: int = 5,
     ) -> None:
         self._lm = lm
         self._router = router
@@ -59,11 +64,17 @@ class AI:
         self._label = label
         self._model = model
         self._timeout = timeout
+        self._max_eval_iters = max_eval_iters
         self._session_id = str(uuid.uuid4())
         self._call_count = 0
 
     async def __call__(self, prompt: str) -> str:
-        """NL conversation with namespace context via Claude CLI."""
+        """NL conversation with eval loop: respond -> extract code -> execute -> feed back.
+
+        Extracts Python code blocks from AI responses, executes them in the
+        REPL namespace, and feeds results back as the next prompt. Loops
+        until no code blocks remain or max_eval_iters is reached.
+        """
         parts: list[str] = []
         if self._call_count == 0 and self._store is not None:
             cross = self._store.cross_session_context()
@@ -75,9 +86,48 @@ class AI:
         parts.append(prompt)
         full_prompt = "\n\n".join(parts)
 
+        response = await self._send(full_prompt)
+        await asyncio.sleep(0)  # cancellation checkpoint
+        self._router.write("ai", response, mode="NL", metadata={"type": "response", "label": self._label})
+
+        for _ in range(self._max_eval_iters):
+            blocks = self.extract_code(response)
+            if not blocks:
+                break
+
+            results = []
+            for code in blocks:
+                try:
+                    result, captured = await async_exec(code, self._namespace)
+                    if asyncio.iscoroutine(result):
+                        result = await result
+                    output = captured
+                    if result is not None:
+                        output += repr(result)
+                    results.append(output or "(no output)")
+                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                    raise
+                except BaseException:
+                    results.append(traceback.format_exc())
+                self._router.write("py", code, mode="PY", metadata={"type": "ai_exec", "label": self._label})
+
+            feedback = "\n".join(f"[Block {i+1} output]\n{r}" for i, r in enumerate(results))
+            await asyncio.sleep(0)  # cancellation checkpoint
+            response = await self._send(feedback)
+            await asyncio.sleep(0)  # cancellation checkpoint
+            self._router.write("ai", response, mode="NL", metadata={"type": "response", "label": self._label})
+
+        return response
+
+    async def _send(self, prompt: str) -> str:
+        """Send a prompt to Claude CLI and return the response string.
+
+        Handles command building, env setup, subprocess exec, timeout,
+        cancellation, error handling, and call count tracking.
+        """
         cmd = [
             "claude",
-            "-p", full_prompt,
+            "-p", prompt,
             "--model", self._model,
             "--output-format", "text",
             "--tools", "",
@@ -91,7 +141,6 @@ class AI:
         else:
             cmd += ["--resume", self._session_id]
 
-        # Unset CLAUDECODE to allow nested CLI invocation
         env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
 
         process = await asyncio.create_subprocess_exec(
@@ -124,12 +173,7 @@ class AI:
             raise RuntimeError(f"AI failed: {stderr}")
 
         response = stdout_bytes.decode().strip()
-        # Yield to event loop: if our task was cancelled while subprocess
-        # was completing, the CancelledError is delivered here rather than
-        # after we've already written the response.
-        await asyncio.sleep(0)
         self._call_count += 1
-        self._router.write("ai", response, mode="NL", metadata={"type": "response", "label": self._label})
         return response
 
     def _reset_session(self) -> None:
