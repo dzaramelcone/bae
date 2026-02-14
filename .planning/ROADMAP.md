@@ -129,12 +129,11 @@ Plans:
   3. AI can parse Python code from NL conversation and integrate it into the codebase (extract code blocks, write files, run commands)
   4. All AI output appears on the `[ai]` channel and is persisted to the session store
   5. Prompt engineering delivers reliable NL-to-code: AI produces correct Python, makes appropriate bash/system calls, and handles ambiguity by asking
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 18-01: TBD
-- [ ] 18-02: TBD
-- [ ] 18-03: TBD
+- [ ] 18-01-PLAN.md — AI callable class with context builder, code extractor, and unit tests
+- [ ] 18-02-PLAN.md — Shell integration wiring and integration tests
 
 ### Phase 19: Task Lifecycle
 **Goal**: User can monitor, kill, and manage background tasks, and customize what the prompt displays
@@ -173,8 +172,8 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19
 | 15. Session Store | v4.0 | 4/4 | Complete | 2026-02-13 |
 | 16. Channel I/O | v4.0 | 2/2 | Complete | 2026-02-13 |
 | 17. Namespace | v4.0 | 3/3 | Complete | 2026-02-13 |
-| 18. AI Agent | v4.0 | 0/? | Not started | - |
+| 18. AI Agent | v4.0 | 0/2 | In progress | - |
 | 19. Task Lifecycle | v4.0 | 0/? | Not started | - |
 
 ---
-*Last updated: 2026-02-13 after Phase 17 complete*
+*Last updated: 2026-02-13 after Phase 18 planning*
