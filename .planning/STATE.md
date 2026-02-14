@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 17 of 19 (Namespace)
-Plan: 2 of 2 complete
+Plan: 3 of 3 complete
 Status: Phase complete
-Last activity: 2026-02-13 -- Shell namespace wiring and _trace capture (seed(), integration tests)
+Last activity: 2026-02-14 -- Gap closure: <cortex> sys.modules registration for REPL annotation resolution
 
 Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [######--] 58%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 53 (13 v1.0 + 21 v2.0 + 9 v3.0 + 10 v4.0)
+- Total plans completed: 54 (13 v1.0 + 21 v2.0 + 9 v3.0 + 11 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -37,6 +37,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [######--] 58%
 | 16-02 | Shell channel integration | 3min | 2 | 3 |
 | 17-01 | Namespace seeding & NsInspector (TDD) | 3min | 2 | 2 |
 | 17-02 | Shell namespace wiring | 2min | 2 | 2 |
+| 17-03 | Gap closure: REPL annotation resolution | 2min | 2 | 2 |
 
 ## Accumulated Context
 
@@ -74,6 +75,8 @@ v4.0 architectural decisions:
 - classify_fields() reused from bae.resolver for ns(Node) field introspection
 - GRAPH mode error handler captures _trace then routes traceback through [graph] channel (matches PY mode pattern)
 - Trace capture pattern: store trace in namespace on success, extract from exception.trace on error
+- Register <cortex> in sys.modules rather than threading globalns through resolver/lm/compiler (zero production changes)
+- namespace.__name__ = '<cortex>' via setdefault so REPL-defined classes get correct __module__
 
 ### Pending Todos
 
@@ -86,7 +89,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-13
-Stopped at: Completed 17-02-PLAN.md (Shell namespace wiring -- phase 17 complete, 2 of 2 plans done)
+Last session: 2026-02-14
+Stopped at: Completed 17-03-PLAN.md (Gap closure: <cortex> sys.modules registration -- phase 17 complete, 3 of 3 plans done)
 Branch: main
 Resume file: None
