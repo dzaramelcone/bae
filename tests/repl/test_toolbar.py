@@ -7,8 +7,10 @@ from unittest.mock import MagicMock, patch
 from bae.repl.toolbar import (
     ToolbarConfig,
     make_cwd_widget,
+    make_mem_widget,
     make_mode_widget,
     make_tasks_widget,
+    make_view_widget,
 )
 from bae.repl.modes import Mode
 
@@ -121,3 +123,32 @@ class TestBuiltinWidgets:
         with patch("bae.repl.toolbar.os.getcwd", return_value="/Users/dz/lab/bae"), \
              patch("bae.repl.toolbar.os.path.expanduser", return_value="/Users/dz"):
             assert widget() == [("class:toolbar.cwd", " ~/lab/bae ")]
+
+    def test_make_view_widget_hidden_in_user_mode(self):
+        shell = MagicMock()
+        shell.view_mode.value = "user"
+        widget = make_view_widget(shell)
+        assert widget() == []
+
+    def test_make_view_widget_shows_debug(self):
+        shell = MagicMock()
+        shell.view_mode.value = "debug"
+        widget = make_view_widget(shell)
+        assert widget() == [("class:toolbar.view", " debug ")]
+
+    def test_make_view_widget_shows_ai_self(self):
+        shell = MagicMock()
+        shell.view_mode.value = "ai-self"
+        widget = make_view_widget(shell)
+        assert widget() == [("class:toolbar.view", " ai-self ")]
+
+    def test_make_mem_widget(self):
+        widget = make_mem_widget()
+        result = widget()
+        assert len(result) == 1
+        style, text = result[0]
+        assert style == "class:toolbar.mem"
+        assert text.endswith("M ")
+        # Should parse as a positive number
+        mb = int(text.strip().rstrip("M"))
+        assert mb > 0
