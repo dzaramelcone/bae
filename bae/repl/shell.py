@@ -19,6 +19,7 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 from pygments.lexers.python import PythonLexer
 
+from bae.repl.ai import AI
 from bae.repl.bash import dispatch_bash
 from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, toggle_channels
 from bae.repl.complete import NamespaceCompleter
@@ -79,6 +80,9 @@ class CortexShell:
         for name, cfg in CHANNEL_DEFAULTS.items():
             self.router.register(name, cfg["color"], store=self.store)
         self.namespace["channels"] = self.router
+        from bae.lm import ClaudeCLIBackend
+        self.ai = AI(lm=ClaudeCLIBackend(), router=self.router, namespace=self.namespace)
+        self.namespace["ai"] = self.ai
         self.completer = NamespaceCompleter(self.namespace)
 
         kb = _build_key_bindings(self)
@@ -167,8 +171,11 @@ class CortexShell:
                         tb = traceback.format_exc()
                         self.router.write("py", tb.rstrip("\n"), mode="PY", metadata={"type": "error"})
                 elif self.mode == Mode.NL:
-                    stub = f"(NL mode stub) {text}\nNL mode coming in Phase 18."
-                    self.router.write("ai", stub, mode="NL")
+                    try:
+                        await self.ai(text)
+                    except Exception:
+                        tb = traceback.format_exc()
+                        self.router.write("ai", tb.rstrip("\n"), mode="NL", metadata={"type": "error"})
                 elif self.mode == Mode.GRAPH:
                     graph = self.namespace.get("graph")
                     if graph:
