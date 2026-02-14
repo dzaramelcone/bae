@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from prompt_toolkit import print_formatted_text
 from prompt_toolkit.formatted_text import ANSI, FormattedText
@@ -40,6 +40,27 @@ def render_markdown(text: str, width: int | None = None) -> str:
     return buf.getvalue()
 
 
+@runtime_checkable
+class ViewFormatter(Protocol):
+    """Display strategy for channel content.
+
+    Receives channel name, color, content, and optional metadata.
+    Renders to terminal via print_formatted_text (prompt_toolkit).
+    All Rich rendering MUST use Console(file=StringIO()) -- never stdout directly.
+    """
+
+    def render(
+        self,
+        channel_name: str,
+        color: str,
+        content: str,
+        *,
+        metadata: dict | None = None,
+    ) -> None:
+        """Format and display content from a channel write."""
+        ...
+
+
 @dataclass
 class Channel:
     """A labeled output stream with color-coded display and store integration."""
@@ -49,6 +70,7 @@ class Channel:
     visible: bool = True
     markdown: bool = False
     store: SessionStore | None = None
+    _formatter: ViewFormatter | None = field(default=None, repr=False)
     _buffer: list[str] = field(default_factory=list, repr=False)
 
     @property
@@ -74,12 +96,16 @@ class Channel:
             self._display(content, metadata=metadata)
 
     def _display(self, content: str, *, metadata: dict | None = None) -> None:
-        """Render content with color-coded channel prefix.
+        """Render content to terminal, delegating to formatter when set.
 
-        Markdown channels render the entire response as one Rich Markdown block,
-        preserving headers, code blocks, and lists. Non-markdown channels render
-        line-by-line with a color-coded prefix.
+        When a formatter is set, it receives channel name, color, content, and
+        metadata for custom rendering. When no formatter is set, the existing
+        color-coded prefix display runs unchanged.
         """
+        if self._formatter is not None:
+            self._formatter.render(self.name, self.color, content, metadata=metadata)
+            return
+
         label_text = self.label
         if metadata and "label" in metadata:
             label_text = f"[{self.name}:{metadata['label']}]"
