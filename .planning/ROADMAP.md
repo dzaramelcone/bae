@@ -165,10 +165,12 @@ Plans:
   5. On launch, AI context includes recent session history from the store (cross-session memory)
   6. AI output renders markdown formatting in the terminal (headers, bold, code blocks, lists)
   7. Ctrl-C task menu renders as a numbered list below the input (printed to scrollback), not in the toolbar
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 20 to break down)
+- [ ] 20-01-PLAN.md — Rich markdown rendering + task menu scrollback
+- [ ] 20-02-PLAN.md — Multi-session AI management + cross-session memory
+- [ ] 20-03-PLAN.md — AI eval loop (extract-execute-feedback) + concurrent session tests
 
 ## Progress
 
@@ -196,7 +198,7 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19 -> 20
 | 17. Namespace | v4.0 | 3/3 | Complete | 2026-02-13 |
 | 18. AI Agent | v4.0 | 2/2 | Complete | 2026-02-13 |
 | 19. Task Lifecycle | v4.0 | 5/5 | Complete | 2026-02-14 |
-| 20. AI Eval Loop | v4.0 | 0/0 | Not Planned | - |
+| 20. AI Eval Loop | v4.0 | 0/3 | Planned | - |
 
 ---
-*Last updated: 2026-02-14 after adding Phase 20 AI Eval Loop*
+*Last updated: 2026-02-14 after planning Phase 20 AI Eval Loop*
