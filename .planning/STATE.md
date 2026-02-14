@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 19 of 19 (Task Lifecycle)
-Plan: 1 of 2 complete
-Status: In progress
-Last activity: 2026-02-13 -- ToolbarConfig class TDD'd with built-in widgets
+Plan: 2 of 2 complete
+Status: Phase complete
+Last activity: 2026-02-13 -- Task lifecycle wired: tracking, Ctrl-C kill menu, subprocess cleanup, toolbar
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [#########] 92%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##########] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 57 (13 v1.0 + 21 v2.0 + 9 v3.0 + 14 v4.0)
+- Total plans completed: 58 (13 v1.0 + 21 v2.0 + 9 v3.0 + 15 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -41,6 +41,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [#########] 92%
 | 18-01 | AI class (CLI backend) | 5min | 2 | 3 |
 | 18-02 | Shell AI wiring | 2min | 2 | 2 |
 | 19-01 | ToolbarConfig (TDD) | 2min | 2 | 2 |
+| 19-02 | Task lifecycle wiring | 4min | 2 | 4 |
 
 ## Accumulated Context
 
@@ -88,6 +89,10 @@ v4.0 architectural decisions:
 - AI.__call__ owns [ai] channel output; shell NL handler only catches errors
 - ToolbarConfig widget factories use closures over shell object -- deferred MODE_NAMES import avoids circular imports
 - MODE_NAMES values used as-is in toolbar widgets (uppercase PY/NL/GRAPH/BASH)
+- PY mode NOT tracked (synchronous exec, can't cancel tight loops) -- only NL/GRAPH/BASH get tracked tasks
+- _dispatch() extracted from run() to isolate mode routing from REPL loop
+- checkboxlist_dialog imported locally in _show_kill_menu to avoid module-level prompt_toolkit shortcut import
+- time.monotonic for double-press detection (not time.time) -- immune to clock adjustments
 
 ### Pending Todos
 
@@ -104,6 +109,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 19-01-PLAN.md (ToolbarConfig TDD -- 1 of 2 phase 19 plans done)
+Stopped at: Completed 19-02-PLAN.md (Task lifecycle wiring -- phase 19 complete, v4.0 done)
 Branch: main
 Resume file: None
