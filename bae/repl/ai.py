@@ -109,6 +109,42 @@ class AI:
         self._router.write("ai", response, mode="NL", metadata={"type": "response", "label": self._label})
 
         for _ in range(self._max_eval_iters):
+            # Tool call tags take precedence over <run> blocks
+            tool_codes = translate_tool_calls(response)
+            if tool_codes:
+                all_outputs = []
+                for tool_code in tool_codes:
+                    output = ""
+                    try:
+                        result, captured = await async_exec(tool_code, self._namespace)
+                        if asyncio.iscoroutine(result):
+                            result = await result
+                        output = captured
+                        if result is not None:
+                            output += repr(result)
+                        output = output or "(no output)"
+                    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                        raise
+                    except BaseException:
+                        output = traceback.format_exc()
+
+                    self._router.write("py", tool_code, mode="PY",
+                        metadata={"type": "tool_translated", "label": self._label})
+                    if output:
+                        self._router.write("py", output, mode="PY",
+                            metadata={"type": "tool_result", "label": self._label})
+                    all_outputs.append(output)
+
+                combined = "\n---\n".join(all_outputs)
+                feedback = f"[Tool output]\n{combined}"
+                await asyncio.sleep(0)  # cancellation checkpoint
+                response = await self._send(feedback)
+                await asyncio.sleep(0)  # cancellation checkpoint
+                self._router.write("ai", response, mode="NL",
+                    metadata={"type": "response", "label": self._label})
+                continue
+
+            # Existing: check for <run> blocks
             code, extra = self.extract_executable(response)
             if code is None:
                 break

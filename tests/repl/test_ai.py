@@ -620,3 +620,139 @@ class TestTranslateToolCalls:
         """<W:filepath> with no </W> closing returns empty list."""
         text = "<W:foo.txt>\nsome content but no closing tag"
         assert translate_tool_calls(text) == []
+
+
+# --- TestEvalLoopToolCalls ---
+
+
+class TestEvalLoopToolCalls:
+    """Tests for tool call translation in the eval loop: detect tags -> translate -> execute -> feed back."""
+
+    @pytest.fixture
+    def eval_ai(self, mock_lm, mock_router):
+        """AI instance with mocked _send for eval loop testing."""
+        ai = AI(lm=mock_lm, router=mock_router, namespace={}, max_eval_iters=3)
+        ai._send = AsyncMock()
+        return ai
+
+    @pytest.mark.asyncio
+    async def test_tool_call_triggers_translation(self, eval_ai):
+        """Response with <R:foo.py> triggers translate_tool_calls and async_exec, second response has no tags."""
+        eval_ai._send.side_effect = [
+            "<R:foo.py>",
+            "Here are the contents.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec, \
+             patch("bae.repl.ai.translate_tool_calls") as mock_translate:
+            mock_translate.side_effect = [
+                ["_c = open('foo.py').read()\nprint(_c[:4000])"],
+                [],
+            ]
+            mock_exec.return_value = (None, "file contents here")
+            result = await eval_ai("read foo.py")
+        assert result == "Here are the contents."
+        mock_exec.assert_called_once_with(
+            "_c = open('foo.py').read()\nprint(_c[:4000])", eval_ai._namespace)
+
+    @pytest.mark.asyncio
+    async def test_tool_call_feeds_back_output(self, eval_ai):
+        """async_exec output is fed back to AI with [Tool output] prefix."""
+        eval_ai._send.side_effect = [
+            "<R:foo.py>",
+            "Got it.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec, \
+             patch("bae.repl.ai.translate_tool_calls") as mock_translate:
+            mock_translate.side_effect = [["code"], []]
+            mock_exec.return_value = (None, "file data")
+            await eval_ai("read")
+        feedback = eval_ai._send.call_args_list[1][0][0]
+        assert feedback.startswith("[Tool output]")
+        assert "file data" in feedback
+
+    @pytest.mark.asyncio
+    async def test_tool_call_metadata_type(self, eval_ai):
+        """Router write uses tool_translated and tool_result metadata types."""
+        eval_ai._send.side_effect = [
+            "<R:foo.py>",
+            "Done.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec, \
+             patch("bae.repl.ai.translate_tool_calls") as mock_translate:
+            mock_translate.side_effect = [["code"], []]
+            mock_exec.return_value = (None, "output")
+            await eval_ai("read")
+        py_writes = [
+            c for c in eval_ai._router.write.call_args_list
+            if c[0][0] == "py"
+        ]
+        assert len(py_writes) == 2
+        assert py_writes[0].kwargs["metadata"]["type"] == "tool_translated"
+        assert py_writes[1].kwargs["metadata"]["type"] == "tool_result"
+
+    @pytest.mark.asyncio
+    async def test_tool_call_before_run_block(self, eval_ai):
+        """Response with BOTH a tool tag AND a <run> block: tool tag takes precedence."""
+        eval_ai._send.side_effect = [
+            "<R:foo.py>\n<run>\nx = 1\n</run>",
+            "Done.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec, \
+             patch("bae.repl.ai.translate_tool_calls") as mock_translate:
+            mock_translate.side_effect = [["read_code"], []]
+            mock_exec.return_value = (None, "file data")
+            await eval_ai("read and run")
+        # async_exec called with the tool code, not the <run> block code
+        mock_exec.assert_called_once_with("read_code", eval_ai._namespace)
+
+    @pytest.mark.asyncio
+    async def test_tool_call_counts_against_iters(self, eval_ai):
+        """Tool call translations count against max_eval_iters (loop stops at limit)."""
+        eval_ai._send.return_value = "<R:foo.py>"
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec, \
+             patch("bae.repl.ai.translate_tool_calls") as mock_translate:
+            mock_translate.return_value = ["code"]
+            mock_exec.return_value = (None, "output")
+            await eval_ai("loop tool calls")
+        # 1 initial + 3 feedback rounds (max_eval_iters=3)
+        assert eval_ai._send.call_count == 4
+
+    @pytest.mark.asyncio
+    async def test_tool_call_error_fed_back(self, eval_ai):
+        """Exception from async_exec is caught and fed back as traceback (not raised)."""
+        eval_ai._send.side_effect = [
+            "<R:foo.py>",
+            "I see the error.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec, \
+             patch("bae.repl.ai.translate_tool_calls") as mock_translate:
+            mock_translate.side_effect = [["code"], []]
+            mock_exec.side_effect = FileNotFoundError("No such file: foo.py")
+            result = await eval_ai("read missing")
+        assert result == "I see the error."
+        feedback = eval_ai._send.call_args_list[1][0][0]
+        assert "FileNotFoundError" in feedback
+        assert "foo.py" in feedback
+
+    @pytest.mark.asyncio
+    async def test_multiple_tool_calls_all_executed(self, eval_ai):
+        """Response with 2 tool tags: both executed, outputs combined with --- separator, single feedback."""
+        eval_ai._send.side_effect = [
+            "<R:a.py>\n<R:b.py>",
+            "Got both.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec, \
+             patch("bae.repl.ai.translate_tool_calls") as mock_translate:
+            mock_translate.side_effect = [["code_a", "code_b"], []]
+            mock_exec.side_effect = [
+                (None, "contents of a"),
+                (None, "contents of b"),
+            ]
+            result = await eval_ai("read both")
+        assert result == "Got both."
+        assert mock_exec.call_count == 2
+        feedback = eval_ai._send.call_args_list[1][0][0]
+        assert "[Tool output]" in feedback
+        assert "contents of a" in feedback
+        assert "---" in feedback
+        assert "contents of b" in feedback
