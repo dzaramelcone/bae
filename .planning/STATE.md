@@ -90,6 +90,9 @@ v4.0 architectural decisions:
 
 - Update `tests/traces/json_structured_fill_reference.py` -- drifted from real backend
 - Bump Python requirement to 3.14 stable
+- AI auto code extraction + eval loop (AI produces code → extract → exec in namespace → feed output back)
+- AI markdown rendering for [ai] channel output
+- AI streaming/progressive display for NL responses (currently blocking)
 
 ### Blockers/Concerns
 
@@ -98,6 +101,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Phase 18 complete (AI Agent -- 2 of 2 plans done, pending verification)
+Stopped at: Phase 18 complete (AI Agent -- 2 of 2 plans done, UAT passed with noted future work)
 Branch: main
 Resume file: None
