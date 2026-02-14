@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 Phase: 25 of 25
-Plan: 1 of 2 in Phase 25 (complete)
-Status: Plan 25-01 complete (DebugView, AISelfView, ViewMode infrastructure)
-Last activity: 2026-02-14 — Plan 25-01 complete (view formatters + routing)
+Plan: 2 of 2 in Phase 25 (complete)
+Status: Phase 25 complete (all view infrastructure wired into REPL)
+Last activity: 2026-02-14 — Plan 25-02 complete (shell view wiring + toolbar + keybinding)
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 [████████] 77%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 [█████████] 83%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 73 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 7 v5.0)
+- Total plans completed: 74 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 8 v5.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -42,6 +42,7 @@ Recent context for v5.0:
 - **ViewFormatter protocol** -- Strategy pattern via @runtime_checkable Protocol in channels.py. Channel._formatter field (default None) with _display() delegation. Enables pluggable display without modifying Channel identity. Zero new dependencies.
 - **UserView execution display** -- Concrete ViewFormatter in views.py. Buffers ai_exec, flushes grouped Rich Panel (Syntax + Rule + Text) on ai_exec_result. Fallback prefix display for all other py writes. Wired to py channel only. Zero new dependencies.
 - **DebugView + AISelfView** -- Two additional stateless ViewFormatters. DebugView: raw `[channel] key=value` metadata headers + indented content. AISelfView: AI-perspective tag mapping (ai-output, exec-code, exec-result, tool-call, tool-output). ViewMode enum + VIEW_CYCLE + VIEW_FORMATTERS routing infrastructure for shell wiring.
+- **View toggling wired** -- Ctrl+V keybinding cycles ViewMode (USER->DEBUG->AI_SELF). _set_view creates fresh formatter instance and swaps all channel formatters. make_view_widget toolbar indicator hidden in USER, shows mode name otherwise. toolbar.view style class.
 
 ### Pending Todos
 
@@ -58,6 +59,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 25-01-PLAN.md (DebugView, AISelfView, ViewMode infrastructure)
+Stopped at: Completed 25-02-PLAN.md (shell view wiring, Ctrl+V toggle, toolbar widget)
 Branch: main
 Resume file: None
