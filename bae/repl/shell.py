@@ -29,10 +29,12 @@ from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mo
 from bae.repl.namespace import seed
 from bae.repl.store import SessionStore
 from bae.repl.tasks import TaskManager
+from bae.repl.views import UserView
 from bae.repl.toolbar import (
     TASKS_PER_PAGE,
     ToolbarConfig,
     make_cwd_widget,
+    make_mem_widget,
     make_mode_widget,
     make_tasks_widget,
 )
@@ -220,6 +222,7 @@ class CortexShell:
                 name, cfg["color"], store=self.store, markdown=cfg.get("markdown", False)
             )
         self.namespace["channels"] = self.router
+        self.router.py._formatter = UserView()
         from bae.lm import ClaudeCLIBackend
 
         self._lm = ClaudeCLIBackend()
@@ -230,6 +233,7 @@ class CortexShell:
         self.toolbar = ToolbarConfig()
         self.toolbar.add("mode", make_mode_widget(self))
         self.toolbar.add("tasks", make_tasks_widget(self))
+        self.toolbar.add("mem", make_mem_widget())
         self.toolbar.add("cwd", make_cwd_widget())
         self.namespace["toolbar"] = self.toolbar
         self.completer = NamespaceCompleter(self.namespace)
@@ -248,6 +252,7 @@ class CortexShell:
                     "bottom-toolbar.text": "",
                     "toolbar.mode": "bg:#303030 #ffffff bold",
                     "toolbar.tasks": "fg:ansiyellow bold",
+                    "toolbar.mem": "#808080",
                     "toolbar.cwd": "#808080",
                 }
             ),
