@@ -532,85 +532,91 @@ class TestEvalLoop:
 
 
 class TestTranslateToolCalls:
-    """Tests for translate_tool_calls() pure function: terse tags -> Python code."""
+    """Tests for translate_tool_calls() pure function: terse tags -> Python code list."""
 
     def test_read_tag(self):
-        """<R:filepath> translates to Python code that reads the file with truncation."""
+        """<R:filepath> returns list with Python code that reads the file with truncation."""
         result = translate_tool_calls("<R:src/main.py>")
-        assert result is not None
-        assert "open('src/main.py')" in result or 'open("src/main.py")' in result
-        assert "4000" in result  # _MAX_TOOL_OUTPUT truncation
+        assert len(result) == 1
+        code = result[0]
+        assert "open('src/main.py')" in code or 'open("src/main.py")' in code
+        assert "4000" in code  # _MAX_TOOL_OUTPUT truncation
 
     def test_write_tag(self):
-        """<W:filepath>content</W> translates to Python code that writes content."""
+        """<W:filepath>content</W> returns list with Python code that writes content."""
         result = translate_tool_calls("<W:out.txt>\nhello world\n</W>")
-        assert result is not None
-        assert "open('out.txt', 'w')" in result or 'open("out.txt", \'w\')' in result
-        assert "hello world" in result
+        assert len(result) == 1
+        code = result[0]
+        assert "open('out.txt', 'w')" in code or 'open("out.txt", \'w\')' in code
+        assert "hello world" in code
 
     def test_edit_read_tag(self):
-        """<E:filepath:start-end> translates to Python that reads lines (1-based inclusive)."""
+        """<E:filepath:start-end> returns list with Python that reads lines (1-based inclusive)."""
         result = translate_tool_calls("<E:f.py:10-15>")
-        assert result is not None
-        assert "readlines()" in result
-        assert "[9:15]" in result  # 1-based inclusive -> 0-based slice
+        assert len(result) == 1
+        code = result[0]
+        assert "readlines()" in code
+        assert "[9:15]" in code  # 1-based inclusive -> 0-based slice
 
     def test_edit_replace_tag(self):
-        """<E:filepath:start-end>content</E> translates to Python that replaces lines."""
+        """<E:filepath:start-end>content</E> returns list with Python that replaces lines."""
         result = translate_tool_calls("<E:f.py:10-15>\nnew stuff\n</E>")
-        assert result is not None
-        assert "readlines()" in result
-        assert "[9:15]" in result
-        assert "new stuff" in result
-        assert "writelines" in result
+        assert len(result) == 1
+        code = result[0]
+        assert "readlines()" in code
+        assert "[9:15]" in code
+        assert "new stuff" in code
+        assert "writelines" in code
 
     def test_glob_tag(self):
-        """<G:pattern> translates to Python glob search with truncation."""
+        """<G:pattern> returns list with Python glob search with truncation."""
         result = translate_tool_calls("<G:src/**/*.py>")
-        assert result is not None
-        assert "glob" in result
-        assert "src/**/*.py" in result
-        assert "recursive=True" in result
+        assert len(result) == 1
+        code = result[0]
+        assert "glob" in code
+        assert "src/**/*.py" in code
+        assert "recursive=True" in code
 
     def test_grep_tag(self):
-        """<Grep:pattern> translates to subprocess grep with exclusions and timeout."""
+        """<Grep:pattern> returns list with subprocess grep with exclusions and timeout."""
         result = translate_tool_calls("<Grep:def main>")
-        assert result is not None
-        assert "grep" in result
-        assert "--include=*.py" in result
-        assert ".venv" in result
-        assert ".git" in result
-        assert "__pycache__" in result
-        assert "timeout=10" in result
+        assert len(result) == 1
+        code = result[0]
+        assert "grep" in code
+        assert "--include=*.py" in code
+        assert ".venv" in code
+        assert ".git" in code
+        assert "__pycache__" in code
+        assert "timeout=10" in code
 
-    def test_no_tags_returns_none(self):
-        """Plain prose with no tool tags returns None."""
-        assert translate_tool_calls("Just some plain text.") is None
+    def test_no_tags_returns_empty(self):
+        """Plain prose with no tool tags returns empty list."""
+        assert translate_tool_calls("Just some plain text.") == []
 
     def test_illustrative_fence_ignored(self):
-        """Tool tag inside a markdown fence is not translated."""
+        """Tool tag inside a markdown fence returns empty list."""
         text = "Example:\n```\n<R:foo.py>\n```\nThat's how it works."
-        assert translate_tool_calls(text) is None
+        assert translate_tool_calls(text) == []
 
     def test_run_block_ignored(self):
-        """Tool tag inside a <run>...</run> block is not translated."""
+        """Tool tag inside a <run>...</run> block returns empty list."""
         text = "Running:\n<run>\n<R:foo.py>\n</run>\nDone."
-        assert translate_tool_calls(text) is None
+        assert translate_tool_calls(text) == []
 
-    def test_first_tag_only(self):
-        """Response with two tool tags returns translation for the first only."""
-        text = "<R:first.py>\n<R:second.py>"
+    def test_multiple_tags_all_translated(self):
+        """Response with two tool tags returns list with both translations in order."""
+        text = "<R:a.py>\n<G:src/*.py>"
         result = translate_tool_calls(text)
-        assert result is not None
-        assert "first.py" in result
-        assert "second.py" not in result
+        assert len(result) == 2
+        assert "a.py" in result[0]
+        assert "src/*.py" in result[1]
 
     def test_tag_must_be_on_own_line(self):
-        """Tag embedded in prose (not on its own line) returns None."""
+        """Tag embedded in prose (not on its own line) returns empty list."""
         text = "some text <R:foo.py> more text"
-        assert translate_tool_calls(text) is None
+        assert translate_tool_calls(text) == []
 
     def test_write_without_closing_tag(self):
-        """<W:filepath> with no </W> closing returns None."""
+        """<W:filepath> with no </W> closing returns empty list."""
         text = "<W:foo.txt>\nsome content but no closing tag"
-        assert translate_tool_calls(text) is None
+        assert translate_tool_calls(text) == []

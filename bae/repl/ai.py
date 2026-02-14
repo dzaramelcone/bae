@@ -229,6 +229,15 @@ class AI:
         return f"ai:{self._label} -- await ai('question'). session {sid}, {n} calls."
 
 
+def translate_tool_calls(text: str) -> list[str]:
+    """Detect terse tool call tags in prose and return Python code strings.
+
+    Returns empty list if no tool call tags found. Skips tags inside
+    <run>...</run> blocks or markdown fences.
+    """
+    raise NotImplementedError
+
+
 def _load_prompt() -> str:
     """Load the system prompt from ai_prompt.md."""
     return _PROMPT_FILE.read_text()
