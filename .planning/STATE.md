@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v4.0 Cortex — Phase 19 Task Lifecycle
+**Current focus:** v4.0 Cortex — Phase 20 AI Eval Loop
 
 ## Current Position
 
-Phase: 19 of 19 (Task Lifecycle)
-Plan: 5 of 5 complete
-Status: Phase complete
-Last activity: 2026-02-14 -- TaskManager wired into shell with inline task menu and PY async tracking
+Phase: 20 of 20 (AI Eval Loop)
+Plan: 2 of 3 complete
+Status: In progress
+Last activity: 2026-02-14 -- Multi-session AI management and cross-session memory
 
 Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##########] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 60 (13 v1.0 + 21 v2.0 + 9 v3.0 + 17 v4.0)
+- Total plans completed: 61 (13 v1.0 + 21 v2.0 + 9 v3.0 + 18 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -45,6 +45,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##########] 100%
 | 19-03 | Gap closure: dispatch + cancel guard | 3min | 2 | 3 |
 | 19-04 | TaskManager lifecycle + process groups | 3min | 2 | 2 |
 | 19-05 | Shell + toolbar TaskManager integration | 7min | 2 | 8 |
+| 20-02 | Multi-session AI + cross-session memory | 3min | 1 | 5 |
 
 ## Accumulated Context
 
@@ -103,6 +104,10 @@ v4.0 architectural decisions:
 - prompt_toolkit Condition filter gates digit/arrow/esc bindings to task menu mode only
 - PY async expressions tracked as mode="py" tasks -- visible in toolbar count and cancellable via menu
 - Concurrent AI calls (asyncio.gather) already work -- responses interleave on [ai] channel, just need session indicators (e.g. [ai:1]) to distinguish
+- namespace["ai"] always points to active session -- preserves existing await ai("question") API
+- @N prefix in NL mode for session routing (e.g. @2 follow up) -- explicit, no keybinding needed
+- Cross-session context injected on first prompt only -- subsequent calls use --resume with conversation history
+- Session label included in channel metadata for output routing
 
 ### Pending Todos
 
@@ -121,6 +126,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 19-05-PLAN.md (Shell + toolbar TaskManager integration, Phase 19 complete)
+Stopped at: Completed 20-02-PLAN.md (Multi-session AI management and cross-session memory)
 Branch: main
 Resume file: None
