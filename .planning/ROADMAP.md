@@ -112,10 +112,11 @@ Plans:
   2. After executing an expression, `_` holds the result; after running a graph, `_trace` holds the trace
   3. Calling `ns()` prints all namespace objects with their types and one-line summaries
   4. Calling `ns(graph)` shows topology (nodes, edges); calling `ns(MyNode)` shows fields with annotations
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 17-01: TBD
+- [ ] 17-01-PLAN.md — Namespace seeding and introspection (TDD)
+- [ ] 17-02-PLAN.md — Shell wiring and integration tests
 
 ### Phase 18: AI Agent
 **Goal**: AI operates in natural language while producing correct Python and system calls -- the primary interaction mode for cortex
@@ -170,9 +171,9 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19
 | 14. Shell Foundation | v4.0 | 3/3 | Complete | 2026-02-13 |
 | 15. Session Store | v4.0 | 4/4 | Complete | 2026-02-13 |
 | 16. Channel I/O | v4.0 | 2/2 | Complete | 2026-02-13 |
-| 17. Namespace | v4.0 | 0/? | Not started | - |
+| 17. Namespace | v4.0 | 0/2 | Not started | - |
 | 18. AI Agent | v4.0 | 0/? | Not started | - |
 | 19. Task Lifecycle | v4.0 | 0/? | Not started | - |
 
 ---
-*Last updated: 2026-02-13 after Phase 16 execution complete*
+*Last updated: 2026-02-13 after Phase 17 planning complete*
