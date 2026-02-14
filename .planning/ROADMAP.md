@@ -143,10 +143,11 @@ Plans:
   1. Ctrl-C while tasks are running opens a menu listing active tasks with option to kill individual ones
   2. Double Ctrl-C kills all running tasks and returns to a bare cortex prompt
   3. User can configure the prompt to show custom content (CPU usage, running task count, cost accumulator, etc.)
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 19-01: TBD
+- [ ] 19-01-PLAN.md -- ToolbarConfig class with built-in widgets (TDD)
+- [ ] 19-02-PLAN.md -- Task tracking, interrupt handler, kill menu, and subprocess cleanup
 
 ## Progress
 
