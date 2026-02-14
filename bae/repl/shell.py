@@ -29,7 +29,13 @@ from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mo
 from bae.repl.namespace import seed
 from bae.repl.store import SessionStore
 from bae.repl.tasks import TaskManager
-from bae.repl.toolbar import TASKS_PER_PAGE, ToolbarConfig, make_cwd_widget, make_mode_widget, make_tasks_widget
+from bae.repl.toolbar import (
+    TASKS_PER_PAGE,
+    ToolbarConfig,
+    make_cwd_widget,
+    make_mode_widget,
+    make_tasks_widget,
+)
 
 # Register kitty keyboard protocol Shift+Enter (CSI u encoding).
 # Terminals supporting the kitty protocol (Ghostty, kitty, iTerm2 CSI u mode)
@@ -88,10 +94,12 @@ def _print_task_menu(shell: CortexShell) -> None:
     if not active:
         return
     for i, tt in enumerate(active, start=1):
-        line = FormattedText([
-            ("bold fg:ansiyellow", f"  {i}"),
-            ("", f" {tt.name}"),
-        ])
+        line = FormattedText(
+            [
+                ("bold fg:ansiyellow", f"  {i}"),
+                ("", f" {tt.name}"),
+            ]
+        )
         print_formatted_text(line)
     hint = FormattedText([("fg:#808080", "  #=cancel  ^C=all  esc=back")])
     print_formatted_text(hint)
@@ -124,9 +132,11 @@ def _build_key_bindings(shell: CortexShell) -> KeyBindings:
     @kb.add("c-o")
     def open_channel_toggle(event):
         """Ctrl+O opens channel visibility toggle."""
+
         async def _toggle():
             await toggle_channels(shell.router)
             event.app.invalidate()
+
         event.app.create_background_task(_toggle())
 
     @kb.add("c-c", eager=True)
@@ -171,6 +181,7 @@ def _build_key_bindings(shell: CortexShell) -> KeyBindings:
             event.app.invalidate()
 
     for digit in "12345":
+
         @kb.add(digit, filter=task_menu_active)
         def cancel_by_digit(event, _d=digit):
             """Digit key: cancel task at that position on current page."""
@@ -205,9 +216,12 @@ class CortexShell:
         self.namespace["store"] = self.store
         self.router = ChannelRouter()
         for name, cfg in CHANNEL_DEFAULTS.items():
-            self.router.register(name, cfg["color"], store=self.store, markdown=cfg.get("markdown", False))
+            self.router.register(
+                name, cfg["color"], store=self.store, markdown=cfg.get("markdown", False)
+            )
         self.namespace["channels"] = self.router
         from bae.lm import ClaudeCLIBackend
+
         self._lm = ClaudeCLIBackend()
         self._ai_sessions: dict[str, AI] = {}
         self._active_session: str = "1"
@@ -228,13 +242,15 @@ class CortexShell:
             multiline=True,
             bottom_toolbar=self._toolbar,
             refresh_interval=1.0,
-            style=Style.from_dict({
-                "bottom-toolbar": "bg:#1c1c1c #808080",
-                "bottom-toolbar.text": "",
-                "toolbar.mode": "bg:#303030 #ffffff bold",
-                "toolbar.tasks": "fg:ansiyellow bold",
-                "toolbar.cwd": "#808080",
-            }),
+            style=Style.from_dict(
+                {
+                    "bottom-toolbar": "bg:#1c1c1c #808080",
+                    "bottom-toolbar.text": "",
+                    "toolbar.mode": "bg:#303030 #ffffff bold",
+                    "toolbar.tasks": "fg:ansiyellow bold",
+                    "toolbar.cwd": "#808080",
+                }
+            ),
             key_bindings=kb,
         )
 
@@ -263,8 +279,12 @@ class CortexShell:
         """Return AI session by label, creating if needed."""
         if label not in self._ai_sessions:
             self._ai_sessions[label] = AI(
-                lm=self._lm, router=self.router, namespace=self.namespace,
-                tm=self.tm, store=self.store, label=label,
+                lm=self._lm,
+                router=self.router,
+                namespace=self.namespace,
+                tm=self.tm,
+                store=self.store,
+                label=label,
             )
         return self._ai_sessions[label]
 
@@ -333,8 +353,11 @@ class CortexShell:
             try:
                 result, captured = await async_exec(text, self.namespace)
                 if captured:
-                    self.router.write("py", captured.rstrip("\n"), mode="PY", metadata={"type": "stdout"})
+                    self.router.write(
+                        "py", captured.rstrip("\n"), mode="PY", metadata={"type": "stdout"}
+                    )
                 if asyncio.iscoroutine(result):
+
                     async def _py_task(coro):
                         try:
                             val = await coro
@@ -342,14 +365,21 @@ class CortexShell:
                                 if _contains_coroutines(val):
                                     n = _count_and_close_coroutines(val)
                                     msg = f"<{n} unawaited coroutine{'s' if n != 1 else ''}>"
-                                    self.router.write("py", msg, mode="PY", metadata={"type": "warning"})
+                                    self.router.write(
+                                        "py", msg, mode="PY", metadata={"type": "warning"}
+                                    )
                                 else:
-                                    self.router.write("py", repr(val), mode="PY", metadata={"type": "expr_result"})
+                                    self.router.write(
+                                        "py", repr(val), mode="PY", metadata={"type": "expr_result"}
+                                    )
                         except asyncio.CancelledError:
                             self.router.write("debug", "cancelled py task", mode="DEBUG")
                         except Exception:
                             tb = traceback.format_exc()
-                            self.router.write("py", tb.rstrip("\n"), mode="PY", metadata={"type": "error"})
+                            self.router.write(
+                                "py", tb.rstrip("\n"), mode="PY", metadata={"type": "error"}
+                            )
+
                     self.tm.submit(_py_task(result), name=f"py:{text[:30]}", mode="py")
                 elif result is not None:
                     if _contains_coroutines(result):
@@ -358,7 +388,9 @@ class CortexShell:
                         self.router.write("py", msg, mode="PY", metadata={"type": "warning"})
                         self.namespace.pop("_", None)
                     else:
-                        self.router.write("py", repr(result), mode="PY", metadata={"type": "expr_result"})
+                        self.router.write(
+                            "py", repr(result), mode="PY", metadata={"type": "expr_result"}
+                        )
             except KeyboardInterrupt:
                 pass
             except Exception:
@@ -370,9 +402,11 @@ class CortexShell:
                 rest = text[1:]
                 space = rest.find(" ")
                 if space > 0:
-                    label, prompt = rest[:space], rest[space + 1:]
+                    label, prompt = rest[:space], rest[space + 1 :]
                     self._switch_session(label)
-            self.tm.submit(self._run_nl(prompt), name=f"ai:{self._active_session}:{prompt[:30]}", mode="nl")
+            self.tm.submit(
+                self._run_nl(prompt), name=f"ai:{self._active_session}:{prompt[:30]}", mode="nl"
+            )
         elif self.mode == Mode.GRAPH:
             self.tm.submit(self._run_graph(text), name=f"graph:{text[:30]}", mode="graph")
         elif self.mode == Mode.BASH:

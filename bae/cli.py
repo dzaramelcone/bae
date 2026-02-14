@@ -40,6 +40,7 @@ def _encode_mermaid_for_live(code: str) -> str:
 
     return f"pako:{encoded}"
 
+
 app = typer.Typer(
     name="bae",
     help="Type-driven agent graphs with DSPy optimization",
@@ -112,9 +113,7 @@ def _load_graph_from_module(module_path: str) -> Graph:
 def graph_show(
     module: Annotated[
         str,
-        typer.Argument(
-            help="Module path to load graph from (e.g., 'myapp.graphs:StartNode')"
-        ),
+        typer.Argument(help="Module path to load graph from (e.g., 'myapp.graphs:StartNode')"),
     ],
     no_browser: Annotated[
         bool,
@@ -270,7 +269,7 @@ def run_graph(
     if backend == "claude":
         from bae import ClaudeCLIBackend
 
-        lm = ClaudeCLIBackend(model="claude-sonnet-4-20250514")
+        lm = ClaudeCLIBackend()
     else:
         lm = None  # Uses DSPyBackend by default
 

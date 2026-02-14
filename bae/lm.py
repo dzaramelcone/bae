@@ -309,10 +309,15 @@ class PydanticAIBackend:
 
         import json
 
-        context_json = json.dumps({"context": {
-            k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
-            for k, v in context.items()
-        }}, indent=2)
+        context_json = json.dumps(
+            {
+                "context": {
+                    k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+                    for k, v in context.items()
+                }
+            },
+            indent=2,
+        )
         prompt = f"{context_json}\n\nPick one type: {', '.join(type_names)}"
 
         result = await agent.run(prompt)
@@ -356,7 +361,7 @@ class PydanticAIBackend:
 class ClaudeCLIBackend:
     """LLM backend using Claude CLI subprocess."""
 
-    def __init__(self, model: str = "claude-sonnet-4-20250514", timeout: int = 20):
+    def __init__(self, model: str = "claude-opus-4-6", timeout: int = 20):
         self.model = model
         self.timeout = timeout
 
@@ -387,17 +392,23 @@ class ClaudeCLIBackend:
 
         cmd = [
             "claude",
-            "-p", prompt,                               # single-shot prompt mode
-            "--model", self.model,
-            "--output-format", "json",                   # return conversation as JSON stream
-            "--json-schema", json.dumps(clean_schema),   # constrained decoding via structured output tool
-            "--no-session-persistence",                  # don't save to CLI session history
-            "--tools", "",                               # disable built-in tools (Bash, Edit, etc.)
-            "--strict-mcp-config",                       # disable MCP servers (no --mcp-config = none)
-            "--setting-sources", "",                     # skip loading project/user settings
-            "--system-prompt",                           # override default system prompt to prevent
-            "You are a structured data generator. "      # CLI from leaking cwd/env/project context
-            "Be brief and concise. "                     # into LLM calls
+            "-p",
+            prompt,  # single-shot prompt mode
+            "--model",
+            self.model,
+            "--output-format",
+            "json",  # return conversation as JSON stream
+            "--json-schema",
+            json.dumps(clean_schema),  # constrained decoding via structured output tool
+            "--no-session-persistence",  # don't save to CLI session history
+            "--tools",
+            "",  # disable built-in tools (Bash, Edit, etc.)
+            "--strict-mcp-config",  # disable MCP servers (no --mcp-config = none)
+            "--setting-sources",
+            "",  # skip loading project/user settings
+            "--system-prompt",  # override default system prompt to prevent
+            "You are a structured data generator. "  # CLI from leaking cwd/env/project context
+            "Be brief and concise. "  # into LLM calls
             "Respond only with the requested data.",
         ]
 
@@ -483,10 +494,15 @@ class ClaudeCLIBackend:
 
         import json
 
-        context_json = json.dumps({"context": {
-            k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
-            for k, v in context.items()
-        }}, indent=2)
+        context_json = json.dumps(
+            {
+                "context": {
+                    k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+                    for k, v in context.items()
+                }
+            },
+            indent=2,
+        )
         prompt = f"{context_json}\n\nPick one type: {', '.join(type_names)}"
 
         choice_schema = _build_choice_schema(type_names)
