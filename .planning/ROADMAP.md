@@ -6,6 +6,7 @@
 - v2.0 Context Frames — Phases 5-10 (shipped 2026-02-08)
 - v3.0 Async Graphs — Phases 11-13 (shipped 2026-02-13)
 - v4.0 Cortex — Phases 14-20 (shipped 2026-02-14)
+- v5.0 Stream Views — Phases 21-25 (in progress)
 
 ## Phases
 
@@ -53,7 +54,94 @@
 
 </details>
 
+### v5.0 Stream Views (In Progress)
+
+**Milestone Goal:** Multi-view stream framework with tool call translation and execution display overhaul.
+
+- [ ] **Phase 21: Execution Convention** - Eval loop distinguishes executable from illustrative code
+- [ ] **Phase 22: Tool Call Translation** - Detect and translate AI tool call patterns to Python equivalents
+- [ ] **Phase 23: View Framework** - ViewFormatter protocol with channel delegation
+- [ ] **Phase 24: Execution Display** - UserView with Rich Panel framing, code+output grouping, deduplication
+- [ ] **Phase 25: Views Completion** - DebugView, AI self-view, and runtime view toggling
+
+## Phase Details
+
+### Phase 21: Execution Convention
+**Goal**: Eval loop only executes code the AI explicitly marks as executable
+**Depends on**: Nothing (first v5.0 phase)
+**Requirements**: EXEC-01, EXEC-02
+**Success Criteria** (what must be TRUE):
+  1. AI code blocks marked as executable are extracted and run by the eval loop
+  2. AI code blocks shown as illustration (examples, pseudocode, explanations) are NOT executed
+  3. Existing eval loop behavior preserved for responses that do not use the new convention
+**Plans**: TBD
+
+Plans:
+- [ ] 21-01: TBD
+
+### Phase 22: Tool Call Translation
+**Goal**: AI tool call attempts are caught, translated to Python, and executed transparently
+**Depends on**: Phase 21 (convention for marking translated code)
+**Requirements**: AIHR-02, AIHR-03, AIHR-04, AIHR-05, AIHR-06, AIHR-07, AIHR-08
+**Success Criteria** (what must be TRUE):
+  1. AI Read tool call (`<R:filepath>`) is intercepted and produces file contents in the namespace
+  2. AI Write tool call (`<W:filepath>`) is intercepted and writes file content from the response
+  3. AI Glob/Grep tool calls are intercepted and produce search results in the namespace
+  4. AI Edit tool call (`<E:filepath:line_start-line_end>`) is intercepted and performs the file edit
+  5. User sees a visible indicator (channel label or badge) when a tool call was translated and executed
+**Plans**: TBD
+
+Plans:
+- [ ] 22-01: TBD
+- [ ] 22-02: TBD
+
+### Phase 23: View Framework
+**Goal**: Channel display is pluggable via formatter strategy, with zero change to existing behavior
+**Depends on**: Nothing (independent infrastructure)
+**Requirements**: VIEW-01, VIEW-02
+**Success Criteria** (what must be TRUE):
+  1. ViewFormatter protocol exists with a render method that receives channel name, color, content, and metadata
+  2. Channel._display() delegates to formatter when one is set, falls back to existing behavior when unset
+  3. All existing REPL tests pass without modification (zero regression)
+**Plans**: TBD
+
+Plans:
+- [ ] 23-01: TBD
+
+### Phase 24: Execution Display
+**Goal**: AI code execution renders as polished framed panels with deduplication
+**Depends on**: Phase 23 (formatter infrastructure)
+**Requirements**: VIEW-03, DISP-01, DISP-02, DISP-03, DISP-04
+**Success Criteria** (what must be TRUE):
+  1. AI-executed code renders in a Rich Panel with syntax highlighting and a descriptive title
+  2. Execution output renders in a separate panel below the code panel
+  3. Code and output panels appear as a grouped visual unit (no interleaved channel lines between them)
+  4. AI-initiated code execution does NOT echo the code as a redundant [py] channel line
+**Plans**: TBD
+
+Plans:
+- [ ] 24-01: TBD
+- [ ] 24-02: TBD
+
+### Phase 25: Views Completion
+**Goal**: User can cycle between debug, AI-self, and user views at runtime
+**Depends on**: Phase 23 (framework), Phase 24 (UserView as reference)
+**Requirements**: VIEW-04, VIEW-05, VIEW-06
+**Success Criteria** (what must be TRUE):
+  1. DebugView renders raw channel data with full metadata visible
+  2. AI self-view provides structured feedback format consumed by the eval loop
+  3. User can toggle between views at runtime via keybinding (Ctrl+V or equivalent)
+  4. Toolbar displays the currently active view mode
+**Plans**: TBD
+
+Plans:
+- [ ] 25-01: TBD
+- [ ] 25-02: TBD
+
 ## Progress
+
+**Execution Order:**
+Phases 21 and 23 are parallel-safe (no dependencies between them). Phase 22 follows 21. Phase 24 follows 23. Phase 25 follows 23+24.
 
 | Phase | Milestone | Plans | Status | Completed |
 |-------|-----------|-------|--------|-----------|
@@ -77,6 +165,11 @@
 | 18. AI Agent | v4.0 | 2/2 | Complete | 2026-02-13 |
 | 19. Task Lifecycle | v4.0 | 5/5 | Complete | 2026-02-14 |
 | 20. AI Eval Loop | v4.0 | 5/5 | Complete | 2026-02-14 |
+| 21. Execution Convention | v5.0 | 0/TBD | Not started | - |
+| 22. Tool Call Translation | v5.0 | 0/TBD | Not started | - |
+| 23. View Framework | v5.0 | 0/TBD | Not started | - |
+| 24. Execution Display | v5.0 | 0/TBD | Not started | - |
+| 25. Views Completion | v5.0 | 0/TBD | Not started | - |
 
 ---
-*Last updated: 2026-02-14 after v4.0 Cortex milestone completion*
+*Last updated: 2026-02-14 after v5.0 Stream Views roadmap creation*

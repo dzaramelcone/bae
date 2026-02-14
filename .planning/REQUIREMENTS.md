@@ -68,32 +68,32 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AIHR-01 | — | Pending |
-| AIHR-02 | — | Pending |
-| AIHR-03 | — | Pending |
-| AIHR-04 | — | Pending |
-| AIHR-05 | — | Pending |
-| AIHR-06 | — | Pending |
-| AIHR-07 | — | Pending |
-| AIHR-08 | — | Pending |
-| EXEC-01 | — | Pending |
-| EXEC-02 | — | Pending |
-| VIEW-01 | — | Pending |
-| VIEW-02 | — | Pending |
-| VIEW-03 | — | Pending |
-| VIEW-04 | — | Pending |
-| VIEW-05 | — | Pending |
-| VIEW-06 | — | Pending |
-| DISP-01 | — | Pending |
-| DISP-02 | — | Pending |
-| DISP-03 | — | Pending |
-| DISP-04 | — | Pending |
+| AIHR-01 | Deferred | Deferred |
+| AIHR-02 | Phase 22 | Pending |
+| AIHR-03 | Phase 22 | Pending |
+| AIHR-04 | Phase 22 | Pending |
+| AIHR-05 | Phase 22 | Pending |
+| AIHR-06 | Phase 22 | Pending |
+| AIHR-07 | Phase 22 | Pending |
+| AIHR-08 | Phase 22 | Pending |
+| EXEC-01 | Phase 21 | Pending |
+| EXEC-02 | Phase 21 | Pending |
+| VIEW-01 | Phase 23 | Pending |
+| VIEW-02 | Phase 23 | Pending |
+| VIEW-03 | Phase 24 | Pending |
+| VIEW-04 | Phase 25 | Pending |
+| VIEW-05 | Phase 25 | Pending |
+| VIEW-06 | Phase 25 | Pending |
+| DISP-01 | Phase 24 | Pending |
+| DISP-02 | Phase 24 | Pending |
+| DISP-03 | Phase 24 | Pending |
+| DISP-04 | Phase 24 | Pending |
 
 **Coverage:**
 - v5.0 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20 ⚠️
+- Mapped to phases: 19
+- Deferred: 1 (AIHR-01)
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after initial definition*
+*Last updated: 2026-02-14 after prompt hardening deferred, phases renumbered 21-25*
