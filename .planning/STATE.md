@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 19 of 19 (Task Lifecycle)
-Plan: 4 of 5 complete
-Status: In progress
-Last activity: 2026-02-14 -- TaskManager with lifecycle tracking and process group kill
+Plan: 5 of 5 complete
+Status: Phase complete
+Last activity: 2026-02-14 -- TaskManager wired into shell with inline task menu and PY async tracking
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [#########-] 92%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##########] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 59 (13 v1.0 + 21 v2.0 + 9 v3.0 + 16 v4.0)
+- Total plans completed: 60 (13 v1.0 + 21 v2.0 + 9 v3.0 + 17 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -44,6 +44,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [#########-] 92%
 | 19-02 | Task lifecycle wiring | 4min | 2 | 4 |
 | 19-03 | Gap closure: dispatch + cancel guard | 3min | 2 | 3 |
 | 19-04 | TaskManager lifecycle + process groups | 3min | 2 | 2 |
+| 19-05 | Shell + toolbar TaskManager integration | 7min | 2 | 8 |
 
 ## Accumulated Context
 
@@ -97,6 +98,10 @@ v4.0 architectural decisions:
 - time.monotonic for double-press detection (not time.time) -- immune to clock adjustments
 - Self-contained async helpers (_run_nl, _run_graph, _run_bash) own error handling -- dispatch just fires them
 - await asyncio.sleep(0) as cancellation checkpoint before AI response write -- standard asyncio CancelledError delivery
+- Inline task menu replaces checkboxlist_dialog -- first Ctrl-C opens numbered list, second kills all, no timing threshold
+- async_exec returns unawaited coroutine for async code -- caller tracks via TaskManager, not inline await
+- prompt_toolkit Condition filter gates digit/arrow/esc bindings to task menu mode only
+- PY async expressions tracked as mode="py" tasks -- visible in toolbar count and cancellable via menu
 
 ### Pending Todos
 
@@ -113,6 +118,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 19-04-PLAN.md (TaskManager with lifecycle tracking and process group kill)
+Stopped at: Completed 19-05-PLAN.md (Shell + toolbar TaskManager integration, Phase 19 complete)
 Branch: main
 Resume file: None
