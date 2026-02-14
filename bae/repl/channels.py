@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from prompt_toolkit import print_formatted_text
-from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.formatted_text import ANSI, FormattedText
 from prompt_toolkit.shortcuts import checkboxlist_dialog
+from rich.console import Console
+from rich.markdown import Markdown
 
 if TYPE_CHECKING:
     from bae.repl.store import SessionStore
@@ -17,10 +21,23 @@ if TYPE_CHECKING:
 CHANNEL_DEFAULTS = {
     "py":    {"color": "#87ff87"},
     "graph": {"color": "#ffaf87"},
-    "ai":    {"color": "#87d7ff"},
+    "ai":    {"color": "#87d7ff", "markdown": True},
     "bash":  {"color": "#d7afff"},
     "debug": {"color": "#808080"},
 }
+
+
+def render_markdown(text: str, width: int | None = None) -> str:
+    """Convert markdown text to ANSI-escaped string via Rich."""
+    if width is None:
+        try:
+            width = os.get_terminal_size().columns
+        except OSError:
+            width = 80
+    buf = StringIO()
+    console = Console(file=buf, width=width, force_terminal=True)
+    console.print(Markdown(text))
+    return buf.getvalue()
 
 
 @dataclass
@@ -30,6 +47,7 @@ class Channel:
     name: str
     color: str
     visible: bool = True
+    markdown: bool = False
     store: SessionStore | None = None
     _buffer: list[str] = field(default_factory=list, repr=False)
 
@@ -56,14 +74,25 @@ class Channel:
             self._display(content)
 
     def _display(self, content: str) -> None:
-        """Render content with color-coded channel prefix."""
-        for line in content.splitlines():
-            text = FormattedText([
-                (f"{self.color} bold", self.label),
-                ("", " "),
-                ("", line),
-            ])
-            print_formatted_text(text)
+        """Render content with color-coded channel prefix.
+
+        Markdown channels render the entire response as one Rich Markdown block,
+        preserving headers, code blocks, and lists. Non-markdown channels render
+        line-by-line with a color-coded prefix.
+        """
+        if self.markdown:
+            label = FormattedText([(f"{self.color} bold", self.label)])
+            print_formatted_text(label)
+            ansi_text = render_markdown(content)
+            print_formatted_text(ANSI(ansi_text))
+        else:
+            for line in content.splitlines():
+                text = FormattedText([
+                    (f"{self.color} bold", self.label),
+                    ("", " "),
+                    ("", line),
+                ])
+                print_formatted_text(text)
 
     def __repr__(self) -> str:
         vis = "visible" if self.visible else "hidden"
@@ -79,9 +108,10 @@ class ChannelRouter:
 
     def register(
         self, name: str, color: str, store: SessionStore | None = None,
+        *, markdown: bool = False,
     ) -> Channel:
         """Register a new channel."""
-        ch = Channel(name=name, color=color, store=store)
+        ch = Channel(name=name, color=color, markdown=markdown, store=store)
         self._channels[name] = ch
         return ch
 

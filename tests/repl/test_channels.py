@@ -13,6 +13,7 @@ from bae.repl.channels import (
     ChannelRouter,
     disable_debug,
     enable_debug,
+    render_markdown,
     toggle_channels,
 )
 
@@ -258,6 +259,59 @@ def test_channel_defaults_colors():
     assert CHANNEL_DEFAULTS["ai"]["color"] == "#87d7ff"
     assert CHANNEL_DEFAULTS["bash"]["color"] == "#d7afff"
     assert CHANNEL_DEFAULTS["debug"]["color"] == "#808080"
+
+
+# --- Markdown rendering tests ---
+
+
+def test_render_markdown_basic():
+    """render_markdown returns ANSI-escaped string for basic markdown."""
+    result = render_markdown("# Hello\n**bold**")
+    assert result  # non-empty
+    assert "\x1b[" in result  # contains ANSI escape codes
+
+
+def test_render_markdown_code_block():
+    """render_markdown renders code blocks with the code text preserved."""
+    result = render_markdown("```python\nprint('hi')\n```")
+    assert "print" in result
+    assert "hi" in result
+
+
+def test_channel_markdown_flag():
+    """Channel accepts markdown=True flag."""
+    ch = Channel(name="ai", color="#87d7ff", markdown=True)
+    assert ch.markdown is True
+
+
+def test_channel_defaults_ai_markdown():
+    """CHANNEL_DEFAULTS['ai'] includes markdown: True."""
+    assert CHANNEL_DEFAULTS["ai"]["markdown"] is True
+
+
+@patch("bae.repl.channels.print_formatted_text")
+def test_non_markdown_channel_display(mock_pft):
+    """Channel with markdown=False still does line-by-line display."""
+    ch = Channel(name="py", color="#87ff87", markdown=False)
+    ch._display("line 1\nline 2")
+    assert mock_pft.call_count == 2
+    # Each call should get a FormattedText with the prefix
+    for call in mock_pft.call_args_list:
+        fragments = list(call[0][0])
+        assert fragments[0] == ("#87ff87 bold", "[py]")
+
+
+@patch("bae.repl.channels.print_formatted_text")
+def test_markdown_channel_display(mock_pft):
+    """Channel with markdown=True renders via render_markdown + ANSI."""
+    ch = Channel(name="ai", color="#87d7ff", markdown=True)
+    ch._display("# Hello")
+    # Two calls: one for the label FormattedText, one for ANSI-rendered markdown
+    assert mock_pft.call_count == 2
+    # First call is the label
+    label_arg = mock_pft.call_args_list[0][0][0]
+    fragments = list(label_arg)
+    assert fragments[0] == ("#87d7ff bold", "[ai]")
 
 
 # --- toggle_channels tests ---
