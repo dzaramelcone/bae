@@ -31,7 +31,12 @@ async def dispatch_bash(cmd: str) -> tuple[str, str]:
         stderr=asyncio.subprocess.PIPE,
         cwd=os.getcwd(),
     )
-    raw_out, raw_err = await proc.communicate()
+    try:
+        raw_out, raw_err = await proc.communicate()
+    except asyncio.CancelledError:
+        proc.kill()
+        await proc.wait()
+        raise
     out = raw_out.decode(errors="replace") if raw_out else ""
     err = raw_err.decode(errors="replace") if raw_err else ""
     return (out, err)

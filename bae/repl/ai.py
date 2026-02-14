@@ -91,6 +91,10 @@ class AI:
         except asyncio.TimeoutError:
             process.kill()
             raise RuntimeError(f"AI timed out after {self._timeout}s")
+        except asyncio.CancelledError:
+            process.kill()
+            await process.wait()
+            raise
 
         if process.returncode != 0:
             stderr = stderr_bytes.decode()
