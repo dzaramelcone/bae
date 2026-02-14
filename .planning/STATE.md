@@ -107,10 +107,11 @@ v4.0 architectural decisions:
 
 - Update `tests/traces/json_structured_fill_reference.py` -- drifted from real backend
 - Bump Python requirement to 3.14 stable
-- AI auto code extraction + eval loop → promoted to Phase 20
-- AI markdown rendering for [ai] channel output
+- AI auto code extraction + eval loop → Phase 20
+- AI markdown rendering → Phase 20
+- Task menu UX below input → Phase 20
+- AI bash dispatch (Claude XML tool calls need parsing) → deferred past v4.0
 - AI streaming/progressive display for NL responses (currently blocking)
-- Task menu UX: render as numbered list below input instead of in toolbar
 
 ### Blockers/Concerns
 

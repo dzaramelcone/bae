@@ -158,12 +158,10 @@ Plans:
 **Depends on**: Phase 18, Phase 19
 **Requirements**: AI-06, STORE-03, REPL-10
 **Success Criteria** (what must be TRUE):
-  1. AI-generated Python code blocks are automatically extracted, executed in the REPL namespace, and results fed back to the AI conversation
-  2. AI-generated bash commands are dispatched via bash mode and output piped back to the AI
-  3. Bash commands that run `python` and fail with namespace-dependent errors suggest using the REPL instead
-  4. On launch, AI context includes recent session history from the store (cross-session memory)
-  5. AI output renders markdown formatting in the terminal (headers, bold, code blocks, lists)
-  6. Ctrl-C task menu renders as a numbered list below the input (printed to scrollback), not in the toolbar
+  1. AI-generated Python code blocks are automatically extracted, executed in the REPL namespace, and results fed back to the correct AI session (multiple concurrent AI tasks supported)
+  2. On launch, AI context includes recent session history from the store (cross-session memory)
+  3. AI output renders markdown formatting in the terminal (headers, bold, code blocks, lists)
+  4. Ctrl-C task menu renders as a numbered list below the input (printed to scrollback), not in the toolbar
 **Plans:** 0 plans
 
 Plans:
