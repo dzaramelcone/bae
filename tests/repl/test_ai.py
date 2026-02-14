@@ -113,28 +113,28 @@ class TestBuildContext:
         assert _build_context(ns) == ""
 
     def test_user_variables(self):
-        """Namespace with user vars produces Variables section."""
+        """Namespace with user vars produces REPL-style ns() output."""
         ns = {"__builtins__": __builtins__, "x": 42, "name": "hello"}
         result = _build_context(ns)
-        assert "Variables:" in result
-        assert "x = 42" in result
-        assert "name = 'hello'" in result
+        assert ">>> ns()" in result
+        assert "42" in result
+        assert "'hello'" in result
 
     def test_graph_topology(self):
-        """Namespace with a Graph produces Graph section with edges."""
+        """Namespace with a Graph produces REPL-style ns(graph) output."""
         graph = Graph(start=AlphaNode)
         ns = {"__builtins__": __builtins__, "graph": graph}
         result = _build_context(ns)
-        assert "Graph:" in result
+        assert ">>> ns(graph)" in result
         assert "AlphaNode ->" in result
         assert "BetaNode" in result
 
     def test_trace_summary(self):
-        """Namespace with _trace list produces Trace section."""
+        """Namespace with _trace list produces REPL-style trace output."""
         trace = [AlphaNode(query="q1"), BetaNode(answer="a", info="i")]
         ns = {"__builtins__": __builtins__, "_trace": trace}
         result = _build_context(ns)
-        assert "Trace:" in result
+        assert ">>> _trace" in result
         assert "AlphaNode" in result
         assert "BetaNode" in result
 
@@ -161,6 +161,12 @@ class TestBuildContext:
         assert "... (truncated)" in result
         # The truncated result should not exceed MAX_CONTEXT_CHARS + the suffix
         assert len(result) <= 2000 + len("\n  ... (truncated)") + 1
+
+    def test_repl_state_header(self):
+        """Context starts with [REPL state] header."""
+        ns = {"__builtins__": __builtins__, "x": 1}
+        result = _build_context(ns)
+        assert result.startswith("[REPL state]")
 
 
 # --- TestAIRepr ---

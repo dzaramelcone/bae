@@ -128,31 +128,33 @@ def _load_prompt() -> str:
 
 
 def _build_context(namespace: dict) -> str:
-    """Summarize namespace for AI context, truncated to MAX_CONTEXT_CHARS.
+    """Summarize namespace as REPL state, truncated to MAX_CONTEXT_CHARS.
 
-    Priority: graph topology first, then trace, then user variables.
-    Skips internals, modules, and known bae names.
+    Formatted as Python REPL output so the AI sees it as live state
+    it's already working with, not abstract metadata.
     """
     from bae.graph import Graph
     from bae.node import Node
 
-    parts: list[str] = []
+    lines: list[str] = []
 
-    # Graph topology (highest priority)
+    # Graph topology
     graph = namespace.get("graph")
     if isinstance(graph, Graph):
-        edges = []
+        lines.append(f">>> ns(graph)")
+        lines.append(f"Graph(start={graph.start.__name__})")
+        lines.append(f"  Nodes: {len(graph.nodes)}")
         for n in sorted(graph.nodes, key=lambda x: x.__name__):
             succs = graph.edges.get(n, set())
             target = ", ".join(s.__name__ for s in succs) if succs else "(terminal)"
-            edges.append(f"  {n.__name__} -> {target}")
-        parts.append("Graph:\n" + "\n".join(edges))
+            lines.append(f"    {n.__name__} -> {target}")
 
     # Recent trace (last 5)
     trace = namespace.get("_trace")
     if isinstance(trace, list) and trace:
-        steps = [f"  {i+1}. {type(n).__name__}" for i, n in enumerate(trace[-5:])]
-        parts.append("Trace:\n" + "\n".join(steps))
+        lines.append(f">>> _trace[-{min(5, len(trace))}:]")
+        for i, n in enumerate(trace[-5:]):
+            lines.append(f"  {i+1}. {type(n).__name__}")
 
     # User variables (skip internals, modules, bae types)
     _SKIP = {
@@ -167,20 +169,24 @@ def _build_context(namespace: dict) -> str:
         if inspect.ismodule(obj):
             continue
         if isinstance(obj, type) and issubclass(obj, Node):
-            user_vars.append(f"  {name}: Node class")
+            user_vars.append(f"  {name}  class  {obj.__name__}")
         elif isinstance(obj, Node):
-            user_vars.append(f"  {name}: {type(obj).__name__}")
+            user_vars.append(f"  {name}  {type(obj).__name__}")
         elif isinstance(obj, Graph):
             continue  # Already shown above
         elif not callable(obj):
             r = repr(obj)
             if len(r) > 60:
                 r = r[:57] + "..."
-            user_vars.append(f"  {name} = {r}")
+            user_vars.append(f"  {name}  {type(obj).__name__}  {r}")
     if user_vars:
-        parts.append("Variables:\n" + "\n".join(user_vars))
+        lines.append(">>> ns()")
+        lines.extend(user_vars)
 
-    result = "\n\n".join(parts)
+    if not lines:
+        return ""
+
+    result = "[REPL state]\n" + "\n".join(lines)
     if len(result) > MAX_CONTEXT_CHARS:
         result = result[:MAX_CONTEXT_CHARS] + "\n  ... (truncated)"
     return result
