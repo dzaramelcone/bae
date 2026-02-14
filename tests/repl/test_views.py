@@ -72,14 +72,15 @@ def test_user_view_stale_buffer_flushed(mock_pft):
 
 
 @patch("bae.repl.views.print_formatted_text")
-def test_user_view_no_output_skips_output_section(mock_pft):
-    """(no output) result omits the output section from the panel."""
+def test_user_view_no_output_shows_executed(mock_pft):
+    """(no output) result shows dim '(executed)' indicator below code."""
     view = UserView()
     view.render("py", "#87ff87", "x = 42", metadata={"type": "ai_exec"})
     view.render("py", "#87ff87", "(no output)", metadata={"type": "ai_exec_result"})
     mock_pft.assert_called_once()
     ansi_str = mock_pft.call_args[0][0].value
     assert "(no output)" not in ansi_str
+    assert "executed" in ansi_str
 
 
 @patch("bae.repl.views.print_formatted_text")

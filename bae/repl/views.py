@@ -72,6 +72,9 @@ class UserView:
         if output and output != "(no output)":
             parts.append(Rule(style="dim"))
             parts.append(Text(output))
+        else:
+            parts.append(Rule(style="dim"))
+            parts.append(Text("(executed)", style="dim italic"))
 
         panel = Panel(
             Group(*parts),
@@ -89,7 +92,11 @@ class UserView:
         title = f"ai:{label}" if label else "exec"
 
         panel = Panel(
-            Syntax(code, "python", theme="monokai"),
+            Group(
+                Syntax(code, "python", theme="monokai"),
+                Rule(style="dim"),
+                Text("(executed)", style="dim italic"),
+            ),
             title=f"[bold cyan]{title}[/]",
             border_style="dim",
             box=box.ROUNDED,
