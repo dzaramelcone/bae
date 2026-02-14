@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from bae.repl.modes import Mode
 from bae.repl.shell import CortexShell, DOUBLE_PRESS_THRESHOLD, _build_key_bindings, _show_kill_menu
 from bae.repl.toolbar import ToolbarConfig
 
@@ -151,6 +152,63 @@ class TestInterruptHandler:
                 pass
 
 
+# --- TestBackgroundDispatch ---
+
+class TestBackgroundDispatch:
+    """NL/GRAPH/BASH dispatch as fire-and-forget background tasks; PY blocks."""
+
+    @pytest.mark.asyncio
+    async def test_dispatch_nl_returns_immediately(self, shell):
+        """NL dispatch creates tracked task and returns without awaiting it."""
+        started = asyncio.Event()
+        hold = asyncio.Event()
+
+        async def slow_ai(prompt):
+            started.set()
+            await hold.wait()
+
+        shell.ai = slow_ai
+        shell.mode = Mode.NL
+        await shell._dispatch("hello world")
+
+        # _dispatch returned but the task hasn't finished
+        assert len(shell.tasks) == 1
+        task = next(iter(shell.tasks))
+        assert not task.done()
+        # Let it finish
+        hold.set()
+        await task
+
+    @pytest.mark.asyncio
+    async def test_dispatch_py_blocks(self, shell):
+        """PY dispatch blocks until execution completes."""
+        shell.mode = Mode.PY
+        with patch("bae.repl.shell.async_exec", new_callable=AsyncMock, return_value=(42, "")) as mock_exec:
+            await shell._dispatch("1+1")
+            mock_exec.assert_awaited_once()
+        # PY mode does NOT create tracked tasks
+        assert len(shell.tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_dispatch_bash_returns_immediately(self, shell):
+        """BASH dispatch creates tracked task and returns without awaiting it."""
+        hold = asyncio.Event()
+
+        async def slow_bash(text):
+            await hold.wait()
+            return ("out", "")
+
+        shell.mode = Mode.BASH
+        with patch("bae.repl.shell.dispatch_bash", side_effect=slow_bash):
+            await shell._dispatch("sleep 10")
+
+        assert len(shell.tasks) == 1
+        task = next(iter(shell.tasks))
+        assert not task.done()
+        hold.set()
+        await task
+
+
 # --- TestSubprocessCleanup ---
 
 class TestSubprocessCleanup:
@@ -178,6 +236,33 @@ class TestSubprocessCleanup:
                 await task
 
         mock_proc.kill.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_ai_cancellation_checkpoint(self):
+        """AI response suppressed when task cancelled during subprocess completion race."""
+        from bae.repl.ai import AI
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"response text", b""))
+        mock_proc.returncode = 0
+
+        router = MagicMock()
+        ns = {}
+        ai = AI(lm=MagicMock(), router=router, namespace=ns)
+
+        with patch("bae.repl.ai.asyncio.create_subprocess_exec", return_value=mock_proc):
+            task = asyncio.create_task(ai("test"))
+            # Let communicate() complete, then cancel before sleep(0) checkpoint
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        # Router.write should NOT have been called with response metadata
+        for call in router.write.call_args_list:
+            _, kwargs = call
+            meta = kwargs.get("metadata", {})
+            assert meta.get("type") != "response", "Response was written despite cancellation"
 
     @pytest.mark.asyncio
     async def test_bash_kills_process_on_cancel(self):

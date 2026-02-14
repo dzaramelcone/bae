@@ -101,6 +101,10 @@ class AI:
             raise RuntimeError(f"AI failed: {stderr}")
 
         response = stdout_bytes.decode().strip()
+        # Yield to event loop: if our task was cancelled while subprocess
+        # was completing, the CancelledError is delivered here rather than
+        # after we've already written the response.
+        await asyncio.sleep(0)
         self._call_count += 1
         self._router.write("ai", response, mode="NL", metadata={"type": "response"})
         return response
