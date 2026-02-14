@@ -1,4 +1,4 @@
-"""Tests for UserView formatter: buffering, panel rendering, fallback, edge cases."""
+"""Tests for view formatters: UserView, DebugView, AISelfView, ViewMode infrastructure."""
 
 import re
 from unittest.mock import patch, MagicMock
@@ -7,7 +7,11 @@ from prompt_toolkit.formatted_text import ANSI, FormattedText
 from rich.text import Text
 
 from bae.repl.channels import ViewFormatter
-from bae.repl.views import UserView, _rich_to_ansi
+from bae.repl.views import (
+    UserView, DebugView, AISelfView,
+    ViewMode, VIEW_CYCLE, VIEW_FORMATTERS,
+    _rich_to_ansi,
+)
 
 
 @patch("bae.repl.views.print_formatted_text")
@@ -118,3 +122,138 @@ def test_rich_to_ansi_uses_terminal_width(mock_size):
     for line in result.splitlines():
         clean = re.sub(r"\033\[[^m]*m", "", line)
         assert len(clean) <= 40
+
+
+# --- DebugView tests ---
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_debug_view_shows_metadata(mock_pft):
+    """DebugView header includes channel name and sorted metadata key=value pairs."""
+    view = DebugView()
+    view.render("py", "#87ff87", "x = 42", metadata={"type": "ai_exec", "label": "1"})
+    header_call = mock_pft.call_args_list[0]
+    header_ft = header_call[0][0]
+    header_text = "".join(text for _, text in header_ft)
+    assert "[py]" in header_text
+    assert "label=1" in header_text
+    assert "type=ai_exec" in header_text
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_debug_view_no_metadata(mock_pft):
+    """DebugView header is just [channel] when metadata is None."""
+    view = DebugView()
+    view.render("py", "#87ff87", "hello", metadata=None)
+    header_call = mock_pft.call_args_list[0]
+    header_ft = header_call[0][0]
+    header_text = "".join(text for _, text in header_ft)
+    assert header_text == "[py]"
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_debug_view_content_lines_indented(mock_pft):
+    """DebugView prints 1 header + N content lines, each with indent prefix."""
+    view = DebugView()
+    view.render("py", "#87ff87", "line1\nline2", metadata=None)
+    assert mock_pft.call_count == 3  # 1 header + 2 content lines
+    # Check content lines have indent prefix
+    for call in mock_pft.call_args_list[1:]:
+        ft = call[0][0]
+        fragments = list(ft)
+        assert fragments[0] == ("fg:#808080", "  ")
+
+
+def test_debug_view_satisfies_protocol():
+    """DebugView satisfies ViewFormatter protocol via structural typing."""
+    assert isinstance(DebugView(), ViewFormatter)
+
+
+# --- AISelfView tests ---
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_ai_self_view_response_tag(mock_pft):
+    """AISelfView maps 'response' type to [ai-output] tag."""
+    view = AISelfView()
+    view.render("ai", "#87d7ff", "hello", metadata={"type": "response"})
+    header_ft = mock_pft.call_args_list[0][0][0]
+    header_text = "".join(text for _, text in header_ft)
+    assert "[ai-output]" in header_text
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_ai_self_view_exec_tags(mock_pft):
+    """AISelfView maps ai_exec to [exec-code] and ai_exec_result to [exec-result]."""
+    view = AISelfView()
+
+    view.render("py", "#87ff87", "x = 1", metadata={"type": "ai_exec"})
+    header_text = "".join(text for _, text in mock_pft.call_args_list[0][0][0])
+    assert "[exec-code]" in header_text
+
+    mock_pft.reset_mock()
+    view.render("py", "#87ff87", "1", metadata={"type": "ai_exec_result"})
+    header_text = "".join(text for _, text in mock_pft.call_args_list[0][0][0])
+    assert "[exec-result]" in header_text
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_ai_self_view_tool_tags(mock_pft):
+    """AISelfView maps tool_translated to [tool-call] and tool_result to [tool-output]."""
+    view = AISelfView()
+
+    view.render("py", "#87ff87", "read('f.py')", metadata={"type": "tool_translated"})
+    header_text = "".join(text for _, text in mock_pft.call_args_list[0][0][0])
+    assert "[tool-call]" in header_text
+
+    mock_pft.reset_mock()
+    view.render("py", "#87ff87", "contents...", metadata={"type": "tool_result"})
+    header_text = "".join(text for _, text in mock_pft.call_args_list[0][0][0])
+    assert "[tool-output]" in header_text
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_ai_self_view_label_appended(mock_pft):
+    """AISelfView appends :label to the tag when metadata has a label."""
+    view = AISelfView()
+    view.render("ai", "#87d7ff", "hi", metadata={"type": "response", "label": "3"})
+    header_text = "".join(text for _, text in mock_pft.call_args_list[0][0][0])
+    assert "[ai-output:3]" in header_text
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_ai_self_view_unknown_type_uses_channel(mock_pft):
+    """AISelfView falls back to channel_name when type is empty/unknown."""
+    view = AISelfView()
+    view.render("bash", "#d7afff", "ls -la", metadata={})
+    header_text = "".join(text for _, text in mock_pft.call_args_list[0][0][0])
+    assert "[bash]" in header_text
+
+
+def test_ai_self_view_satisfies_protocol():
+    """AISelfView satisfies ViewFormatter protocol via structural typing."""
+    assert isinstance(AISelfView(), ViewFormatter)
+
+
+# --- ViewMode / infrastructure tests ---
+
+
+def test_view_mode_values():
+    """ViewMode enum has correct string values."""
+    assert ViewMode.USER.value == "user"
+    assert ViewMode.DEBUG.value == "debug"
+    assert ViewMode.AI_SELF.value == "ai-self"
+
+
+def test_view_cycle_order():
+    """VIEW_CYCLE lists modes in toggle order: USER -> DEBUG -> AI_SELF."""
+    assert VIEW_CYCLE == [ViewMode.USER, ViewMode.DEBUG, ViewMode.AI_SELF]
+
+
+def test_view_formatters_maps_all_modes():
+    """VIEW_FORMATTERS maps every ViewMode to its correct formatter class."""
+    for mode in ViewMode:
+        assert mode in VIEW_FORMATTERS
+    assert VIEW_FORMATTERS[ViewMode.USER] is UserView
+    assert VIEW_FORMATTERS[ViewMode.DEBUG] is DebugView
+    assert VIEW_FORMATTERS[ViewMode.AI_SELF] is AISelfView
