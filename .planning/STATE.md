@@ -9,17 +9,17 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 
 ## Current Position
 
-Phase: 16 of 19 (Channel I/O) -- COMPLETE
-Plan: 2 of 2 complete
-Status: Phase complete
-Last activity: 2026-02-13 -- Shell channel integration (router.write, bash raw return, Ctrl+O toggle)
+Phase: 17 of 19 (Namespace)
+Plan: 1 of 2 complete
+Status: In progress
+Last activity: 2026-02-13 -- Namespace seeding and NsInspector (seed(), ns() introspection)
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [######-] 47%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [######--] 53%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 52 (13 v1.0 + 21 v2.0 + 9 v3.0 + 9 v4.0)
+- Total plans completed: 53 (13 v1.0 + 21 v2.0 + 9 v3.0 + 10 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -35,6 +35,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [######-] 47%
 | 15-04 | Gap closure: formatting + dict returns | 2min | 2 | 3 |
 | 16-01 | Channel & ChannelRouter (TDD) | 3min | 2 | 2 |
 | 16-02 | Shell channel integration | 3min | 2 | 3 |
+| 17-01 | Namespace seeding & NsInspector (TDD) | 3min | 2 | 2 |
 
 ## Accumulated Context
 
@@ -67,6 +68,9 @@ v4.0 architectural decisions:
 - All mode output routes through router.write() -- no bare print() for channel-routed output
 - Input recording stays as direct store.record() -- channels are output-only
 - channel_arun wraps graph.arun() with temporary logging handler -- no bae/graph.py modifications
+- Plain print() for all ns() output -- flows through async_exec stdout capture and [py] channel
+- NsInspector callable class with __repr__ -- typing 'ns' shows usage hint, not function address
+- classify_fields() reused from bae.resolver for ns(Node) field introspection
 
 ### Pending Todos
 
@@ -80,6 +84,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 16-02-PLAN.md (Shell channel integration -- phase 16 complete)
+Stopped at: Completed 17-01-PLAN.md (Namespace seeding & NsInspector -- plan 1 of 2)
 Branch: main
 Resume file: None
