@@ -24,6 +24,7 @@ from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, toggle_channels
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
 from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mode
+from bae.repl.namespace import seed
 from bae.repl.store import SessionStore
 
 # Register kitty keyboard protocol Shift+Enter (CSI u encoding).
@@ -70,7 +71,7 @@ class CortexShell:
 
     def __init__(self) -> None:
         self.mode: Mode = DEFAULT_MODE
-        self.namespace: dict = {"asyncio": asyncio, "os": os, "__builtins__": __builtins__}
+        self.namespace: dict = seed()
         self.tasks: set[asyncio.Task] = set()
         self.store = SessionStore(Path.cwd() / ".bae" / "store.db")
         self.namespace["store"] = self.store
@@ -171,7 +172,16 @@ class CortexShell:
                 elif self.mode == Mode.GRAPH:
                     graph = self.namespace.get("graph")
                     if graph:
-                        await channel_arun(graph, text, self.router)
+                        try:
+                            result = await channel_arun(graph, text, self.router)
+                            if result and result.trace:
+                                self.namespace["_trace"] = result.trace
+                        except Exception as exc:
+                            trace = getattr(exc, "trace", None)
+                            if trace:
+                                self.namespace["_trace"] = trace
+                            tb = traceback.format_exc()
+                            self.router.write("graph", tb.rstrip("\n"), mode="GRAPH", metadata={"type": "error"})
                     else:
                         stub = "(Graph mode stub) Not yet implemented."
                         self.router.write("graph", stub, mode="GRAPH")
