@@ -59,7 +59,7 @@
 **Milestone Goal:** Multi-view stream framework with tool call translation and execution display overhaul.
 
 - [x] **Phase 21: Execution Convention** - Eval loop distinguishes executable from illustrative code
-- [ ] **Phase 22: Tool Call Translation** - Detect and translate AI tool call patterns to Python equivalents
+- [x] **Phase 22: Tool Call Translation** - Detect and translate AI tool call patterns to Python equivalents
 - [ ] **Phase 23: View Framework** - ViewFormatter protocol with channel delegation
 - [ ] **Phase 24: Execution Display** - UserView with Rich Panel framing, code+output grouping, deduplication
 - [ ] **Phase 25: Views Completion** - DebugView, AI self-view, and runtime view toggling
@@ -93,8 +93,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 22-01-PLAN.md — TDD: translate_tool_calls() pure function with all 5 tool types and fence exclusion
-- [ ] 22-02-PLAN.md — Eval loop integration, system prompt tool tag vocabulary, visible indicator
+- [x] 22-01-PLAN.md — TDD: translate_tool_calls() pure function with all 5 tool types and fence exclusion
+- [x] 22-02-PLAN.md — Eval loop integration, system prompt tool tag vocabulary, visible indicator
 
 ### Phase 23: View Framework
 **Goal**: Channel display is pluggable via formatter strategy, with zero change to existing behavior
@@ -167,10 +167,10 @@ Phases 21 and 23 are parallel-safe (no dependencies between them). Phase 22 foll
 | 19. Task Lifecycle | v4.0 | 5/5 | Complete | 2026-02-14 |
 | 20. AI Eval Loop | v4.0 | 5/5 | Complete | 2026-02-14 |
 | 21. Execution Convention | v5.0 | 2/2 | Complete | 2026-02-14 |
-| 22. Tool Call Translation | v5.0 | 0/TBD | Not started | - |
+| 22. Tool Call Translation | v5.0 | 2/2 | Complete | 2026-02-14 |
 | 23. View Framework | v5.0 | 0/TBD | Not started | - |
 | 24. Execution Display | v5.0 | 0/TBD | Not started | - |
 | 25. Views Completion | v5.0 | 0/TBD | Not started | - |
 
 ---
-*Last updated: 2026-02-14 after Phase 21 Execution Convention complete*
+*Last updated: 2026-02-14 after Phase 22 Tool Call Translation complete*
