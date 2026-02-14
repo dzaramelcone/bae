@@ -97,6 +97,7 @@ class AI:
 
             results = []
             for code in blocks:
+                output = ""
                 try:
                     result, captured = await async_exec(code, self._namespace)
                     if asyncio.iscoroutine(result):
@@ -108,8 +109,12 @@ class AI:
                 except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
                     raise
                 except BaseException:
-                    results.append(traceback.format_exc())
+                    tb = traceback.format_exc()
+                    results.append(tb)
+                    output = tb
                 self._router.write("py", code, mode="PY", metadata={"type": "ai_exec", "label": self._label})
+                if output:
+                    self._router.write("py", output, mode="PY", metadata={"type": "ai_exec_result", "label": self._label})
 
             feedback = "\n".join(f"[Block {i+1} output]\n{r}" for i, r in enumerate(results))
             await asyncio.sleep(0)  # cancellation checkpoint

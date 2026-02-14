@@ -413,6 +413,51 @@ class TestEvalLoop:
         assert "oops" in feedback
 
     @pytest.mark.asyncio
+    async def test_eval_loop_tees_output(self, eval_ai):
+        """Eval loop writes both code AND execution output to [py] channel."""
+        eval_ai._send.side_effect = [
+            "```python\nx = 42\n```",
+            "Done.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = (42, "printed stuff\n")
+            await eval_ai("compute")
+
+        # Collect all router.write calls for the "py" channel
+        py_writes = [
+            c for c in eval_ai._router.write.call_args_list
+            if c[0][0] == "py"
+        ]
+        assert len(py_writes) == 2
+        # First write: the code
+        assert py_writes[0].kwargs["metadata"]["type"] == "ai_exec"
+        assert py_writes[0][0][1] == "x = 42"
+        # Second write: the execution output
+        assert py_writes[1].kwargs["metadata"]["type"] == "ai_exec_result"
+        assert "printed stuff" in py_writes[1][0][1]
+        assert "42" in py_writes[1][0][1]
+
+    @pytest.mark.asyncio
+    async def test_eval_loop_tees_error_output(self, eval_ai):
+        """Eval loop writes traceback output to [py] channel on execution error."""
+        eval_ai._send.side_effect = [
+            "```python\nraise ValueError('boom')\n```",
+            "I see the error.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.side_effect = ValueError("boom")
+            await eval_ai("break it")
+
+        py_writes = [
+            c for c in eval_ai._router.write.call_args_list
+            if c[0][0] == "py"
+        ]
+        assert len(py_writes) == 2
+        # Second write should be the traceback
+        assert py_writes[1].kwargs["metadata"]["type"] == "ai_exec_result"
+        assert "ValueError" in py_writes[1][0][1]
+
+    @pytest.mark.asyncio
     async def test_eval_loop_cancellation_propagates(self, eval_ai):
         """CancelledError from async_exec propagates out of eval loop."""
         eval_ai._send.side_effect = [
