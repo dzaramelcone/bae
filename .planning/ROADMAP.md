@@ -90,11 +90,11 @@ Plans:
   3. AI Glob/Grep tool calls are intercepted and produce search results in the namespace
   4. AI Edit tool call (`<E:filepath:line_start-line_end>`) is intercepted and performs the file edit
   5. User sees a visible indicator (channel label or badge) when a tool call was translated and executed
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 22-01: TBD
-- [ ] 22-02: TBD
+- [ ] 22-01-PLAN.md — TDD: translate_tool_calls() pure function with all 5 tool types and fence exclusion
+- [ ] 22-02-PLAN.md — Eval loop integration, system prompt tool tag vocabulary, visible indicator
 
 ### Phase 23: View Framework
 **Goal**: Channel display is pluggable via formatter strategy, with zero change to existing behavior
