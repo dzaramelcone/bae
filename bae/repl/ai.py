@@ -1,8 +1,9 @@
 """AI agent for natural language interaction in cortex.
 
 Uses Claude CLI subprocess with session persistence for conversation.
-Eval loop: extract code from AI response, execute, feed results back.
-Delegates fill/choose_type to bae's LM protocol.
+Eval loop: extract executable <run> blocks from AI response, execute
+the first one, feed results back. Delegates fill/choose_type to bae's
+LM protocol.
 """
 
 from __future__ import annotations
@@ -25,8 +26,8 @@ if TYPE_CHECKING:
     from bae.repl.store import SessionStore
     from bae.repl.tasks import TaskManager
 
-_CODE_BLOCK_RE = re.compile(
-    r"```(?:python|py)?\s*\n(.*?)\n```",
+_EXEC_BLOCK_RE = re.compile(
+    r"<run>\s*\n?(.*?)\n?\s*</run>",
     re.DOTALL,
 )
 
@@ -40,7 +41,7 @@ class AI:
     await ai("question")                  -- NL conversation with context
     await ai.fill(NodeClass, context)     -- populate node via LM
     await ai.choose_type([A, B], context) -- pick successor type via LM
-    ai.extract_code(text)                 -- extract python code blocks
+    ai.extract_executable(text)           -- extract first <run> block
     """
 
     def __init__(
@@ -91,32 +92,46 @@ class AI:
         self._router.write("ai", response, mode="NL", metadata={"type": "response", "label": self._label})
 
         for _ in range(self._max_eval_iters):
-            blocks = self.extract_code(response)
-            if not blocks:
+            code, extra = self.extract_executable(response)
+            if code is None:
                 break
 
-            results = []
-            for code in blocks:
-                output = ""
-                try:
-                    result, captured = await async_exec(code, self._namespace)
-                    if asyncio.iscoroutine(result):
-                        result = await result
-                    output = captured
-                    if result is not None:
-                        output += repr(result)
-                    results.append(output or "(no output)")
-                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
-                    raise
-                except BaseException:
-                    tb = traceback.format_exc()
-                    results.append(tb)
-                    output = tb
-                self._router.write("py", code, mode="PY", metadata={"type": "ai_exec", "label": self._label})
-                if output:
-                    self._router.write("py", output, mode="PY", metadata={"type": "ai_exec_result", "label": self._label})
+            # Execute the single block
+            output = ""
+            try:
+                result, captured = await async_exec(code, self._namespace)
+                if asyncio.iscoroutine(result):
+                    result = await result
+                output = captured
+                if result is not None:
+                    output += repr(result)
+                output = output or "(no output)"
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                raise
+            except BaseException:
+                tb = traceback.format_exc()
+                output = tb
 
-            feedback = "\n".join(f"[Block {i+1} output]\n{r}" for i, r in enumerate(results))
+            self._router.write("py", code, mode="PY", metadata={"type": "ai_exec", "label": self._label})
+            if output:
+                self._router.write("py", output, mode="PY", metadata={"type": "ai_exec_result", "label": self._label})
+
+            # Build feedback
+            feedback = f"[Output]\n{output}"
+
+            # Multi-block notice
+            if extra > 0:
+                notice = (
+                    f"Only your first executable block was run. "
+                    f"{extra} additional block{'s' if extra != 1 else ''} "
+                    f"{'were' if extra != 1 else 'was'} ignored."
+                )
+                feedback += f"\n\n{notice}"
+                self._router.write(
+                    "debug", notice, mode="DEBUG",
+                    metadata={"type": "exec_notice", "label": self._label},
+                )
+
             await asyncio.sleep(0)  # cancellation checkpoint
             response = await self._send(feedback)
             await asyncio.sleep(0)  # cancellation checkpoint
@@ -197,9 +212,16 @@ class AI:
         return await self._lm.choose_type(types, context or {})
 
     @staticmethod
-    def extract_code(text: str) -> list[str]:
-        """Extract Python code blocks from markdown-fenced text."""
-        return _CODE_BLOCK_RE.findall(text)
+    def extract_executable(text: str) -> tuple[str | None, int]:
+        """Extract first executable <run> block and count of extras.
+
+        Returns (code, extra_count) where code is the first executable
+        block or None, and extra_count is additional blocks ignored.
+        """
+        matches = _EXEC_BLOCK_RE.findall(text)
+        if not matches:
+            return None, 0
+        return matches[0], len(matches) - 1
 
     def __repr__(self) -> str:
         sid = self._session_id[:8]
