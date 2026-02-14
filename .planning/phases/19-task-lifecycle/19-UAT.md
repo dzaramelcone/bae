@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: complete
 phase: 19-task-lifecycle
 source: [19-01-SUMMARY.md, 19-02-SUMMARY.md]
 started: 2026-02-14T03:15:00Z
-updated: 2026-02-14T03:25:00Z
+updated: 2026-02-14T06:30:00Z
 ---
 
 ## Current Test
@@ -19,7 +19,7 @@ result: pass
 ### 2. Toolbar shows running task count
 expected: Run a long AI or bash task. While it runs, toolbar shows task count (e.g., "1 task"). When task completes, count disappears.
 result: issue
-reported: "toolbar disappears while process blocks for both of these"
+reported: "Ctrl-C still doesn't work in AI mode. Python tasks (await asyncio.sleep(25)) don't add to tracker — no way to cancel. Bash kill menu opens full screen dialog — jarring theme change, too many button presses. Needs inline multiselect like GSD install, Esc to cancel, Enter on line to toggle/cancel."
 severity: major
 
 ### 3. Toolbar shows cwd
@@ -33,13 +33,14 @@ result: pass
 ### 5. Ctrl-C opens kill menu with running tasks
 expected: While a long-running task is active, pressing Ctrl-C once opens a dialog listing active tasks with checkboxes. Selecting a task and confirming cancels it.
 result: issue
-reported: "only bash successfully cancels. ai does not. also never see kill menu — Ctrl-C sends SIGINT directly to running task, prompt_toolkit key binding never fires because prompt isn't active during task execution"
+reported: "Ctrl-C still doesn't work in AI mode. Bash kill menu opens full-screen dialog — wrong theme, jarring, too many presses. Needs inline multiselect: arrow keys to move, Enter to cancel a task, Esc to dismiss. PY mode async tasks (await asyncio.sleep(25)) not tracked either."
 severity: major
 
 ### 6. Double Ctrl-C kills all tasks
 expected: While tasks are running, pressing Ctrl-C twice rapidly (within ~0.4s) cancels all running tasks and returns to the bare cortex prompt. No orphan processes remain.
-result: skipped
-reason: Kill menu requires background tasks but current architecture awaits each dispatch sequentially — prompt not active during task execution so key binding never fires
+result: issue
+reported: "does not cancel all"
+severity: major
 
 ### 7. Custom toolbar widget from PY mode
 expected: In PY mode, run `toolbar.add("hello", lambda: [("", " hello ")])`. The word "hello" appears in the bottom toolbar. Run `toolbar.remove("hello")` to remove it.
@@ -49,11 +50,31 @@ result: pass
 
 total: 7
 passed: 4
-issues: 2
+issues: 3
 pending: 0
-skipped: 1
+skipped: 0
 
 ## Gaps
+
+- truth: "Kill menu appears inline on Ctrl-C, Enter cancels selected task, Esc dismisses"
+  status: failed
+  reason: "User reported: kill menu opens full-screen dialog with wrong theme, too many keypresses. AI mode Ctrl-C doesn't work. PY await tasks not tracked."
+  severity: major
+  test: 5
+  root_cause: ""
+  artifacts: []
+  missing: []
+  debug_session: ""
+
+- truth: "Double Ctrl-C cancels all running tasks"
+  status: failed
+  reason: "User reported: does not cancel all"
+  severity: major
+  test: 6
+  root_cause: ""
+  artifacts: []
+  missing: []
+  debug_session: ""
 
 - truth: "Toolbar shows running task count while task executes"
   status: failed
