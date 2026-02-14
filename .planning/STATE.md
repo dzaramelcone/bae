@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 Phase: 21 of 25 (Execution Convention)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-02-14 — v5.0 roadmap created (5 phases, 19 requirements mapped, AIHR-01 deferred)
+Plan: 21-01 complete, 21-02 executing
+Status: Executing Wave 2
+Last activity: 2026-02-14 — Plan 21-01 complete (xml_tag convention selected via 6-convention eval)
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 [______] 0%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 [█_____] 10%
 
 ## Performance Metrics
 
@@ -35,6 +35,7 @@ Recent context for v5.0:
 - Research recommends zero new dependencies -- all v5.0 built on Rich, prompt_toolkit, stdlib
 - All Rich rendering MUST use Console(file=StringIO()) then print_formatted_text(ANSI()) -- direct print corrupts REPL
 - Tool call regex must exclude code fences to avoid false positives on legitimate XML in Python
+- **Execution convention: xml_tag** -- `<run>code</run>` for executable, regular fences for illustrative. 100% convention compliance across all models. Selected over fence_annotation (97.2%) for clean separation.
 
 ### Pending Todos
 
