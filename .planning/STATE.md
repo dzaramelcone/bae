@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-14)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Planning next milestone
+**Current focus:** v5.0 Stream Views
 
 ## Current Position
 
-Phase: All complete (v1.0-v4.0 shipped)
-Plan: N/A
-Status: Between milestones
-Last activity: 2026-02-14 -- v4.0 Cortex milestone archived
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-14 — Milestone v5.0 started
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 defining
 
 ## Performance Metrics
 
@@ -35,10 +35,7 @@ See PROJECT.md Key Decisions table for full history.
 
 - Update `tests/traces/json_structured_fill_reference.py` -- drifted from real backend
 - Bump Python requirement to 3.14 stable
-- AI prompt: explicit no-tools constraint to stop tool hallucination
-- AI bash dispatch (Claude XML tool calls need parsing)
 - AI streaming/progressive display for NL responses
-- GWT-inspired stream UX: multi-session output needs visual sectioning, attention model, debug mode
 
 ### Blockers/Concerns
 
@@ -47,6 +44,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: v4.0 Cortex milestone archived
+Stopped at: v5.0 milestone started, defining requirements
 Branch: main
 Resume file: None

@@ -47,7 +47,15 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 
 ### Active
 
-(Next milestone not yet defined)
+#### Current Milestone: v5.0 Stream Views
+
+**Goal:** Multi-view stream framework with AI prompt hardening and execution display overhaul.
+
+**Target features:**
+- Multi-view stream framework — extensible view formatters over channel data (user, AI-self, cross-AI), debug mode toggle
+- AI prompt hardening — explicit no-tools constraint, Python-only guidance, fewshot showing tool call rejection
+- Tool call interception — detect tool-use XML in responses, reject with corrective feedback, visible correction to user
+- Execution display — framed code + output sections in AI response, deduplicated (no redundant [py] lines)
 
 ### Out of Scope
 
@@ -120,10 +128,7 @@ Reference implementation: `examples/ootd.py` — 3-node outfit recommendation gr
 
 - PydanticAIBackend.choose_type uses free-text string + fuzzy matching — may rip out PydanticAI entirely
 - tests/traces/json_structured_fill_reference.py drifted from real backend
-- AI hallucinates tool calls — prompt needs explicit no-tools constraint
-- Eval output redundant display — GWT-inspired stream UX design needed
-- AI bash dispatch deferred (Claude XML tool calls need parsing)
 - AI streaming/progressive display deferred (NL responses currently blocking)
 
 ---
-*Last updated: 2026-02-14 after v4.0 Cortex milestone*
+*Last updated: 2026-02-14 after v5.0 Stream Views milestone started*
