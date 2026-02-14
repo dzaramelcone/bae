@@ -179,8 +179,58 @@ class CortexShell:
         task.add_done_callback(self.tasks.discard)
         return task
 
+    async def _run_nl(self, text: str) -> None:
+        """NL mode: AI conversation, self-contained error handling."""
+        try:
+            await self.ai(text)
+        except asyncio.CancelledError:
+            self.router.write("debug", "cancelled ai task", mode="DEBUG")
+        except Exception:
+            tb = traceback.format_exc()
+            self.router.write("ai", tb.rstrip("\n"), mode="NL", metadata={"type": "error"})
+
+    async def _run_graph(self, text: str) -> None:
+        """GRAPH mode: graph execution, self-contained error handling."""
+        graph = self.namespace.get("graph")
+        if not graph:
+            self.router.write("graph", "(Graph mode stub) Not yet implemented.", mode="GRAPH")
+            return
+        try:
+            result = await channel_arun(graph, text, self.router)
+            if result and result.trace:
+                self.namespace["_trace"] = result.trace
+        except asyncio.CancelledError:
+            self.router.write("debug", "cancelled graph task", mode="DEBUG")
+        except Exception as exc:
+            trace = getattr(exc, "trace", None)
+            if trace:
+                self.namespace["_trace"] = trace
+            tb = traceback.format_exc()
+            self.router.write("graph", tb.rstrip("\n"), mode="GRAPH", metadata={"type": "error"})
+
+    async def _run_bash(self, text: str) -> None:
+        """BASH mode: shell command, self-contained error handling."""
+        try:
+            stdout, stderr = await dispatch_bash(text)
+        except asyncio.CancelledError:
+            self.router.write("debug", "cancelled bash task", mode="DEBUG")
+            return
+        except Exception:
+            tb = traceback.format_exc()
+            self.router.write("bash", tb.rstrip("\n"), mode="BASH", metadata={"type": "error"})
+            return
+        if stdout:
+            self.router.write("bash", stdout.rstrip("\n"), mode="BASH")
+        if stderr:
+            self.router.write("bash", stderr.rstrip("\n"), mode="BASH", metadata={"type": "stderr"})
+
     async def _dispatch(self, text: str) -> None:
-        """Route input to the active mode handler."""
+        """Route input to the active mode handler.
+
+        PY mode executes sequentially (synchronous exec, not cancellable).
+        NL/GRAPH/BASH modes fire as background tasks so prompt_async() stays
+        active, keeping the toolbar visible and key bindings responsive.
+        """
         if self.mode == Mode.PY:
             try:
                 result, captured = await async_exec(text, self.namespace)
@@ -195,50 +245,11 @@ class CortexShell:
                 tb = traceback.format_exc()
                 self.router.write("py", tb.rstrip("\n"), mode="PY", metadata={"type": "error"})
         elif self.mode == Mode.NL:
-            task = self._track_task(self.ai(text), name=f"ai:{text[:30]}")
-            try:
-                await task
-            except asyncio.CancelledError:
-                self.router.write("debug", f"cancelled ai task", mode="DEBUG")
-            except Exception:
-                tb = traceback.format_exc()
-                self.router.write("ai", tb.rstrip("\n"), mode="NL", metadata={"type": "error"})
+            self._track_task(self._run_nl(text), name=f"ai:{text[:30]}")
         elif self.mode == Mode.GRAPH:
-            graph = self.namespace.get("graph")
-            if graph:
-                task = self._track_task(
-                    channel_arun(graph, text, self.router), name=f"graph:{text[:30]}",
-                )
-                try:
-                    result = await task
-                    if result and result.trace:
-                        self.namespace["_trace"] = result.trace
-                except asyncio.CancelledError:
-                    self.router.write("debug", f"cancelled graph task", mode="DEBUG")
-                except Exception as exc:
-                    trace = getattr(exc, "trace", None)
-                    if trace:
-                        self.namespace["_trace"] = trace
-                    tb = traceback.format_exc()
-                    self.router.write("graph", tb.rstrip("\n"), mode="GRAPH", metadata={"type": "error"})
-            else:
-                stub = "(Graph mode stub) Not yet implemented."
-                self.router.write("graph", stub, mode="GRAPH")
+            self._track_task(self._run_graph(text), name=f"graph:{text[:30]}")
         elif self.mode == Mode.BASH:
-            task = self._track_task(dispatch_bash(text), name=f"bash:{text[:30]}")
-            try:
-                stdout, stderr = await task
-            except asyncio.CancelledError:
-                self.router.write("debug", f"cancelled bash task", mode="DEBUG")
-                return
-            except Exception:
-                tb = traceback.format_exc()
-                self.router.write("bash", tb.rstrip("\n"), mode="BASH", metadata={"type": "error"})
-                return
-            if stdout:
-                self.router.write("bash", stdout.rstrip("\n"), mode="BASH")
-            if stderr:
-                self.router.write("bash", stderr.rstrip("\n"), mode="BASH", metadata={"type": "stderr"})
+            self._track_task(self._run_bash(text), name=f"bash:{text[:30]}")
 
     async def _shutdown(self) -> None:
         """Cancel tasks, close store, report summary."""
