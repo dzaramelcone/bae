@@ -58,48 +58,59 @@ def ai(mock_lm, mock_router):
     return AI(lm=mock_lm, router=mock_router, namespace={})
 
 
-# --- TestExtractCode ---
+# --- TestExtractExecutable ---
 
 
-class TestExtractCode:
-    """Tests for AI.extract_code static method."""
+class TestExtractExecutable:
+    """Tests for AI.extract_executable static method."""
 
-    def test_single_python_block(self):
-        """Extracts a single ```python block."""
-        text = "Here is code:\n```python\nx = 42\n```\nDone."
-        result = AI.extract_code(text)
-        assert result == ["x = 42"]
+    def test_single_executable_block(self):
+        """Single <run> block extracts code with zero extras."""
+        text = "Here is the result:\n<run>\nx = 42\n</run>\nDone."
+        code, extra = AI.extract_executable(text)
+        assert code == "x = 42"
+        assert extra == 0
 
-    def test_multiple_blocks(self):
-        """Extracts multiple code blocks from one response."""
-        text = "First:\n```python\na = 1\n```\nSecond:\n```python\nb = 2\n```"
-        result = AI.extract_code(text)
-        assert result == ["a = 1", "b = 2"]
+    def test_illustrative_block_ignored(self):
+        """Text with only markdown fences returns (None, 0)."""
+        text = "Here's an example:\n```python\nx = 42\n```\nThat's how it works."
+        code, extra = AI.extract_executable(text)
+        assert code is None
+        assert extra == 0
 
-    def test_bare_backticks(self):
-        """Extracts code from bare ``` blocks (no language tag)."""
-        text = "Code:\n```\nprint('hi')\n```"
-        result = AI.extract_code(text)
-        assert result == ["print('hi')"]
+    def test_mixed_blocks(self):
+        """One <run> and one illustrative fence returns (exec_code, 0)."""
+        text = (
+            "Here's an example:\n```python\n# illustrative\nx = 1\n```\n"
+            "Let me run it:\n<run>\nresult = 2 + 2\n</run>"
+        )
+        code, extra = AI.extract_executable(text)
+        assert code == "result = 2 + 2"
+        assert extra == 0
 
-    def test_py_shorthand(self):
-        """Extracts code from ```py blocks."""
-        text = "Code:\n```py\ny = 99\n```"
-        result = AI.extract_code(text)
-        assert result == ["y = 99"]
+    def test_multiple_executable_blocks(self):
+        """Two <run> blocks returns (first_code, 1)."""
+        text = (
+            "First:\n<run>\na = 1\n</run>\n"
+            "Second:\n<run>\nb = 2\n</run>"
+        )
+        code, extra = AI.extract_executable(text)
+        assert code == "a = 1"
+        assert extra == 1
 
     def test_no_code_blocks(self):
-        """Returns empty list when no code blocks present."""
+        """Plain text returns (None, 0)."""
         text = "Just some plain text without any code."
-        result = AI.extract_code(text)
-        assert result == []
+        code, extra = AI.extract_executable(text)
+        assert code is None
+        assert extra == 0
 
-    def test_nested_text(self):
-        """Handles code block containing backtick strings."""
-        text = '```python\ns = "triple `tick` test"\nprint(s)\n```'
-        result = AI.extract_code(text)
-        assert len(result) == 1
-        assert "triple `tick` test" in result[0]
+    def test_bare_fence_not_extracted(self):
+        """Bare ``` fence is not treated as executable."""
+        text = "Code:\n```\nprint('hi')\n```"
+        code, extra = AI.extract_executable(text)
+        assert code is None
+        assert extra == 0
 
 
 # --- TestBuildContext ---
@@ -231,11 +242,17 @@ class TestPromptFile:
         assert len(prompt) > 50
 
     def test_prompt_mentions_bae(self):
-        """System prompt references bae API."""
+        """System prompt references bae API and convention."""
         prompt = _load_prompt()
         assert "bae" in prompt
         assert "Node" in prompt
         assert "Graph" in prompt
+        assert "<run>" in prompt
+
+    def test_prompt_mentions_convention(self):
+        """System prompt contains the Code execution convention section."""
+        prompt = _load_prompt()
+        assert "Code execution convention" in prompt
 
 
 # --- TestAILabel ---
@@ -325,7 +342,7 @@ class TestCrossSessionContext:
 
 
 class TestEvalLoop:
-    """Tests for AI.__call__ eval loop: extract code -> execute -> feed back."""
+    """Tests for AI.__call__ eval loop: extract <run> blocks -> execute -> feed back."""
 
     @pytest.fixture
     def eval_ai(self, mock_lm, mock_router):
@@ -344,9 +361,9 @@ class TestEvalLoop:
 
     @pytest.mark.asyncio
     async def test_eval_loop_extracts_and_executes(self, eval_ai):
-        """Code block in response triggers async_exec, second response has no code."""
+        """<run> block in response triggers async_exec, second response has no code."""
         eval_ai._send.side_effect = [
-            "Try this:\n```python\nx = 42\n```",
+            "Try this:\n<run>\nx = 42\n</run>",
             "Done, x is 42.",
         ]
         with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
@@ -359,7 +376,7 @@ class TestEvalLoop:
     async def test_eval_loop_feeds_back_output(self, eval_ai):
         """Execution output is fed back to AI as next prompt."""
         eval_ai._send.side_effect = [
-            "```python\nx = 42\n```",
+            "<run>\nx = 42\n</run>",
             "Got it.",
         ]
         with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
@@ -367,13 +384,13 @@ class TestEvalLoop:
             await eval_ai("compute")
         # Second _send call receives the feedback with the result
         feedback = eval_ai._send.call_args_list[1][0][0]
-        assert "[Block 1 output]" in feedback
+        assert "[Output]" in feedback
         assert "42" in feedback
 
     @pytest.mark.asyncio
     async def test_eval_loop_iteration_limit(self, eval_ai):
-        """Loop stops after max_eval_iters even if AI keeps producing code."""
-        eval_ai._send.return_value = "```python\nx = 1\n```"
+        """Loop stops after max_eval_iters even if AI keeps producing <run> blocks."""
+        eval_ai._send.return_value = "<run>\nx = 1\n</run>"
         with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = (None, "")
             await eval_ai("loop forever")
@@ -384,7 +401,7 @@ class TestEvalLoop:
     async def test_eval_loop_awaits_coroutine(self, eval_ai):
         """Coroutine from async_exec is awaited inline and result fed back."""
         eval_ai._send.side_effect = [
-            "```python\nawait something()\n```",
+            "<run>\nawait something()\n</run>",
             "Got the result.",
         ]
 
@@ -401,7 +418,7 @@ class TestEvalLoop:
     async def test_eval_loop_catches_exec_error(self, eval_ai):
         """Execution errors are caught and fed back as traceback, not raised."""
         eval_ai._send.side_effect = [
-            "```python\nraise ValueError('oops')\n```",
+            "<run>\nraise ValueError('oops')\n</run>",
             "I see the error.",
         ]
         with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
@@ -416,7 +433,7 @@ class TestEvalLoop:
     async def test_eval_loop_tees_output(self, eval_ai):
         """Eval loop writes both code AND execution output to [py] channel."""
         eval_ai._send.side_effect = [
-            "```python\nx = 42\n```",
+            "<run>\nx = 42\n</run>",
             "Done.",
         ]
         with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
@@ -441,7 +458,7 @@ class TestEvalLoop:
     async def test_eval_loop_tees_error_output(self, eval_ai):
         """Eval loop writes traceback output to [py] channel on execution error."""
         eval_ai._send.side_effect = [
-            "```python\nraise ValueError('boom')\n```",
+            "<run>\nraise ValueError('boom')\n</run>",
             "I see the error.",
         ]
         with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
@@ -461,9 +478,49 @@ class TestEvalLoop:
     async def test_eval_loop_cancellation_propagates(self, eval_ai):
         """CancelledError from async_exec propagates out of eval loop."""
         eval_ai._send.side_effect = [
-            "```python\nawait something()\n```",
+            "<run>\nawait something()\n</run>",
         ]
         with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
             mock_exec.side_effect = asyncio.CancelledError()
             with pytest.raises(asyncio.CancelledError):
                 await eval_ai("cancel me")
+
+    @pytest.mark.asyncio
+    async def test_eval_loop_multi_block_notice(self, eval_ai):
+        """Two <run> blocks: only first executed, debug channel gets notice, feedback includes notice."""
+        eval_ai._send.side_effect = [
+            "First:\n<run>\na = 1\n</run>\nSecond:\n<run>\nb = 2\n</run>",
+            "Got it.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = (None, "")
+            await eval_ai("multi block")
+
+        # Only first block executed
+        mock_exec.assert_called_once_with("a = 1", eval_ai._namespace)
+
+        # Debug channel received notice
+        debug_writes = [
+            c for c in eval_ai._router.write.call_args_list
+            if c[0][0] == "debug"
+        ]
+        assert len(debug_writes) == 1
+        assert "1 additional block was ignored" in debug_writes[0][0][1]
+        assert debug_writes[0].kwargs["metadata"]["type"] == "exec_notice"
+
+        # AI feedback includes notice
+        feedback = eval_ai._send.call_args_list[1][0][0]
+        assert "1 additional block was ignored" in feedback
+
+    @pytest.mark.asyncio
+    async def test_eval_loop_illustrative_not_executed(self, eval_ai):
+        """Response with only illustrative code (markdown fences) does not execute anything."""
+        eval_ai._send.side_effect = [
+            "Here's an example:\n```python\nx = 42\n```\nThat's how it works.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            result = await eval_ai("show example")
+
+        # No execution
+        mock_exec.assert_not_called()
+        assert result == "Here's an example:\n```python\nx = 42\n```\nThat's how it works."

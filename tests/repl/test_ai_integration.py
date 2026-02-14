@@ -49,11 +49,12 @@ class TestAIIntegration:
         shell = CortexShell()
         assert shell.ai._call_count == 0
 
-    def test_ai_extract_code_from_namespace(self):
-        """extract_code is accessible on the namespace ai object."""
+    def test_ai_extract_executable_from_namespace(self):
+        """extract_executable is accessible on the namespace ai object."""
         shell = CortexShell()
-        blocks = shell.namespace["ai"].extract_code("```python\nx = 1\n```")
-        assert blocks == ["x = 1"]
+        code, extra = shell.namespace["ai"].extract_executable("<run>\nx = 1\n</run>")
+        assert code == "x = 1"
+        assert extra == 0
 
     def test_nl_stub_removed(self):
         """NL mode no longer contains the Phase 18 stub text."""
@@ -74,11 +75,11 @@ class TestConcurrentSessionRouting:
 
         # Mock _send to return code that mutates namespace
         ai1._send = AsyncMock(side_effect=[
-            "Setting:\n```python\nfrom_s1 = True\n```",
+            "Setting:\n<run>\nfrom_s1 = True\n</run>",
             "Done from session 1.",
         ])
         ai2._send = AsyncMock(side_effect=[
-            "Setting:\n```python\nfrom_s2 = True\n```",
+            "Setting:\n<run>\nfrom_s2 = True\n</run>",
             "Done from session 2.",
         ])
 
