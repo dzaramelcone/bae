@@ -11,6 +11,7 @@ from bae.repl.channels import (
     CHANNEL_DEFAULTS,
     Channel,
     ChannelRouter,
+    ViewFormatter,
     disable_debug,
     enable_debug,
     render_markdown,
@@ -383,3 +384,61 @@ async def test_toggle_channels_cancelled_no_change(router):
 
     for name, ch in router._channels.items():
         assert ch.visible == original_visibility[name]
+
+
+# --- ViewFormatter delegation tests ---
+
+
+def test_view_formatter_protocol_shape():
+    """Any object with a matching render() method satisfies ViewFormatter."""
+    class Good:
+        def render(self, channel_name, color, content, *, metadata=None):
+            pass
+
+    assert isinstance(Good(), ViewFormatter)
+
+
+def test_channel_display_delegates_to_formatter():
+    """When _formatter is set, _display() delegates to formatter.render()."""
+    mock_formatter = MagicMock()
+    ch = Channel(name="py", color="#87ff87")
+    ch._formatter = mock_formatter
+    ch._display("hello", metadata={"type": "test"})
+    mock_formatter.render.assert_called_once_with(
+        "py", "#87ff87", "hello", metadata={"type": "test"},
+    )
+
+
+def test_channel_display_delegates_skips_default_rendering():
+    """When _formatter is set, print_formatted_text is NOT called."""
+    mock_formatter = MagicMock()
+    ch = Channel(name="py", color="#87ff87")
+    ch._formatter = mock_formatter
+    with patch("bae.repl.channels.print_formatted_text") as mock_pft:
+        ch._display("hello")
+        mock_pft.assert_not_called()
+
+
+@patch("bae.repl.channels.print_formatted_text")
+def test_channel_display_no_formatter_unchanged(mock_pft):
+    """When _formatter is None, _display() uses existing line-by-line rendering."""
+    ch = Channel(name="py", color="#87ff87")
+    ch._display("x = 42")
+    mock_pft.assert_called_once()
+    fragments = list(mock_pft.call_args[0][0])
+    assert fragments[0] == ("#87ff87 bold", "[py]")
+    assert fragments[2] == ("", "x = 42")
+
+
+def test_channel_formatter_field_default_none():
+    """Channel._formatter defaults to None."""
+    ch = Channel(name="py", color="#87ff87")
+    assert ch._formatter is None
+
+
+def test_channel_formatter_not_in_repr():
+    """Channel repr does not expose _formatter."""
+    mock_formatter = MagicMock()
+    ch = Channel(name="py", color="#87ff87")
+    ch._formatter = mock_formatter
+    assert "formatter" not in repr(ch)
