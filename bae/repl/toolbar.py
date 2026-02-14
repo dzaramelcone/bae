@@ -8,6 +8,8 @@ render_task_menu() provides the numbered task list for the inline kill menu.
 from __future__ import annotations
 
 import os
+import resource
+import sys
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
@@ -93,6 +95,27 @@ def make_cwd_widget() -> ToolbarWidget:
             cwd = "~" + cwd[len(home):]
         return [("class:toolbar.cwd", f" {cwd} ")]
 
+    return widget
+
+
+def make_mem_widget() -> ToolbarWidget:
+    """Built-in widget: interpreter RSS memory usage."""
+
+    def widget():
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # macOS returns bytes, Linux returns KB
+        mb = rss / (1024 * 1024) if sys.platform == "darwin" else rss / 1024
+        return [("class:toolbar.mem", f" {mb:.0f}M ")]
+
+    return widget
+
+
+def make_view_widget(shell) -> ToolbarWidget:
+    """Built-in widget: active view mode (hidden in default user view)."""
+    def widget():
+        if shell.view_mode.value == "user":
+            return []
+        return [("class:toolbar.view", f" {shell.view_mode.value} ")]
     return widget
 
 

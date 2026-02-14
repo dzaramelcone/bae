@@ -37,6 +37,7 @@ from bae.repl.toolbar import (
     make_mem_widget,
     make_mode_widget,
     make_tasks_widget,
+    make_view_widget,
 )
 
 # Register kitty keyboard protocol Shift+Enter (CSI u encoding).
@@ -240,6 +241,7 @@ class CortexShell:
         self.namespace["ai"] = self.ai
         self.toolbar = ToolbarConfig()
         self.toolbar.add("mode", make_mode_widget(self))
+        self.toolbar.add("view", make_view_widget(self))
         self.toolbar.add("tasks", make_tasks_widget(self))
         self.toolbar.add("mem", make_mem_widget())
         self.toolbar.add("cwd", make_cwd_widget())
