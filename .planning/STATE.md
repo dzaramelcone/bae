@@ -107,7 +107,7 @@ v4.0 architectural decisions:
 
 - Update `tests/traces/json_structured_fill_reference.py` -- drifted from real backend
 - Bump Python requirement to 3.14 stable
-- AI auto code extraction + eval loop (AI produces code → extract → exec in namespace → feed output back)
+- AI auto code extraction + eval loop → promoted to Phase 20
 - AI markdown rendering for [ai] channel output
 - AI streaming/progressive display for NL responses (currently blocking)
 - Task menu UX: render as numbered list below input instead of in toolbar

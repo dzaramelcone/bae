@@ -49,7 +49,8 @@
 - [x] **Phase 16: Channel I/O** - Labeled output streams wired to session store with bae graph integration
 - [x] **Phase 17: Namespace** - Reflective shared namespace with bae objects and introspection
 - [ ] **Phase 18: AI Agent** - NL-first AI operating in conversation while producing correct code
-- [ ] **Phase 19: Task Lifecycle** - Background task management and custom prompt configuration
+- [x] **Phase 19: Task Lifecycle** - Background task management and custom prompt configuration
+- [ ] **Phase 20: AI Eval Loop** - AI executes code/commands in REPL namespace and bash, pipes results back into conversation
 
 ## Phase Details
 
@@ -149,13 +150,29 @@ Plans:
 - [x] 19-01-PLAN.md -- ToolbarConfig class with built-in widgets (TDD)
 - [x] 19-02-PLAN.md -- Task tracking, interrupt handler, kill menu, and subprocess cleanup
 - [x] 19-03-PLAN.md -- Gap closure: background dispatch for toolbar visibility and kill menu activation
-- [ ] 19-04-PLAN.md -- Gap closure: TaskManager with lifecycle tracking and process group management (TDD)
-- [ ] 19-05-PLAN.md -- Gap closure: Shell integration, inline kill menu, PY async tracking
+- [x] 19-04-PLAN.md -- Gap closure: TaskManager with lifecycle tracking and process group management (TDD)
+- [x] 19-05-PLAN.md -- Gap closure: Shell integration, inline kill menu, PY async tracking
+
+### Phase 20: AI Eval Loop
+**Goal**: AI operates as a full agent — extracts and executes code/commands, sees results, retains cross-session context, and renders output properly
+**Depends on**: Phase 18, Phase 19
+**Requirements**: AI-06, STORE-03, REPL-10
+**Success Criteria** (what must be TRUE):
+  1. AI-generated Python code blocks are automatically extracted, executed in the REPL namespace, and results fed back to the AI conversation
+  2. AI-generated bash commands are dispatched via bash mode and output piped back to the AI
+  3. Bash commands that run `python` and fail with namespace-dependent errors suggest using the REPL instead
+  4. On launch, AI context includes recent session history from the store (cross-session memory)
+  5. AI output renders markdown formatting in the terminal (headers, bold, code blocks, lists)
+  6. Ctrl-C task menu renders as a numbered list below the input (printed to scrollback), not in the toolbar
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 20 to break down)
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19
+Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19 -> 20
 
 | Phase | Milestone | Plans | Status | Completed |
 |-------|-----------|-------|--------|-----------|
@@ -177,7 +194,8 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19
 | 16. Channel I/O | v4.0 | 2/2 | Complete | 2026-02-13 |
 | 17. Namespace | v4.0 | 3/3 | Complete | 2026-02-13 |
 | 18. AI Agent | v4.0 | 2/2 | Complete | 2026-02-13 |
-| 19. Task Lifecycle | v4.0 | 3/5 | In Progress | - |
+| 19. Task Lifecycle | v4.0 | 5/5 | Complete | 2026-02-14 |
+| 20. AI Eval Loop | v4.0 | 0/0 | Not Planned | - |
 
 ---
-*Last updated: 2026-02-13 after Phase 19 gap closure planning*
+*Last updated: 2026-02-14 after adding Phase 20 AI Eval Loop*
