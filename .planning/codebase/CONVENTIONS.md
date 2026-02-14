@@ -1,188 +1,269 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-02-04
+**Analysis Date:** 2026-02-14
 
 ## Naming Patterns
 
 **Files:**
-- Lowercase with underscores: `node.py`, `graph.py`, `lm.py`, `compiler.py`
-- Test files use `test_` prefix: `test_node.py`, `test_graph.py`, `test_integration.py`
-
-**Classes:**
-- PascalCase: `Node`, `Graph`, `NodeConfig`, `LM`, `PydanticAIBackend`, `ClaudeCLIBackend`, `CompiledGraph`
-- Protocol classes use plain names: `LM` (Protocol)
-- Domain-based naming (what they represent, not implementation): `Start`, `Process`, `Review`, `Clarify`, `Question`, `Answer` instead of "Node1", "Step2", etc.
+- Snake case: `test_graph.py`, `ai_prompt.md`, `task_lifecycle.py`
+- Descriptive, domain-focused: `resolver.py`, `exceptions.py`, `markers.py`
+- Test files: `test_<module>.py` pattern (e.g., `test_lm_protocol.py`)
 
 **Functions:**
-- snake_case: `successors()`, `is_terminal()`, `_discover()`, `to_mermaid()`, `node_to_signature()`, `compile_graph()`
-- Private/internal functions use leading underscore: `_extract_types_from_hint()`, `_hint_includes_none()`, `_get_agent()`, `_node_to_prompt()`, `_build_schema()`, `_run_cli()`
+- Snake case for functions/methods: `resolve_fields()`, `build_context()`, `extract_executable()`
+- Private/internal functions prefixed with `_`: `_get_base_type()`, `_build_plain_model()`, `_has_ellipsis_body()`
+- Async functions: `async def arun()`, `async def async_exec()`
+- Naming by domain purpose, not implementation: `fill()` not `llm_populate()`, `resolve_fields()` not `inject_deps()`
 
 **Variables:**
-- snake_case: `start_node`, `node_cls`, `cache_key`, `type_list`, `successor`, `max_steps`
-- Abbreviations preserved: `lm` (language model), `doc`, `succ` (successor)
+- Snake case: `start_node`, `dep_cache`, `target_type`, `plain_fields`
+- Single letter allowed in comprehensions and short scopes: `t`, `k`, `v`
+- Descriptive over abbreviated: `resolved` not `res`, `captured_schema` not `cap_sch`
 
-**Type Variables:**
-- Single uppercase letter: `T = TypeVar("T", bound="Node")`
+**Types:**
+- PascalCase for classes: `Node`, `Graph`, `ClaudeCLIBackend`, `TaskManager`
+- PascalCase for Pydantic models: `Weather`, `GraphResult`, `TrackedTask`
+- PascalCase for exceptions: `BaeError`, `DepError`, `RecallError`, `FillError`
+- PascalCase for Nodes (graph node types): `Start`, `Process`, `Review`, `AlphaNode`, `BetaNode`
 
 ## Code Style
 
 **Formatting:**
-- 100 character line length (from `pyproject.toml`)
-- PEP 8 style with some modern Python features
-- Target Python 3.12 (from `pyproject.toml`)
+- Tool: Ruff (configured in `pyproject.toml`)
+- Line length: 100 characters
+- Target version: Python 3.12+ (requires 3.14 for PEP 649)
 
 **Linting:**
-- Ruff configured with rules: E (errors), F (Pyflakes), I (import sorting), UP (modernize)
-- Enforced via `[tool.ruff.lint]` in `pyproject.toml`
+- Tool: Ruff
+- Rules enabled: `["E", "F", "I", "UP"]`
+  - E: pycodestyle errors
+  - F: Pyflakes (unused imports, undefined names)
+  - I: isort (import ordering)
+  - UP: pyupgrade (modern Python syntax)
 
-**Future annotations:**
-- Use `from __future__ import annotations` at top of files for forward references
-- Example: `bae/node.py`, `bae/lm.py`
+**Docstrings:**
+- Multi-line docstrings for modules, classes, public functions
+- Format: Standard triple-quoted strings with description first
+- Include Args/Returns/Raises sections for complex functions:
+  ```python
+  def resolve_fields(node_cls: type) -> dict[str, str]:
+      """Classify each field of a Node subclass by its annotation marker.
+
+      Args:
+          node_cls: A Node subclass whose fields to classify.
+
+      Returns:
+          Dict mapping field name to "dep", "recall", or "plain".
+      """
+  ```
+- Short functions may omit docstrings if intent is clear from name
 
 ## Import Organization
 
 **Order:**
-1. `from __future__ import annotations` (deferred evaluation)
-2. Standard library imports (`import types`, `from typing import ...`, `from collections import deque`)
-3. Third-party imports (`from pydantic import ...`, `from pydantic_ai import Agent`)
-4. Local imports (`from bae.node import Node`, `from bae.graph import Graph`)
+1. Future imports: `from __future__ import annotations`
+2. Standard library imports (sorted)
+3. Third-party imports (sorted)
+4. Local imports (sorted)
 
-**TYPE_CHECKING guard:**
-- Use `if TYPE_CHECKING:` for imports only needed for type hints
-- Example in `bae/node.py`:
-  ```python
-  if TYPE_CHECKING:
-      from bae.lm import LM
-  ```
-- Prevents circular imports while maintaining type information
+**Example from `bae/graph.py`:**
+```python
+import asyncio
+import logging
+import types
+from collections import deque
+from typing import Annotated, Any, get_args, get_origin, get_type_hints
+
+from bae.exceptions import BaeError, DepError, RecallError
+from bae.lm import LM
+from bae.node import Node, _has_ellipsis_body, _wants_lm
+from bae.resolver import LM_KEY, resolve_fields
+from bae.result import GraphResult
+```
 
 **Path Aliases:**
-- Use absolute imports with full package path: `from bae.node import Node`
-- No relative imports (e.g., no `from .node import Node`)
+- None used (no `@` or `~` aliases)
+- Absolute imports preferred: `from bae.node import Node`
+- Relative imports avoided
+
+**TYPE_CHECKING pattern:**
+Used to avoid circular imports:
+```python
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from bae.node import Node
+    from bae.lm import LM
+```
 
 ## Error Handling
 
 **Patterns:**
-- Raise specific exception types with descriptive messages:
-  - `ValueError`: Invalid argument or state (e.g., node with no successors and not terminal)
-  - `RuntimeError`: Runtime error (e.g., graph execution timeout, CLI subprocess failure)
-  - `NotImplementedError`: Unfinished features (DSPy compilation phase)
+- Custom exception hierarchy rooted at `BaeError` (in `bae/exceptions.py`)
+- Always chain exceptions with `raise ... from e` or set `__cause__`
+- Specialized exceptions for different failure modes:
+  - `RecallError`: Missing field in trace
+  - `DepError`: Dependency function failed
+  - `FillError`: LLM validation failed
+  - `BaeLMError`: LLM API failure
+  - `BaeParseError`: Validation/parsing failure
 
-**String formatting:**
-- Use f-strings with {class_name} patterns: `f"{node.__class__.__name__} has no successors"`
-- Include context in error messages for debugging
+**Re-raising:**
+```python
+except RecallError:
+    raise  # Already correct type
+except Exception as e:
+    err = DepError(
+        f"{e} failed on {current.__class__.__name__}",
+        node_type=current.__class__,
+        cause=e,
+    )
+    err.trace = trace
+    raise err from e
+```
 
-**Try-except blocks:**
-- Located in `bae/lm.py` ClaudeCLIBackend._run_cli():
-  ```python
-  try:
-      result = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout)
-  except subprocess.TimeoutExpired:
-      raise RuntimeError(f"Claude CLI timed out after {self.timeout}s")
-  ```
-- Re-raise with more context where applicable
+**Cleanup protection:**
+Always catch and re-raise `CancelledError`, `KeyboardInterrupt`, `SystemExit`:
+```python
+except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+    raise
+except BaseException:
+    # handle error
+```
+
+**Silent failures:**
+Used sparingly, only for expected OS errors:
+```python
+except (ProcessLookupError, OSError):
+    pass  # Process already dead
+```
 
 ## Logging
 
-**Framework:** None - uses direct output through exception messages and docstrings
+**Framework:** Standard library `logging`
 
-**Patterns:**
-- Use docstrings for documentation and context
-- Prompt construction includes current state and context (see `_node_to_prompt()` in `bae/lm.py`)
-- Debug output through print would go in test output (not observed in core code)
+**Pattern:**
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+logger.debug("Resolved %d fields on %s", len(resolved), current.__class__.__name__)
+```
+
+**Usage:**
+- `logger.debug()` for execution flow tracing (used in `bae/graph.py`)
+- Module-level logger: `logger = logging.getLogger(__name__)`
+- Never `print()` in library code (only in CLI/REPL user output)
+- In REPL shell, capture logging to channel router:
+  ```python
+  graph_logger = logging.getLogger("bae.graph")
+  handler = logging.StreamHandler(buf)
+  graph_logger.addHandler(handler)
+  ```
 
 ## Comments
 
 **When to Comment:**
-- Docstrings on all public functions and classes
-- Inline comments only for non-obvious logic or workarounds
+- Complex type manipulation: `# Handle union types (X | None)`
+- Non-obvious algorithms: `# Propagate backwards: if a node can reach a terminal...`
+- Why not what: `# Skip loading project/user settings` not `# Set --setting-sources to empty`
+- Edge cases: `# Multiple non-None types - return first one (edge case)`
 
-**Docstring Style:**
-- Module-level docstring at top of each file
-- Google-style docstrings with Args/Returns/Raises sections
-- Example from `bae/graph.py`:
-  ```python
-  def run(
-      self,
-      start_node: Node,
-      lm: LM,
-      max_steps: int = 100,
-  ) -> Node | None:
-      """Execute the graph starting from the given node.
+**Avoid:**
+- Temporal context ("changed from X", "was Y before")
+- Implementation history
+- Redundant explanations of obvious code
 
-      Args:
-          start_node: Initial node instance with fields populated.
-          lm: Language model backend for producing nodes.
-          max_steps: Maximum execution steps (prevents infinite loops).
-
-      Returns:
-          None if terminated normally, or raises if max_steps exceeded.
-      """
-  ```
-
-**JSDoc/TSDoc:** Not applicable - Python project
+**Section markers:**
+```python
+# ── Fill helpers ─────────────────────────────────────────────────────────
+```
+Used in longer files like `bae/lm.py` to separate concerns.
 
 ## Function Design
 
-**Size:** Functions are compact and focused
-- `_extract_types_from_hint()`: 8 lines
-- `_hint_includes_none()`: 8 lines
-- `successors()`: 2 lines (with docstring)
-- `is_terminal()`: 2 lines (with docstring)
+**Size:**
+- No hard limit, but functions over 50 lines should have clear sections
+- Extract helpers when logic can be named: `_build_context()`, `_get_routing_strategy()`
+- Private helpers prefixed with `_`
 
 **Parameters:**
-- Use type hints throughout
-- Optional parameters have defaults
-- LM is typically injected as parameter
+- Keyword-only for complex functions: `def __init__(self, *, lm: LM, router: ChannelRouter, ...)`
+- Type hints always present
+- Use `|` syntax for unions: `Node | None` not `Optional[Node]`
+- Use defaults for optional params: `max_iters: int = 10`
 
 **Return Values:**
-- Explicit return type hints: `-> Node | None`, `-> set[type]`, `-> dict[type[Node], set[type[Node]]]`
-- Modern union syntax: `X | Y` instead of `Union[X, Y]`
-- Functions return explicit values or None
+- Explicit return type hints
+- Return None explicitly when appropriate
+- Use tuples for multiple values: `def extract_executable(text: str) -> tuple[str | None, int]`
 
 ## Module Design
 
 **Exports:**
-- Public API defined in `bae/__init__.py`:
-  ```python
-  __all__ = ["Node", "NodeConfig", "Graph", "LM", "PydanticAIBackend", "ClaudeCLIBackend"]
-  ```
-- Each module has clear public interface
+- No explicit `__all__` in most modules
+- Classes/functions intended as public API are imported at package level (`bae/__init__.py`)
+- Private modules/functions marked with `_` prefix
+
+**Module docstrings:**
+All modules start with a module-level docstring:
+```python
+"""Graph discovery and execution.
+
+The Graph class discovers topology from Node type hints and handles execution.
+"""
+```
 
 **Barrel Files:**
-- Single barrel at package root (`bae/__init__.py`)
-- Re-exports core classes for convenient import: `from bae import Node, Graph`
+Not used. Imports are direct: `from bae.graph import Graph` not `from bae import Graph` (unless exported in `__init__.py`)
 
-**Module cohesion:**
-- `bae/node.py`: Node base class and topology extraction helpers
-- `bae/graph.py`: Graph discovery and execution
-- `bae/lm.py`: LM protocol and implementations
-- `bae/compiler.py`: DSPy compilation support (stub)
+## Type Annotations
 
-## Type Hints
+**Coverage:**
+- All public functions have type hints
+- Private functions (`_`) have type hints
+- Use `typing.Annotated` for metadata: `Annotated[str, Dep(fetch_data)]`
+- Use `get_type_hints(include_extras=True)` to preserve `Annotated` metadata
 
-**Modern Python:**
-- Use `X | Y` union syntax (requires Python 3.10+, enforced via `from __future__ import annotations`)
-- Use `type[Node]` instead of `Type[Node]`
-- Use `ClassVar` for class variables
-- `get_type_hints()` and `get_args()` for runtime type introspection
+**Modern syntax:**
+- Union with `|`: `str | None`
+- Generic with `[]`: `list[str]`, `dict[str, int]`
+- Requires Python 3.10+
 
-**Examples:**
+**Protocol pattern:**
 ```python
-@classmethod
-def successors(cls) -> set[type[Node]]:
-    """Get node types that can follow this node."""
-    ...
+from typing import Protocol, runtime_checkable
 
-def run(
-    self,
-    start_node: Node,
-    lm: LM,
-    max_steps: int = 100,
-) -> Node | None:
-    ...
+@runtime_checkable
+class LM(Protocol):
+    async def fill(self, target: type[T], ...) -> T:
+        ...
 ```
+
+## Async Conventions
+
+**Naming:**
+- Sync wrapper: `def run()`
+- Async implementation: `async def arun()`
+
+**Pattern:**
+```python
+def run(self, start_node: Node, lm: LM | None = None, max_iters: int = 10) -> GraphResult:
+    """Execute the graph synchronously. Cannot be called from within a running event loop."""
+    return asyncio.run(self.arun(start_node, lm=lm, max_iters=max_iters))
+
+async def arun(self, start_node: Node, lm: LM | None = None, max_iters: int = 10) -> GraphResult:
+    """Execute the graph asynchronously. Use when already in an event loop."""
+    # implementation
+```
+
+**Execution:**
+- Use `await` for async calls
+- Use `asyncio.create_subprocess_exec()` for external processes
+- Handle `asyncio.TimeoutError` explicitly
+- Always cancel tasks on cleanup
 
 ---
 
-*Convention analysis: 2026-02-04*
+*Convention analysis: 2026-02-14*

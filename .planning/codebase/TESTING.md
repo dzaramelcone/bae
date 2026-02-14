@@ -1,258 +1,422 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-02-04
+**Analysis Date:** 2026-02-14
 
 ## Test Framework
 
 **Runner:**
 - pytest 8.0+
-- Config: `pyproject.toml` with `[tool.pytest.ini_options]`
+- Config: `pyproject.toml` `[tool.pytest.ini_options]`
 
 **Assertion Library:**
-- pytest's built-in `assert` statements
+- pytest built-in assertions
+- No external assertion libraries
 
 **Run Commands:**
 ```bash
-pytest tests/                      # Run all tests
-pytest tests/test_node.py          # Run specific test file
-pytest tests/ -v                   # Verbose output
-pytest tests/test_integration.py -s # Integration tests with output
+pytest                     # Run all tests
+pytest -k test_name        # Run specific test
+pytest --run-e2e           # Run E2E tests (skipped by default)
+pytest tests/repl/         # Run tests in directory
 ```
 
-**Async Testing:**
-- pytest-asyncio 0.24+ configured with `asyncio_mode = "auto"` in `pyproject.toml`
-- Allows `async def test_*()` functions automatically
+**Async Support:**
+- pytest-asyncio 0.24+
+- Config: `asyncio_mode = "auto"` (in `pyproject.toml`)
+- Auto-detects async tests, no decorator needed
 
 ## Test File Organization
 
 **Location:**
-- Separate test directory: `tests/` (not co-located with source)
-- Path mapping: `bae/node.py` → `tests/test_node.py`, `bae/graph.py` → `tests/test_graph.py`
+- Mirror source structure in `tests/` directory
+- Co-located tests: Not used (all tests in `tests/`)
 
 **Naming:**
-- Test files: `test_*.py` prefix
-- Test classes: `Test*` prefix (e.g., `TestNodeTopology`, `TestGraphDiscovery`)
-- Test methods: `test_*` prefix (e.g., `test_successors_union`, `test_edges`)
+- Pattern: `test_<module>.py`
+- Examples: `test_graph.py`, `test_lm_protocol.py`, `test_fill_helpers.py`
+- Integration tests: `test_<feature>_integration.py` (e.g., `test_ai_integration.py`)
+- E2E tests: `test_<feature>_e2e.py` (e.g., `test_ootd_e2e.py`)
 
 **Structure:**
 ```
 tests/
-├── __init__.py           # Makes tests a package
-├── test_node.py          # Node class tests
-├── test_graph.py         # Graph class tests
-└── test_integration.py   # Integration tests with real LM backends
+├── __init__.py
+├── conftest.py                    # Shared fixtures, markers, config
+├── test_graph.py                  # Unit tests for bae/graph.py
+├── test_lm_protocol.py            # Unit tests for bae/lm.py
+├── test_fill_protocol.py          # Protocol tests
+├── test_integration.py            # Integration tests
+├── repl/
+│   ├── __init__.py
+│   ├── test_ai.py                 # Unit tests for bae/repl/ai.py
+│   ├── test_ai_integration.py     # Integration tests
+│   └── test_task_lifecycle.py     # Lifecycle tests
+└── traces/
+    └── json_structured_fill_reference.py  # Reference data
 ```
 
 ## Test Structure
 
 **Suite Organization:**
-- Tests grouped into classes by functionality
-- Example from `tests/test_node.py`:
-  ```python
-  class TestNodeTopology:
-      def test_successors_union(self):
-          """Start can go to Process or Clarify."""
-          succs = Start.successors()
-          assert succs == {Process, Clarify}
+```python
+"""Tests for Graph class."""
 
-  class TestNodeCall:
-      def test_call_with_lm_make(self):
-          """Node can use lm.make to produce specific type."""
-          expected = Process(task="do it")
-          lm = MockLM(return_value=expected)
-          # ...
-  ```
+from bae.graph import Graph
+from bae.node import Node
+
+# Test nodes (fixtures as module-level classes)
+class Start(Node):
+    query: str
+    async def __call__(self, lm: LM) -> Process | Clarify:
+        return await lm.decide(self)
+
+class TestGraphDiscovery:
+    """Tests for Graph topology discovery."""
+
+    def test_discovers_all_nodes(self):
+        graph = Graph(start=Start)
+        assert graph.nodes == {Start, Clarify, Process, Review}
+
+    def test_edges(self):
+        graph = Graph(start=Start)
+        edges = graph.edges
+        assert edges[Start] == {Process, Clarify}
+
+class TestGraphValidation:
+    """Tests for Graph.validate()."""
+
+    def test_valid_graph(self):
+        graph = Graph(start=Start)
+        issues = graph.validate()
+        assert issues == []
+```
 
 **Patterns:**
-- Setup: Create instances and mock LM objects directly in test methods
-- Fixtures: pytest fixtures used in integration tests (see `tests/test_integration.py` lines 88-90)
-- Teardown: Implicit (tests are isolated, no shared state)
-- Assertions: Direct equality checks with meaningful error context
+- Group tests by class: `TestGraphDiscovery`, `TestGraphValidation`, `TestGraphRun`
+- Class docstrings describe what's being tested
+- Test method names: `test_<behavior>` (verb phrase describing behavior)
+- Module-level test data/fixtures for reuse across test classes
 
-**Docstrings:**
-- Every test has a docstring explaining what it tests
-- Example: `"""Node can branch based on its own state."""`
-- Docstring appears as test description in pytest output
+## Fixtures
+
+**conftest.py pattern:**
+```python
+"""Shared pytest configuration and markers."""
+
+import pytest
+
+def pytest_addoption(parser):
+    parser.addoption("--run-e2e", action="store_true", default=False, help="run e2e tests")
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "e2e: mark test as end-to-end (requires --run-e2e)")
+
+def pytest_collection_modifyitems(config, items):
+    if not config.getoption("--run-e2e"):
+        skip_e2e = pytest.mark.skip(reason="need --run-e2e option to run")
+        for item in items:
+            if "e2e" in item.keywords:
+                item.add_marker(skip_e2e)
+```
+
+**Test-level fixtures:**
+```python
+@pytest.fixture
+def mock_lm():
+    """Minimal LM stub."""
+    return MagicMock()
+
+@pytest.fixture
+def mock_router():
+    """Minimal ChannelRouter stub."""
+    return MagicMock()
+
+@pytest.fixture
+def ai(mock_lm, mock_router):
+    """AI instance with mocked dependencies."""
+    return AI(lm=mock_lm, router=mock_router, namespace={})
+```
+
+**Fixture location:**
+- Shared across module: in test file
+- Shared across package: in `conftest.py`
 
 ## Mocking
 
-**Framework:** Custom mock objects (no external mocking library)
+**Framework:** `unittest.mock` (standard library)
 
 **Patterns:**
-- Define simple mock classes that implement the protocol interface
-- Example from `tests/test_node.py`:
-  ```python
-  class MockLM:
-      """Mock LM that returns predefined nodes."""
 
-      def __init__(self, return_value: Node | None = None):
-          self.return_value = return_value
-          self.calls: list[Node] = []
+**AsyncMock for async functions:**
+```python
+from unittest.mock import AsyncMock, patch
 
-      def make(self, node: Node, target: type) -> Node:
-          self.calls.append(node)
-          return self.return_value
+async def test_fill_returns_target_instance():
+    backend = ClaudeCLIBackend()
 
-      def decide(self, node: Node) -> Node | None:
-          self.calls.append(node)
-          return self.return_value
-  ```
+    with patch.object(backend, "_run_cli_json", new_callable=AsyncMock) as mock_cli:
+        mock_cli.return_value = {"name": "Alice", "greeting": "Hello Alice"}
 
-**Variations by test file:**
-- `test_node.py`: MockLM stores return value, tracks calls
-- `test_graph.py`: MockLM returns nodes from a sequence with index tracking
-  ```python
-  class MockLM:
-      """Mock LM that returns nodes from a sequence."""
+        result = await backend.fill(Greet, {}, "Greet")
 
-      def __init__(self, sequence: list[Node | None]):
-          self.sequence = sequence
-          self.index = 0
+        assert isinstance(result, Greet)
+        assert result.name == "Alice"
+```
 
-      def decide(self, node: Node) -> Node | None:
-          result = self.sequence[self.index]
-          self.index += 1
-          return result
-  ```
+**MagicMock for sync dependencies:**
+```python
+from unittest.mock import MagicMock
+
+def test_extract_executable():
+    event = MagicMock()
+    event.app.exit = MagicMock()
+    event.app.invalidate = MagicMock()
+```
+
+**Capture arguments with side_effect:**
+```python
+captured_schema = {}
+
+async def capture(prompt, schema):
+    captured_schema.update(schema)
+    return {"name": "Alice", "greeting": "Hi"}
+
+with patch.object(backend, "_run_cli_json", side_effect=capture):
+    await backend.fill(Greet, {}, "Greet")
+
+assert "properties" in captured_schema
+```
 
 **What to Mock:**
-- LM backends (PydanticAIBackend, ClaudeCLIBackend) - replace with MockLM for unit tests
-- Don't mock Nodes themselves - test real Node subclasses
-- Don't mock Graph internals - test Graph behavior directly
+- External APIs (LLM calls via `_run_cli_json`)
+- I/O operations (subprocess, file access)
+- Dependencies that slow down tests (database, network)
 
 **What NOT to Mock:**
-- Integration tests call real backends (PydanticAIBackend, ClaudeCLIBackend)
-- Real Node instances passed to graph.run()
-- Graph topology discovery uses real type hints
+- Core domain logic (Graph execution, field resolution)
+- Simple data transformations
+- Type operations
 
-## Fixtures and Factories
+## Test Data & Factories
 
-**Test Data:**
-- Node instances created inline in tests: `Start(query="test")`
-- Test graph nodes defined in same file as tests (e.g., `Start`, `Process`, `Review` classes in `test_node.py`)
-- Integration tests use realistic nodes: `Task(description="...")`, `Question(text="...")`
+**Pattern: Module-level test node classes:**
+```python
+# Test nodes for graph topology tests
+class Start(Node):
+    query: str
+    async def __call__(self, lm: LM) -> Process | Clarify:
+        return await lm.decide(self)
+
+class Clarify(Node):
+    question: str
+    async def __call__(self, lm: LM) -> Start:
+        return await lm.make(self, Start)
+```
+
+**Mock LM with sequence:**
+```python
+class MockLM:
+    """Mock LM that returns nodes from a sequence."""
+
+    def __init__(self, sequence: list[Node | None]):
+        self.sequence = sequence
+        self.index = 0
+
+    async def make(self, node: Node, target: type) -> Node:
+        result = self.sequence[self.index]
+        self.index += 1
+        return result
+
+    async def decide(self, node: Node) -> Node | None:
+        result = self.sequence[self.index]
+        self.index += 1
+        return result
+
+# Usage:
+lm = MockLM(sequence=[
+    Process(task="do it"),
+    Review(content="looks good"),
+    None,
+])
+```
 
 **Location:**
-- Test nodes defined in test files themselves
-- `tests/test_node.py` lines 24-52: `Start`, `Clarify`, `Process`, `Review` node classes
-- `tests/test_graph.py` lines 29-77: Graph test node definitions
-- `tests/test_integration.py` lines 18-74: Integration test node definitions
-
-**Pytest Fixtures:**
-- Located in integration tests for LM backends:
-  ```python
-  @pytest.fixture
-  def lm(self):
-      return PydanticAIBackend(model="anthropic:claude-sonnet-4-20250514")
-  ```
-- Fixtures create fresh LM instance per test method
+- Inline test data in test files (preferred)
+- Reference traces in `tests/traces/` for complex data
 
 ## Coverage
 
-**Requirements:** None enforced (not configured in `pyproject.toml`)
+**Requirements:** No enforced target
 
-**View Coverage:** Not configured - would require `pytest-cov` plugin
+**View Coverage:**
+```bash
+pytest --cov=bae --cov-report=html
+open htmlcov/index.html
+```
+
+**Gaps:**
+- Not systematically tracked
+- Focus on behavior coverage over line coverage
 
 ## Test Types
 
 **Unit Tests:**
-- Scope: Individual classes and functions (Node topology, Graph structure)
-- Approach: Use MockLM, test with predefined node sequences
-- Location: `tests/test_node.py` (43 lines), `tests/test_graph.py` (160 lines)
-- Example: Test that `successors()` correctly extracts types from return hints
+- Test single functions/classes in isolation
+- Mock all external dependencies
+- Fast (milliseconds per test)
+- Examples: `test_graph.py::TestGraphDiscovery`, `test_lm_protocol.py::TestLMProtocol`
 
 **Integration Tests:**
-- Scope: End-to-end graph execution with real LM backends
-- Approach: Call actual pydantic-ai or Claude CLI APIs
-- Location: `tests/test_integration.py` (190 lines)
-- Requirements: ANTHROPIC_API_KEY for pydantic-ai tests, claude CLI installed for CLI tests
-- Skipped if dependencies not available via `pytest.mark.skipif`
+- Test multiple components together
+- May use real dependencies (no external I/O)
+- Examples: `test_ai_integration.py`, `test_namespace_integration.py`
 
 **E2E Tests:**
-- Integrated into integration test file
-- Calls `graph.run()` with real nodes and real LM backends
-- Example `TestPydanticAIBackend.test_graph_run_task_decomposition` (lines 127-134)
+- Full system tests with real LLM calls
+- Marked with `@pytest.mark.e2e`
+- Skipped by default, run with `pytest --run-e2e`
+- Examples: `test_ootd_e2e.py`
 
 ## Common Patterns
 
 **Async Testing:**
-- Configured via pytest-asyncio with `asyncio_mode = "auto"`
-- Tests can use `async def test_*()` automatically
-- Not heavily used in current codebase (would be needed if backends used async)
+```python
+class TestGraphRun:
+    async def test_run_simple_path(self):
+        graph = Graph(start=Start)
+        lm = MockLM(sequence=[Process(task="do it"), None])
+
+        result = await graph.arun(Start(query="hello"), lm=lm)
+
+        assert isinstance(result, GraphResult)
+        assert result.node is None
+        assert len(result.trace) == 2
+```
 
 **Error Testing:**
-- Use pytest.raises() context manager
-- Example from `tests/test_graph.py` lines 152-159:
-  ```python
-  def test_run_max_steps(self):
-      """..."""
-      graph = Graph(start=Infinite)
-      lm = MockLM(sequence=[])
-
-      with pytest.raises(RuntimeError, match="exceeded"):
-          graph.run(Infinite(), lm=lm, max_steps=10)
-  ```
-- Tests the graph raises RuntimeError when max_steps exceeded
-
-**Assertion Patterns:**
-- Direct equality: `assert result == expected`
-- Set membership: `assert succs == {Process, Clarify}`
-- Type checks: `assert isinstance(result, Result)`
-- Boolean checks: `assert Process.is_terminal() is True`
-- None checks: `assert final is None`
-
-**Test Organization by Layer:**
-
-1. **Node Topology** (`TestNodeTopology` in test_node.py):
-   - Tests type hint parsing: `successors()`, `is_terminal()`
-   - Tests graph topology discovery
-
-2. **Node Execution** (`TestNodeCall` in test_node.py):
-   - Tests `__call__` method with injected LM
-   - Tests routing logic based on node state
-
-3. **Graph Discovery** (`TestGraphDiscovery` in test_graph.py):
-   - Tests BFS traversal of graph from start node
-   - Tests adjacency list construction
-
-4. **Graph Validation** (`TestGraphValidation` in test_graph.py):
-   - Tests detection of infinite loops (no terminal path)
-   - Tests validation returns appropriate warnings
-
-5. **Graph Execution** (`TestGraphRun` in test_graph.py):
-   - Tests step-by-step execution with mocked LM
-   - Tests max_steps enforcement
-   - Tests terminal node detection
-
-6. **Backend Integration** (`TestPydanticAIBackend`, `TestClaudeCLIBackend` in test_integration.py):
-   - Tests `make()` produces correct typed output
-   - Tests `decide()` picks from valid successors
-   - Tests full graph execution with real LM
-
-## Test Output
-
-**Test pristine output:**
-- No unexpected log messages or warnings
-- Integration tests use `-s` flag to show stdout/stderr when needed
-- Test comments explain setup and expectations
-
-**Example test with clear documentation:**
 ```python
-def test_run_multiple_steps(self):
-    """Run a simple graph to completion."""
-    graph = Graph(start=Start)
+async def test_run_max_iters(self):
+    graph = Graph(start=Infinite)
+    lm = MockLM(sequence=[])
 
-    # LM returns: Process -> Review -> None
-    lm = MockLM(sequence=[
-        Process(task="do it"),
-        Review(content="looks good"),
-        None,
-    ])
-
-    result = graph.run(Start(query="hello"), lm=lm)
-    assert result is None
+    with pytest.raises(BaeError, match="exceeded"):
+        await graph.arun(Infinite(), lm=lm, max_iters=10)
 ```
+
+**Testing Protocols:**
+```python
+class TestLMProtocol:
+    """LM Protocol defines choose_type and fill."""
+
+    def test_protocol_has_choose_type(self):
+        """LM Protocol has a choose_type method."""
+        assert hasattr(LM, "choose_type")
+
+    def test_protocol_has_fill(self):
+        """LM Protocol has a fill method."""
+        assert hasattr(LM, "fill")
+```
+
+**Cleanup Testing (async resources):**
+```python
+@pytest.mark.asyncio
+async def test_submit_creates_tracked_task(self, shell):
+    """tm.submit() returns TrackedTask with RUNNING state."""
+    async def noop():
+        await asyncio.sleep(10)
+
+    tt = shell.tm.submit(noop(), name="test:add", mode="nl")
+    assert tt.state.value == "running"
+
+    # Cleanup
+    shell.tm.revoke(tt.task_id)
+    try:
+        await tt.task
+    except asyncio.CancelledError:
+        pass
+```
+
+**Mock event helpers:**
+```python
+def _mock_event(shell):
+    """Build a mock prompt_toolkit event for key binding tests."""
+    event = MagicMock()
+    event.app.exit = MagicMock()
+    event.app.invalidate = MagicMock()
+    event.current_buffer.reset = MagicMock()
+
+    _calls = []
+
+    def _create_bg_task(coro):
+        _calls.append(coro)
+        coro.close()  # Prevent unawaited coroutine warning
+
+    event.app.create_background_task = _create_bg_task
+    event.app.create_background_task._calls = _calls
+    return event
+```
+
+## Markers
+
+**Custom markers (defined in `conftest.py`):**
+```python
+@pytest.mark.e2e
+def test_full_graph_with_real_llm():
+    """End-to-end test requiring real LLM."""
+    # ...
+```
+
+**Usage:**
+- `@pytest.mark.e2e`: End-to-end test (requires `--run-e2e`)
+- `@pytest.mark.asyncio`: Auto-applied by pytest-asyncio
+
+## Test Naming
+
+**Function naming:**
+- Pattern: `test_<what>_<condition>` or `test_<behavior>`
+- Examples:
+  - `test_discovers_all_nodes`
+  - `test_single_type_returns_directly`
+  - `test_fill_returns_target_instance`
+  - `test_run_max_iters`
+
+**Class naming:**
+- Pattern: `Test<FeatureName>` or `Test<Class><Method>`
+- Examples:
+  - `TestGraphDiscovery`
+  - `TestClaudeCLIBackendFill`
+  - `TestExtractExecutable`
+
+**Docstrings:**
+Tests have descriptive docstrings:
+```python
+async def test_submit_creates_tracked_task(self, shell):
+    """tm.submit() returns TrackedTask with RUNNING state."""
+```
+
+## Assertion Style
+
+**Direct assertions:**
+```python
+assert result.node is None
+assert len(result.trace) == 2
+assert isinstance(result, GraphResult)
+```
+
+**Set comparison:**
+```python
+assert graph.nodes == {Start, Clarify, Process, Review}
+assert edges[Start] == {Process, Clarify}
+```
+
+**Pattern matching:**
+```python
+with pytest.raises(BaeError, match="exceeded"):
+    await graph.arun(Infinite(), lm=lm, max_iters=10)
+```
+
+**No assertion helpers:** No custom `assert_equal()` or similar. Use standard Python assertions.
 
 ---
 
-*Testing analysis: 2026-02-04*
+*Testing analysis: 2026-02-14*

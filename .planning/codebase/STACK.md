@@ -1,84 +1,77 @@
 # Technology Stack
 
-**Analysis Date:** 2026-02-04
+**Analysis Date:** 2026-02-14
 
 ## Languages
 
 **Primary:**
-- Python 3.14+ - All source code and tooling. Requires Python 3.14 for PEP 649 (deferred annotation evaluation) support for forward references in type hints.
+- Python 3.14.3 - All application code
+
+**Secondary:**
+- None
 
 ## Runtime
 
 **Environment:**
-- CPython 3.14.2
+- Python 3.14+
 
 **Package Manager:**
-- `uv` - Fast Python package manager with lockfile support
-- Lockfile: `uv.lock` (present)
+- uv - Modern Python package manager
+- Lockfile: `uv.lock` present
 
 ## Frameworks
 
 **Core:**
-- Pydantic 2.12.5 - Type validation and serialization for Node classes (BaseModel inheritance)
-- pydantic-ai 1.53.0 - LLM abstraction layer providing structured output from language models
-
-**ML/Optimization:**
-- DSPy 3.1.2 - Prompt optimization and program synthesis framework (partially integrated in `bae/compiler.py`, not yet fully wired)
-
-**Utilities:**
-- incant 25.1.0 - Dependency injection framework (listed in dependencies but not currently used in codebase)
+- Pydantic >=2.0 - Runtime type validation and schema generation for nodes
+- Typer >=0.12 - CLI framework for main command interface
 
 **Testing:**
-- pytest 8.0+ - Test framework
-- pytest-asyncio 0.24+ - Async test support
+- pytest >=8.0 - Test runner
+- pytest-asyncio >=0.24 - Async test support
 
 **Build/Dev:**
-- ruff 0.8+ - Linting and code formatting
-- hatchling - Build backend for packaging
+- Hatchling - Build backend (defined in pyproject.toml)
+- Ruff >=0.8 - Linter and formatter
+
+**REPL/Interactive:**
+- prompt-toolkit >=3.0.50 - Rich interactive shell with completion, history
+- Pygments >=2.19 - Syntax highlighting
+- Rich >=14.3 - Terminal formatting and rendering
 
 ## Key Dependencies
 
 **Critical:**
-- Pydantic (2.12.5) - Type validation. All Node classes inherit from `BaseModel`. Core to type safety of agent graphs.
-- pydantic-ai (1.53.0) - LLM integration. Provides `Agent` class for structured LLM output. Used by `PydanticAIBackend` in `bae/lm.py`.
+- Pydantic >=2.0 - Core type system for Node definitions, schema generation, and LM protocol
+- Claude CLI (external) - LLM backend for node population and type selection
 
 **Infrastructure:**
-- Anthropic SDK (0.77.1) - Claude API access (transitively required by pydantic-ai when using Anthropic models)
-
-**Supporting:**
-- dspy (3.1.2) - For future optimization features
-- incant (25.1.0) - Included but unused; available for dependency injection if needed
+- prompt-toolkit >=3.0.50 - Powers the cortex REPL (bae/repl/)
+- Typer >=0.12 - Main CLI entry point (`bae` command)
 
 ## Configuration
 
 **Environment:**
-- Python version requirement enforced in `pyproject.toml` (requires-python = ">=3.14")
-- Ruff configured for 100-character line length and specific lint rules (E, F, I, UP)
-- pytest configured with asyncio_mode = "auto" and testpaths pointing to `tests/`
+- No .env files detected
+- Configuration passed via CLI flags or through shell environment
+- ANTHROPIC_API_KEY required for Claude CLI integration (external dependency)
+- CLAUDECODE environment variable explicitly filtered in AI subprocess calls (`bae/repl/ai.py:214`)
 
 **Build:**
-- `pyproject.toml` - Single source of truth for project metadata, dependencies, and tool config
-- No additional build configuration files
+- `pyproject.toml` - Project metadata, dependencies, tool config
+- `[tool.ruff]` - Linter config (line-length: 100, target: py312)
+- `[tool.pytest.ini_options]` - Test config (asyncio_mode: auto, testpaths: tests)
 
 ## Platform Requirements
 
 **Development:**
-- Python 3.14+ (must have PEP 649 support)
-- `uv` package manager installed
-- Claude CLI tool available (for `ClaudeCLIBackend` tests in `tests/test_integration.py`)
-- `ANTHROPIC_API_KEY` environment variable (for PydanticAIBackend tests)
+- Python >=3.14
+- uv package manager
+- Claude CLI (external binary) for LLM integration
 
 **Production:**
-- Python 3.14+ runtime
-- Network access to LLM provider (Anthropic API for pydantic-ai backend, or local Claude CLI)
-
-## Optional Dependencies
-
-**Development group** (installed via `uv pip install -e ".[dev]"`):
-- pytest>=8.0
-- pytest-asyncio>=0.24
-- ruff>=0.8
+- Not applicable - library/REPL tool, not a deployed service
+- CLI entry point: `bae = "bae.cli:main"` installed via pip/uv
 
 ---
 
-*Stack analysis: 2026-02-04*
+*Stack analysis: 2026-02-14*

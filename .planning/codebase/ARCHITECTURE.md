@@ -1,139 +1,174 @@
 # Architecture
 
-**Analysis Date:** 2026-02-04
+**Analysis Date:** 2026-02-14
 
 ## Pattern Overview
 
-**Overall:** Declarative Graph with Type-Driven Topology Discovery
+**Overall:** Type-driven agent graphs with dependency injection
 
 **Key Characteristics:**
-- Node state is declared via Pydantic BaseModel fields
-- Graph topology is discovered from return type annotations on `__call__` methods
-- LM (Language Model) is injected as a tool, not embedded in the framework
-- Execution is synchronous and step-based with max-step protection
-- Python 3.14+ required for PEP 649 deferred annotation evaluation
+- Graph topology discovered from Python type hints on Node.__call__ return types
+- Execution state flows through immutable Node instances (Pydantic models)
+- Dependency injection via Annotated[T, Dep()] and Annotated[T, Recall()] markers
+- LM backend produces typed Node instances via constrained decoding (JSON schemas)
+- Async-first execution with topological sorting for parallel dependency resolution
 
 ## Layers
 
 **Node Layer:**
-- Purpose: Represents individual states in the agent graph; contains domain state and routing logic
+- Purpose: State containers and routing logic
 - Location: `bae/node.py`
-- Contains: `Node` base class (extends Pydantic BaseModel), `NodeConfig` (per-node LLM configuration)
-- Depends on: Pydantic 2.0+
-- Used by: Graph, LM backends, user application code
+- Contains: Node base class (Pydantic BaseModel), ellipsis detection, successor extraction
+- Depends on: `bae/lm.py` (LM protocol for type hints)
+- Used by: User-defined node classes, `bae/graph.py` execution loop
 
 **Graph Layer:**
-- Purpose: Discovers topology from node type hints; manages execution loop and validation
+- Purpose: Topology discovery and execution orchestration
 - Location: `bae/graph.py`
-- Contains: `Graph` class for topology discovery, execution, validation, and Mermaid visualization
-- Depends on: Node layer
-- Used by: Application entry points, LM backends
+- Contains: Graph class, discovery via BFS over type hints, async execution loop
+- Depends on: `bae/node.py`, `bae/resolver.py`, `bae/lm.py`, `bae/result.py`
+- Used by: CLI commands (`bae/cli.py`), user applications
 
-**LM Abstraction Layer:**
-- Purpose: Clean protocol for language model backends to produce typed node instances
+**Resolver Layer:**
+- Purpose: Dependency injection and trace recall
+- Location: `bae/resolver.py`
+- Contains: Field classification, topological sorting, concurrent dep resolution
+- Depends on: `bae/markers.py`, `bae/exceptions.py`
+- Used by: `bae/graph.py` execution loop (resolves fields before each node)
+
+**LM Layer:**
+- Purpose: Language model abstraction for typed output
 - Location: `bae/lm.py`
-- Contains: `LM` protocol (defines interface), `PydanticAIBackend` (pydantic-ai), `ClaudeCLIBackend` (subprocess)
-- Depends on: Node layer, pydantic-ai
-- Used by: Graph execution loop, user nodes
+- Contains: LM protocol, ClaudeCLIBackend, JSON schema transformations, fill/choose_type API
+- Depends on: `bae/resolver.py` (classify_fields)
+- Used by: `bae/graph.py` execution loop, `bae/node.py` default __call__
 
-**Compiler Layer (Not Wired):**
-- Purpose: DSPy compilation for prompt optimization (placeholder)
-- Location: `bae/compiler.py`
-- Contains: `CompiledGraph`, `node_to_signature()`, `compile_graph()` stubs
-- Depends on: Graph layer
-- Used by: Not currently integrated
+**CLI Layer:**
+- Purpose: Command-line interface and graph visualization
+- Location: `bae/cli.py`
+- Contains: Typer app, graph show/export/run commands, mermaid encoding
+- Depends on: `bae/graph.py`, `bae/lm.py`
+- Used by: End users via `bae` command
+
+**REPL Layer:**
+- Purpose: Interactive development environment with AI assistance
+- Location: `bae/repl/`
+- Contains: CortexShell (prompt_toolkit REPL), AI assistant, mode switching, task management
+- Depends on: Core bae types (Node, Graph, LM)
+- Used by: CLI entrypoint (`bae` with no args)
 
 ## Data Flow
 
-**Node Execution Cycle:**
+**Graph Execution Flow:**
 
-1. Graph starts with an initial node instance (state populated)
-2. Graph calls `node(lm=lm_backend)` which invokes `Node.__call__(lm)`
-3. Node's `__call__` method:
-   - Examines its own state
-   - Calls `lm.make(self, TargetType)` to produce a specific node type, OR
-   - Calls `lm.decide(self)` to let LLM choose among successors
-4. LM backend:
-   - Converts current node state to prompt via `_node_to_prompt(node)`
-   - Includes node docstring as context
-   - Calls Claude (via pydantic-ai or CLI) with schema for target type(s)
-   - Validates and returns typed instance
-5. Graph receives next node instance and repeats (step 2) or returns if None
+1. User creates start node instance with initial state
+2. Graph.run/arun() begins execution loop with empty trace
+3. For each node:
+   - resolve_fields() resolves Dep/Recall annotations via topological sort
+   - Resolved values set on node instance via object.__setattr__
+   - Node appended to trace
+   - Routing strategy determined (_get_routing_strategy):
+     - Terminal: exit loop
+     - Custom __call__: invoke directly (LM injected if _wants_lm)
+     - Ellipsis body: LM routing via choose_type/fill
+4. Loop terminates when current = None
+5. Return GraphResult with trace
+
+**Dependency Resolution Flow:**
+
+1. classify_fields() categorizes each field as dep/recall/plain
+2. build_dep_dag() constructs topological sorter from Dep annotations
+3. dag.prepare() orders deps by level
+4. For each level, asyncio.gather() resolves deps in parallel
+5. Results cached in dep_cache (keyed by callable identity)
+6. recall_from_trace() searches backwards through trace for type matches
+7. Return dict of resolved field values
+
+**LM Fill Flow:**
+
+1. Graph calls lm.fill(target_type, resolved, instruction, source)
+2. _build_plain_model() creates dynamic Pydantic model with only plain fields
+3. _build_fill_prompt() serializes source node + resolved context to JSON
+4. ClaudeCLIBackend calls `claude` subprocess with --json-schema
+5. Structured output parsed from CLI JSON stream
+6. validate_plain_fields() validates LLM output through plain model
+7. Merge resolved + validated fields via model_construct()
+8. Return fully populated target node instance
 
 **State Management:**
-- State flows forward: each node is immutable, next node is a new instance
-- No "prev" parameter or state stack - `self` IS the complete state
-- Terminal nodes return `None` to end the graph
+- Graph execution is stateless (pure function from start node → GraphResult)
+- Per-run state in dep_cache dict (shared across resolve_fields calls)
+- Trace is append-only list of Node instances
 
 ## Key Abstractions
 
 **Node:**
-- Purpose: Represents a step in agent reasoning; holds both state and routing logic
-- Examples: `Start(query=str)`, `Process(task=str)`, `Review(content=str)` from tests
-- Pattern: Subclass `Node`, define fields as Pydantic fields, implement `__call__(lm: LM) -> NextNodeType | AnotherType | None`
+- Purpose: State container with routing logic
+- Examples: `bae/node.py`, user-defined nodes in `examples/ootd.py`
+- Pattern: Pydantic BaseModel subclass with async __call__ returning Node | None
+
+**Dep/Recall Markers:**
+- Purpose: Declarative dependency injection via type annotations
+- Examples: `Annotated[str, Dep(get_data)]`, `Annotated[Analysis, Recall()]`
+- Pattern: Dataclass markers in Annotated metadata, consumed by resolver
 
 **Graph:**
-- Purpose: Discovers reachable nodes from type hints; runs execution loop safely
-- Examples: `graph = Graph(start=AnalyzeRequest)`
-- Pattern: Walk return type hints from start node using BFS; cache adjacency list in `_nodes`
+- Purpose: Topology container and execution engine
+- Examples: `Graph(start=AnalyzeRequest)` in user code
+- Pattern: Discover via BFS, execute via async loop with field resolution
 
-**LM (Language Model):**
-- Purpose: Protocol for producing typed node instances
-- Pattern: Implement `make(node: Node, target: type[T]) -> T` and `decide(node: Node) -> Node | None`
+**LM Protocol:**
+- Purpose: Backend-agnostic typed output interface
+- Examples: `ClaudeCLIBackend`, future OpenAI/Anthropic API backends
+- Pattern: Protocol with fill/choose_type methods, constrained decoding via JSON schemas
 
-**Backend:**
-- Purpose: Concrete LM implementation (pydantic-ai or Claude CLI)
-- Examples: `PydanticAIBackend(model="claude-sonnet")`, `ClaudeCLIBackend(model="claude-sonnet-4-20250514")`
-- Pattern: Accept node and target type(s), convert to prompt, call LLM, parse response
+**GraphResult:**
+- Purpose: Execution outcome with trace
+- Examples: `result.trace`, `result.result` (terminal node)
+- Pattern: Dataclass with Generic[T] for type-safe terminal access
 
 ## Entry Points
 
-**Graph.run():**
-- Location: `bae/graph.py:100-128`
-- Triggers: User calls `graph.run(start_node_instance, lm_backend)`
-- Responsibilities: Execute step-by-step, call `node(lm=lm)`, track steps, raise on max_steps exceeded
+**CLI Entry:**
+- Location: `bae/cli.py:main()`
+- Triggers: `bae` command
+- Responsibilities: Parse args, dispatch to subcommand or launch REPL
 
-**Node.__call__():**
-- Location: `bae/node.py:92-105`
-- Triggers: Graph calls node instance as callable
-- Responsibilities: Implement routing logic, call `lm.make()` or `lm.decide()`, return next node or None
+**REPL Entry:**
+- Location: `bae/repl/__init__.py:launch()`
+- Triggers: `bae` with no args
+- Responsibilities: Start async CortexShell REPL
 
-**LM.make():**
-- Location: `bae/lm.py:27-29` (protocol), implemented in backends
-- Triggers: Node's `__call__` calls `lm.make(self, TargetType)`
-- Responsibilities: Produce instance of specific target type; include current node state in prompt
+**Graph Execution Entry:**
+- Location: `bae/graph.py:Graph.run()` or `Graph.arun()`
+- Triggers: User code calls graph.run(start_node, lm=lm)
+- Responsibilities: Execute graph from start node, return GraphResult
 
-**LM.decide():**
-- Location: `bae/lm.py:31-33` (protocol), implemented in backends
-- Triggers: Node's `__call__` calls `lm.decide(self)`
-- Responsibilities: Extract successor types from node's return hint, let LLM choose, produce chosen node
+**Module Import:**
+- Location: `bae/__init__.py`
+- Triggers: `from bae import Node, Graph, LM, Dep, Recall`
+- Responsibilities: Export public API
 
 ## Error Handling
 
-**Strategy:** Exceptions for invalid configurations; RuntimeError for execution failures
+**Strategy:** Exception hierarchy with cause chaining and trace attachment
 
 **Patterns:**
-- `Node.successors()` and `Node.is_terminal()` raise nothing but can return empty set
-- `Graph.validate()` returns list of warnings/errors (does not raise)
-- `Graph.run()` raises `RuntimeError` if max_steps exceeded
-- `LM.decide()` raises `ValueError` if node has no successors and is not terminal
-- Backend `_run_cli()` raises `RuntimeError` on subprocess timeout or JSON parse failure
+- All exceptions inherit from BaeError with optional __cause__
+- DepError: Raised when Dep function fails, attaches node_type and trace
+- RecallError: Raised when Recall() finds no matching field in trace
+- FillError: Raised when LM validation fails after retries, attaches attempts
+- BaeLMError: Raised on LM API failures (timeout, network, invalid response)
+- Trace attached to errors in graph.py execution loop via `err.trace = trace`
 
 ## Cross-Cutting Concerns
 
-**Logging:** Not implemented; nodes use docstrings and field values for context
+**Logging:** Python logging module, logger in `bae/graph.py` for field resolution debugging
 
-**Validation:** Pydantic handles field validation at node instantiation; Graph validates topology
+**Validation:** Pydantic validation at LM boundary (validate_plain_fields), separate from dep/recall validation
 
-**Authentication:** Delegated to LM backends:
-- `PydanticAIBackend`: Inherits auth from pydantic-ai/ANTHROPIC_API_KEY
-- `ClaudeCLIBackend`: Inherits auth from Claude CLI tool (external)
-
-**Type System:**
-- Nodes are Pydantic BaseModel subclasses - fields are validated on construction
-- Return type hints use Python's union syntax (`A | B | None`) for declaring successors
-- Requires Python 3.14+ for forward references to work without `from __future__ import annotations`
+**Authentication:** Not applicable (LM backend handles credentials via Claude CLI)
 
 ---
 
-*Architecture analysis: 2026-02-04*
+*Architecture analysis: 2026-02-14*

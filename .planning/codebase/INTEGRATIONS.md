@@ -1,80 +1,73 @@
 # External Integrations
 
-**Analysis Date:** 2026-02-04
+**Analysis Date:** 2026-02-14
 
 ## APIs & External Services
 
-**Large Language Models:**
-- Anthropic Claude API - Primary LLM provider for agent decision-making
-  - SDK/Client: `pydantic-ai` (wraps Anthropic SDK)
-  - Auth: `ANTHROPIC_API_KEY` environment variable
-  - Used in: `bae/lm.py` - `PydanticAIBackend` class
-  - Default model: `anthropic:claude-sonnet-4-20250514`
-
-- Claude CLI - Alternative local LLM interface (subprocess-based)
-  - SDK/Client: Direct subprocess invocation
-  - Auth: None (uses local CLI authentication)
-  - Used in: `bae/lm.py` - `ClaudeCLIBackend` class
-  - Default model: `claude-sonnet-4-20250514`
+**Claude CLI:**
+- Claude CLI subprocess integration - Core LLM backend for node population
+  - SDK/Client: subprocess calls to `claude` binary
+  - Auth: ANTHROPIC_API_KEY (required by Claude CLI, not directly accessed by bae)
+  - Implementation: `bae/lm.py:317` (`ClaudeCLIBackend`)
+  - Features: JSON structured output, session persistence (for REPL AI), schema-constrained generation
+  - Flags used:
+    - `--json-schema` - Constrained decoding via structured output
+    - `--output-format json/text` - Response format control
+    - `--session-id/--resume` - Session persistence for conversational AI
+    - `--tools ""` - Disable built-in tools
+    - `--strict-mcp-config` - Disable MCP servers
+    - `--no-session-persistence` - Single-shot mode for graph nodes
 
 ## Data Storage
 
 **Databases:**
-- None currently. Bae is a stateless agent graph framework with no persistent storage.
+- None
 
 **File Storage:**
-- Local filesystem only - Test files and code artifacts
+- Local filesystem only
+  - REPL session storage: `bae/repl/store.py` - `.bae/sessions/` directory
+  - AI prompt templates: `bae/repl/ai_prompt.md`
 
 **Caching:**
-- In-memory agent cache only
-  - Implementation: `PydanticAIBackend._agents` dict caches `Agent` instances by output type tuple
-  - Location: `bae/lm.py` lines 41-56
-  - Scope: Per-backend-instance (not shared across instances)
+- None
 
 ## Authentication & Identity
 
 **Auth Provider:**
-- Anthropic API Key (environment variable)
-  - For PydanticAIBackend: Required for actual LLM calls
-  - Env var name: `ANTHROPIC_API_KEY`
-  - Used by: `pydantic-ai` Agent class when initialized with `anthropic:` model prefix
+- None (local tool)
 
-**Local CLI:**
-- Claude CLI tool - Requires local installation and authentication
-  - Used by: `ClaudeCLIBackend` in `bae/lm.py`
-  - Invocation: Direct subprocess call to `claude` command
-  - Schema format: JSON Schema passed via `--json-schema` flag
+**API Key Management:**
+- ANTHROPIC_API_KEY environment variable required for Claude CLI
+- No direct API key handling in bae code (delegated to Claude CLI)
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- None - Errors are raised as exceptions and propagated to caller
+- None
 
 **Logs:**
-- Standard output/stderr - Test file shows `-s` flag for pytest to capture output
-- Location: `tests/test_integration.py` suggests using `pytest -v -s` for visibility
+- stderr/stdout only
+- No structured logging framework detected
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Not applicable - Bae is a framework/library, not a hosted service
+- Not applicable - local CLI tool
 
 **CI Pipeline:**
-- None configured - No CI/CD setup files present
-- Tests run locally via `uv run pytest`
+- None detected
 
 ## Environment Configuration
 
 **Required env vars:**
-- `ANTHROPIC_API_KEY` - Required for PydanticAIBackend to make actual API calls
-  - Tests using PydanticAI are skipped if not set (see `tests/test_integration.py` line 78-81)
+- `ANTHROPIC_API_KEY` - For Claude CLI authentication (external dependency)
 
 **Optional env vars:**
-- None explicitly defined
+- `CLAUDECODE` - Explicitly filtered out in AI subprocess calls (`bae/repl/ai.py:214`)
 
 **Secrets location:**
-- Environment variable only (ANTHROPIC_API_KEY)
-- No `.env` file management (not part of project)
+- Shell environment (ANTHROPIC_API_KEY)
+- No .env files present
 
 ## Webhooks & Callbacks
 
@@ -82,38 +75,29 @@
 - None
 
 **Outgoing:**
-- None - Bae is a synchronous graph execution framework
+- None
 
-## LLM Backend Configuration
+## External Binaries
 
-**PydanticAIBackend:**
-- Location: `bae/lm.py` lines 36-111
-- Model parameter: `model` kwarg (default: `anthropic:claude-sonnet-4-20250514`)
-- Methods:
-  - `make(node, target)` - Generates single typed output
-  - `decide(node)` - Picks successor type from available options
-  - Internal: Uses pydantic-ai `Agent.run_sync()` for synchronous execution
+**Claude CLI:**
+- Required: `claude` binary in PATH
+- Purpose: LLM backend for all fill/choose_type operations
+- Invocation: `asyncio.create_subprocess_exec` in `bae/lm.py:371` and `bae/repl/ai.py:216`
+- Timeout: Configurable (default 20s for graph, 60s for REPL AI)
 
-**ClaudeCLIBackend:**
-- Location: `bae/lm.py` lines 113-230
-- Model parameter: `model` kwarg (default: `claude-sonnet-4-20250514`)
-- Timeout: `timeout` kwarg (default: 20 seconds)
-- Methods:
-  - `make(node, target)` - Uses two-step CLI process (generate schema, run CLI, validate)
-  - `decide(node)` - Two-step approach to avoid slow oneOf JSON schemas (pick type, then fill)
-  - Command format: `claude -p {prompt} --model {model} --output-format json --json-schema {schema}`
+**mermaid-cli (optional):**
+- Optional: `mmdc` binary for graph export
+- Purpose: Export graph visualizations to files
+- Referenced in: `bae/cli.py` graph export command
 
-## Integration Testing
+## Browser Integration
 
-**Test Environment:**
-- Location: `tests/test_integration.py`
-- PydanticAI tests: Conditional on `ANTHROPIC_API_KEY` environment variable
-- Claude CLI tests: No dependencies, assumes `claude` command is available
-- Test data: In-memory Node instances (no external databases)
-- Models used in tests:
-  - PydanticAI: `anthropic:claude-sonnet-4-20250514`
-  - CLI: `claude-sonnet-4-20250514`
+**mermaid.live:**
+- Web-based graph visualization
+- Implementation: `bae/cli.py:25` (`_encode_mermaid_for_live`)
+- Opens browser with encoded graph diagram
+- No API calls - URL-based state encoding
 
 ---
 
-*Integration audit: 2026-02-04*
+*Integration audit: 2026-02-14*
