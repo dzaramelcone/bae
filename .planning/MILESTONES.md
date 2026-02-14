@@ -73,3 +73,32 @@
 **What's next:** v2.0 Context Frames — Dep/Recall field annotations, implicit LM
 
 ---
+
+## v4.0 Cortex (Shipped: 2026-02-14)
+
+**Delivered:** NL-first augmented REPL where human and AI collaborate in a shared namespace — async shell with 4 modes, session store for cross-session memory, channel-based labeled I/O, AI agent with eval loop, and task lifecycle management.
+
+**Phases completed:** 14-20 (7 phases, 24 plans)
+
+**Key accomplishments:**
+- Async REPL shell with 4 modes (NL/PY/GRAPH/BASH), syntax highlighting, multiline editing, tab completion
+- RAG-friendly session store — SQLite + FTS5, all I/O labeled and indexed, cross-session persistence
+- Channel-based labeled output — color-coded prefixes, visibility toggle, graph wrapper (no bae source mods)
+- Reflective namespace — bae objects seeded, ns() introspection, REPL annotation resolution via sys.modules
+- AI agent in namespace — Claude CLI backend, eval loop (extract-execute-feedback), multi-session routing
+- Task lifecycle — TaskManager with process group kill, inline Ctrl-C menu, customizable toolbar widgets
+
+**Stats:**
+- 57 commits, 26 files changed, 4,951 lines (source + tests + prompt)
+- 245 tests passing
+- 2 days (2026-02-13 → 2026-02-14)
+
+**Tech debt accepted:**
+- AI hallucinates tool calls (prompt engineering iteration needed)
+- Eval output redundant display (GWT stream UX design deferred)
+- AI bash dispatch, streaming, GWT stream UX deferred to v5.0
+
+**What's next:** v5.0 — GWT-inspired stream UX, OTel observability, advanced features
+
+---
+

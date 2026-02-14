@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A framework for building agent graphs where nodes are Pydantic models and topology comes from type hints. Nodes are "context frames" — their fields assemble the information the LLM needs to produce the next node. Class names are instructions, return types are output schemas, and Field(description=...) provides explicit per-field hints. Three field sources: Dep(callable) for external data, Recall() for graph state, and plain fields for LLM generation. JSON structured output with constrained decoding for reliable fills. Fully async with parallel dep resolution.
+A framework for building agent graphs where nodes are Pydantic models and topology comes from type hints. Nodes are "context frames" — their fields assemble the information the LLM needs to produce the next node. Class names are instructions, return types are output schemas, and Field(description=...) provides explicit per-field hints. Three field sources: Dep(callable) for external data, Recall() for graph state, and plain fields for LLM generation. JSON structured output with constrained decoding for reliable fills. Fully async with parallel dep resolution. Ships with cortex — an NL-first augmented REPL where human and AI collaborate in a shared namespace.
 
 ## Core Value
 
@@ -37,12 +37,17 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 - ✓ Parallel dep resolution via asyncio.gather() — v3.0
 - ✓ Sync/async Dep(callable) mixing — v3.0
 - ✓ Nested model preservation in fill() — v3.0
+- ✓ Async REPL shell with 4 modes (NL/PY/GRAPH/BASH) — v4.0
+- ✓ Session store with SQLite + FTS5 for cross-session memory — v4.0
+- ✓ Channel-based labeled output with visibility toggle — v4.0
+- ✓ Reflective namespace with bae object seeding and introspection — v4.0
+- ✓ AI agent as namespace-callable with Claude CLI backend — v4.0
+- ✓ AI eval loop (extract-execute-feedback) with multi-session routing — v4.0
+- ✓ Task lifecycle with process group kill and customizable toolbar — v4.0
 
 ### Active
 
-<!-- Current scope: v4.0 Cortex -->
-
-(Defining in v4.0 milestone)
+(Next milestone not yet defined)
 
 ### Out of Scope
 
@@ -50,42 +55,36 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 - Validation error retry loops — DSPy optimization may solve this
 - Dynamic fan-out (runtime N) — async __call__ with manual gather is the escape hatch
 - Declarative fan-out (DepMap etc) — deferred until real use case demands it
-- Engineering method graph — build after REPL works
 - Semantic/vector search on context — deferred
 - DuckDB query backends — deferred
 - Celery distribution — YAGNI, architecture must not preclude it
 - Hot reloading / self-augmenting code — deferred
 - State snapshots/restore — deferred
-
-## Current Milestone: v4.0 Cortex
-
-**Goal:** Augmented async Python REPL where human and AI collaborate in a shared namespace — cortex is the core, bae provides agentic coherence.
-
-**Target features:**
-- Async REPL shell (prompt_toolkit + asyncio)
-- Channel-based I/O with multiplexed labeled streams
-- Reflective shared namespace with Python introspection
-- AI agent as a first-class Python object in the namespace
-- OTel span instrumentation for context tracking
+- IPython extension — owns event loop, conflicts with cortex architecture
+- Full-screen TUI — scrollback terminal sufficient
+- Auto-detect NL vs Python — ambiguous, explicit mode switching
+- Plugin/extension system — Python is the extension system
 
 ## Context
 
-Shipped v3.0 with 10,412 lines of Python.
+Shipped v4.0 Cortex with 4,951 lines in bae/repl/ + tests/repl/.
 
-Tech stack: Python 3.14+, Pydantic, pydantic-ai, dspy, Anthropic SDK.
+Total codebase: ~15,000 lines of Python across framework + REPL.
+
+Tech stack: Python 3.14+, Pydantic, pydantic-ai, dspy, Anthropic SDK, prompt_toolkit, Rich.
 
 Three LM backends: PydanticAIBackend, ClaudeCLIBackend, DSPyBackend — each with v1 (make/decide) and v2 (choose_type/fill) methods, all async.
 
-Reference implementation: `examples/ootd.py` — 3-node outfit recommendation graph with deps, recalls, and LLM-filled fields.
+Cortex architecture: Custom REPL on prompt_toolkit with 4 modes (NL/PY/GRAPH/BASH) sharing one Python namespace. All output flows through labeled channels. AI agent lives in namespace as callable object, uses Claude CLI subprocess with session persistence. Eval loop extracts code from AI responses, executes in shared namespace, feeds results back. SessionStore (SQLite + FTS5) persists all I/O for cross-session memory. TaskManager tracks async tasks with process group cleanup.
 
-346 tests (336 pass, 10 skip, 0 fail) + 5/5 E2E.
+Reference implementation: `examples/ootd.py` — 3-node outfit recommendation graph.
 
-v4.0 architecture: Custom REPL on prompt_toolkit (not extending IPython). Three modes (NL chat, Py exec, Graph bae-run) sharing one Python namespace. Channel-based IO multiplexing with labeled streams (like Docker container prefixes). AI object lives in namespace, callable from any mode. OTel spans for context tracking. Ephemeral spawned interfaces (Ghostty tabs, browser, VS Code) for HitL checkpoints. Brain naming theme — core module = "cortex".
+245 repl tests + 346 framework tests passing.
 
 ## Constraints
 
 - **Python**: 3.14+ — PEP 649 eliminates forward ref issues
-- **Dependencies**: pydantic, pydantic-ai, dspy, anthropic (SDK for transform_schema)
+- **Dependencies**: pydantic, pydantic-ai, dspy, anthropic, prompt_toolkit, rich
 - **Interface**: Async — parallel dep resolution, subgraph composition
 
 ## Key Decisions
@@ -94,20 +93,20 @@ v4.0 architecture: Custom REPL on prompt_toolkit (not extending IPython). Three 
 |----------|-----------|---------|
 | Class name as primary prompt source | Cleaner than docstring-heavy approach | ✓ Good — enforced in v2.0, docstrings made inert |
 | Two-step decide (pick type, then fill) | Avoids slow oneOf schemas | ✓ Good — became choose_type/fill in v2.0 |
-| No prev parameter | self has all needed state | ✓ Good |
-| LM as tool, not executor | User calls lm.make/decide from __call__ | ✓ Resolved — v2.0 made LM implicit, graph-level |
-| make/decide abstraction | May be redundant - revisit after DSPy | ✓ Resolved — kept as v1 escape hatch for custom __call__, v2 uses choose_type/fill |
 | Nodes are context frames | Fields ARE prompt context, class name IS instruction, return type IS output schema | ✓ Good — core v2.0 paradigm |
 | Dep(callable) for external data | Replaces v1 service injection via __call__ params | ✓ Good — DAG resolution with topo sort |
 | Recall() for graph state | Backward trace search with MRO type matching | ✓ Good — replaced Bind |
-| Kill Context and Bind markers | Pydantic field presence is sufficient | ✓ Good — both removed, ImportError on import |
-| LM is implicit | Set once on graph, per-node via NodeConfig | ✓ Good |
-| JSON structured fill | Claude CLI --json-schema for constrained decoding | ✓ Good — replaced XML, ~10-15s per fill |
-| Field(description=...) for LLM hints | Explicit opt-in, docstrings are developer docs | ✓ Good — _build_plain_model preserves FieldInfo |
+| JSON structured fill | Claude CLI --json-schema for constrained decoding | ✓ Good — replaced XML |
 | Full async, not threading | Correct long-term play, formulaic conversion | ✓ Good — native async across all backends |
-| Graph run/arun split | Sync wrapper for CLI, async for programmatic use | ✓ Good — clean boundary |
-| Dep supports sync + async callables | Runtime detection via inspect.iscoroutinefunction | ✓ Good — no migration burden |
 | getattr over model_dump in fill | Preserves nested BaseModel instances | ✓ Good — fixed v3.0 gap |
+| prompt_toolkit REPL (not IPython) | Cortex owns event loop, full control | ✓ Good — clean lifecycle |
+| Claude CLI subprocess for AI | No API key needed, session persistence, prompt caching | ✓ Good — zero config |
+| Shared namespace across modes | Single Python dict, all objects accessible everywhere | ✓ Good — enables AI eval loop |
+| Channels for output, store.record for input | Clean separation: channels = display + persist, input = persist only | ✓ Good — no bare print() |
+| sys.modules cortex registration | REPL-defined classes resolve annotations without production changes | ✓ Good — zero bae/ modifications |
+| Eval loop inside AI.__call__ | Self-contained, testable, not in shell dispatch | ✓ Good — clean separation |
+| Inline task menu (not dialog) | Simpler UX, keyboard-driven, permanent scrollback | ✓ Good — replaced checkboxlist_dialog |
+| Process group kill | start_new_session + os.killpg for clean subprocess tree cleanup | ✓ Good — no orphan processes |
 
 **Field annotation summary:**
 
@@ -119,9 +118,12 @@ v4.0 architecture: Custom REPL on prompt_toolkit (not extending IPython). Three 
 
 ## Known Issues
 
-- PydanticAIBackend.choose_type uses free-text string + fuzzy matching — may rip out PydanticAI entirely (LM proxies making backends commodity)
+- PydanticAIBackend.choose_type uses free-text string + fuzzy matching — may rip out PydanticAI entirely
 - tests/traces/json_structured_fill_reference.py drifted from real backend
-- Bump Python requirement to 3.14 stable when available
+- AI hallucinates tool calls — prompt needs explicit no-tools constraint
+- Eval output redundant display — GWT-inspired stream UX design needed
+- AI bash dispatch deferred (Claude XML tool calls need parsing)
+- AI streaming/progressive display deferred (NL responses currently blocking)
 
 ---
-*Last updated: 2026-02-13 after v4.0 Cortex milestone start*
+*Last updated: 2026-02-14 after v4.0 Cortex milestone*
