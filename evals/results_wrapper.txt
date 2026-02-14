@@ -1,0 +1,179 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.3, pytest-9.0.2, pluggy-1.6.0 -- /Users/dzaramelcone/lab/bae/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/dzaramelcone/lab/bae
+configfile: pyproject.toml
+plugins: anyio-4.12.1, asyncio-1.3.0, logfire-4.22.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 135 items / 90 deselected / 45 selected
+
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-What is a Graph in bae?-0] PASSED [  2%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-What is a Graph in bae?-1] PASSED [  4%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-What is a Graph in bae?-2] PASSED [  6%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-What's 2**100?-0] PASSED [  8%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-What's 2**100?-1] PASSED [ 11%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-What's 2**100?-2] PASSED [ 13%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-Explain how Dep works with an -0] PASSED [ 15%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-Explain how Dep works with an -1] PASSED [ 17%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-Explain how Dep works with an -2] PASSED [ 20%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-What variables do I have?-0] PASSED [ 22%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-What variables do I have?-1] PASSED [ 24%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-What variables do I have?-2] PASSED [ 26%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-Show me how to define a Node, -0] PASSED [ 28%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-Show me how to define a Node, -1] PASSED [ 31%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-wrapper_marker-Show me how to define a Node, -2] PASSED [ 33%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What is a Graph in bae?-0] PASSED [ 35%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What is a Graph in bae?-1] FAILED [ 37%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What is a Graph in bae?-2] FAILED [ 40%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What's 2**100?-0] PASSED [ 42%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What's 2**100?-1] PASSED [ 44%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What's 2**100?-2] PASSED [ 46%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-Explain how Dep works with an -0] PASSED [ 48%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-Explain how Dep works with an -1] PASSED [ 51%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-Explain how Dep works with an -2] PASSED [ 53%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What variables do I have?-0] PASSED [ 55%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What variables do I have?-1] PASSED [ 57%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What variables do I have?-2] PASSED [ 60%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-Show me how to define a Node, -0] PASSED [ 62%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-Show me how to define a Node, -1] PASSED [ 64%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-Show me how to define a Node, -2] PASSED [ 66%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What is a Graph in bae?-0] PASSED [ 68%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What is a Graph in bae?-1] FAILED [ 71%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What is a Graph in bae?-2] FAILED [ 73%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What's 2**100?-0] PASSED [ 75%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What's 2**100?-1] PASSED [ 77%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What's 2**100?-2] PASSED [ 80%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-Explain how Dep works with an -0] PASSED [ 82%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-Explain how Dep works with an -1] PASSED [ 84%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-Explain how Dep works with an -2] PASSED [ 86%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What variables do I have?-0] PASSED [ 88%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What variables do I have?-1] PASSED [ 91%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What variables do I have?-2] PASSED [ 93%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-Show me how to define a Node, -0] PASSED [ 95%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-Show me how to define a Node, -1] PASSED [ 97%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-Show me how to define a Node, -2] PASSED [100%]
+
+=================================== FAILURES ===================================
+_ test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What is a Graph in bae?-1] _
+evals/test_convention.py:45: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:277: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   A Graph is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
+E   
+E   Let me show you the Graph class in the namespace:
+E   
+E   <exec>
+E   ```python
+E   ns(Graph)
+E   ```
+E   </exec>
+_ test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What is a Graph in bae?-2] _
+evals/test_convention.py:45: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:277: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   A Graph is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
+E   
+E   Here's how it works:
+E   - Each node declares an output type (e.g., `class MyNode(Node[str])`)
+E   - The graph inspects type hints to build edges between nodes
+E   - Execution flows automatically based on which node accepts the current state type
+E   - Built-in nodes like `Branch`, `Loop`, and `Goto` provide control flow
+E   
+E   Let me show you what's available in your namespace:
+E   
+E   <exec>
+E   ```python
+E   ns()
+E   ```
+E   </exec>
+_ test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What is a Graph in bae?-1] _
+evals/test_convention.py:45: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:277: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   A Graph in bae is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
+E   
+E   Here's how it works:
+E   
+E   1. **Nodes define the steps**: Each Node class has typed fields and methods that process data.
+E   2. **Type hints drive routing**: The output type of one node determines which node runs next.
+E   3. **Execution flow**: The graph follows a path from a start node through intermediate nodes to an end node, based on type compatibility.
+E   
+E   Example structure:
+E   ```python
+E   # Illustrative example
+E   class StartNode(Node):
+E       def process(self) -> str:
+E           return "hello"
+E   
+E   class MiddleNode(Node):
+E       data: str  # expects str from previous node
+E       def process(self) -> int:
+E           return len(self.data)
+E   
+E   class EndNode(Node):
+E       count: int  # expects int from previous node
+E       def process(self) -> None:
+E           print(f"Length: {self.count}")
+E   
+E   # The graph automatically chains: StartNode -> MiddleNode -> EndNode
+E   ```
+E   
+E   This makes it easy to build multi-step agent workflows where each step is a self-contained Node and the type system ensures correct data flow between them.
+_ test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What is a Graph in bae?-2] _
+evals/test_convention.py:45: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:277: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   A Graph in bae is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
+E   
+E   Here's how it works:
+E   
+E   1. **Nodes define the graph structure** — Each Node class has typed fields and a `compute()` method that produces a typed output.
+E   2. **Type annotations drive routing** — When a node finishes, its output type determines which node runs next.
+E   3. **Execution flow** — The graph starts at an entry node and traverses through nodes until it reaches a terminal node (one with no outgoing edges).
+E   
+E   Example structure:
+E   ```python
+E   class StartNode(Node):
+E       def compute(self) -> str:
+E           return "hello"
+E   
+E   class MiddleNode(Node):
+E       data: str
+E       def compute(self) -> int:
+E           return len(self.data)
+E   
+E   class EndNode(Node):
+E       result: int
+E       def compute(self) -> None:
+E           print(f"Final result: {self.result}")
+E   
+E   # Build the graph
+E   graph = Graph([StartNode, MiddleNode, EndNode])
+E   
+E   # Execute: StartNode → MiddleNode → EndNode
+E   graph.run()
+E   ```
+E   
+E   Graphs are useful for building multi-step AI agents where each step depends on the output of the previous one, and the next step is determined automatically by type matching.
+=========================== short test summary info ============================
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-wrapper_marker-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-wrapper_marker-What is a Graph in bae?-2]
+=========== 4 failed, 41 passed, 90 deselected in 213.86s (0:03:33) ============

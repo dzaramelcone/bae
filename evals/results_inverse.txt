@@ -1,0 +1,213 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.3, pytest-9.0.2, pluggy-1.6.0 -- /Users/dzaramelcone/lab/bae/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/dzaramelcone/lab/bae
+configfile: pyproject.toml
+plugins: anyio-4.12.1, asyncio-1.3.0, logfire-4.22.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 135 items / 90 deselected / 45 selected
+
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-0] PASSED [  2%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-1] PASSED [  4%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-2] PASSED [  6%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What's 2**100?-0] PASSED [  8%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What's 2**100?-1] PASSED [ 11%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What's 2**100?-2] PASSED [ 13%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-Explain how Dep works with an -0] PASSED [ 15%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-Explain how Dep works with an -1] PASSED [ 17%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-Explain how Dep works with an -2] PASSED [ 20%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What variables do I have?-0] PASSED [ 22%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What variables do I have?-1] PASSED [ 24%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What variables do I have?-2] PASSED [ 26%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-Show me how to define a Node, -0] PASSED [ 28%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-Show me how to define a Node, -1] PASSED [ 31%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-Show me how to define a Node, -2] PASSED [ 33%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-0] PASSED [ 35%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-1] FAILED [ 37%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-2] FAILED [ 40%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What's 2**100?-0] PASSED [ 42%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What's 2**100?-1] PASSED [ 44%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What's 2**100?-2] PASSED [ 46%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Explain how Dep works with an -0] PASSED [ 48%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Explain how Dep works with an -1] PASSED [ 51%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Explain how Dep works with an -2] PASSED [ 53%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What variables do I have?-0] PASSED [ 55%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What variables do I have?-1] PASSED [ 57%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What variables do I have?-2] PASSED [ 60%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -0] PASSED [ 62%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -1] PASSED [ 64%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -2] PASSED [ 66%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-0] FAILED [ 68%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-1] FAILED [ 71%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-2] FAILED [ 73%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What's 2**100?-0] PASSED [ 75%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What's 2**100?-1] PASSED [ 77%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What's 2**100?-2] PASSED [ 80%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Explain how Dep works with an -0] PASSED [ 82%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Explain how Dep works with an -1] PASSED [ 84%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Explain how Dep works with an -2] PASSED [ 86%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What variables do I have?-0] PASSED [ 88%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What variables do I have?-1] PASSED [ 91%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What variables do I have?-2] PASSED [ 93%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -0] PASSED [ 95%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -1] PASSED [ 97%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -2] PASSED [100%]
+
+=================================== FAILURES ===================================
+_ test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-1] _
+evals/test_convention.py:45: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:277: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   A Graph is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
+E   
+E   Here's the core concept:
+E   
+E   ```python:example
+E   # Define nodes with typed inputs and outputs
+E   class Start(Node):
+E       def run(self, input: str) -> int:
+E           return len(input)
+E   
+E   class Process(Node):
+E       def run(self, input: int) -> str:
+E           return f"Length: {input}"
+E   
+E   # Build the graph from type hints
+E   graph = Graph(Start)
+E   ```
+E   
+E   The graph automatically connects nodes where one's output type matches another's input type. When you run the graph, it flows data through nodes until reaching a terminal state (no matching next node).
+_ test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-2] _
+evals/test_convention.py:45: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:277: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   A Graph is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
+E   
+E   Let me show you what's in the namespace:
+E   
+E   ```python
+E   ns()
+E   ```
+_ test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-0] _
+evals/test_convention.py:45: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:277: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   A **Graph** in bae is a directed agent graph built from Node type hints. It's the core execution engine that:
+E   
+E   1. **Routes execution** through nodes based on their type annotations
+E   2. **Chains nodes together** where each node's output type determines which node executes next
+E   3. **Manages state** by passing typed data between nodes
+E   4. **Handles branching** based on return types—different output types can route to different nodes
+E   
+E   Think of it as a state machine where nodes are the states and type signatures are the transitions. When a node returns data of a certain type, the graph looks for the next node that accepts that type as input, creating an automatic workflow.
+E   
+E   Here's the conceptual flow:
+E   ```python:example
+E   # Illustrative - how a Graph chains nodes
+E   class Graph:
+E       # Node 1 returns str
+E       def node1() -> str:
+E           return "hello"
+E       
+E       # Node 2 accepts str, returns int
+E       def node2(text: str) -> int:
+E           return len(text)
+E       
+E       # Graph automatically chains: node1() → node2() → result
+E   ```
+E   
+E   Graphs are especially useful for building multi-step AI agents where each step transforms data and passes it forward, with the routing happening automatically based on types rather than explicit control flow.
+_ test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-1] _
+evals/test_convention.py:45: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:277: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   A **Graph** in bae is a directed agent graph built from Node type hints. It orchestrates execution through a series of nodes based on their input/output type annotations.
+E   
+E   Here's how it works:
+E   
+E   1. **Type-driven routing**: Each Node has typed inputs and outputs. The Graph examines the type hints to determine the execution flow.
+E   2. **Node chaining**: When a node completes and produces output of type `T`, the Graph routes that output to the next node that expects input of type `T`.
+E   3. **Execution flow**: The Graph executes nodes sequentially (or conditionally) based on these type matches, creating an agent pipeline.
+E   
+E   So if you have:
+E   ```python:example
+E   class NodeA(Node):
+E       def invoke(self) -> str:
+E           return "hello"
+E   
+E   class NodeB(Node):
+E       message: str  # expects str input
+E       def invoke(self) -> int:
+E           return len(self.message)
+E   ```
+E   
+E   A Graph built from these nodes would automatically:
+E   - Run NodeA first (produces `str`)
+E   - Pass that `str` output to NodeB (which needs `str` input)
+E   - Continue the chain based on further type matches
+E   
+E   This makes bae graphs declarative and composable—you define what your agent does purely through types, and the framework handles the routing logic.
+_ test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-2] _
+evals/test_convention.py:45: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:277: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   A **Graph** in bae is a directed agent graph built from Node type hints. It's the core execution engine that:
+E   
+E   1. **Routes execution through nodes** based on type annotations—each node's output type determines which node runs next
+E   2. **Manages dependencies** between nodes using type signatures
+E   3. **Executes sequentially** following the type-driven graph structure
+E   
+E   Think of it like a state machine where nodes are states and their return types are transitions. The Graph automatically wires nodes together based on matching input/output types, creating a deterministic flow.
+E   
+E   For example:
+E   ```python:example
+E   # Illustrative: how a Graph chains nodes by type
+E   class StartNode(Node):
+E       def execute(self) -> str:
+E           return "hello"
+E   
+E   class ProcessNode(Node):
+E       data: str  # matches StartNode's output type
+E       
+E       def execute(self) -> int:
+E           return len(self.data)
+E   
+E   class EndNode(Node):
+E       count: int  # matches ProcessNode's output type
+E       
+E       def execute(self) -> None:
+E           print(f"Length: {self.count}")
+E   
+E   # Graph automatically connects: StartNode → ProcessNode → EndNode
+E   graph = Graph([StartNode, ProcessNode, EndNode])
+E   graph.run()
+E   ```
+E   
+E   The Graph handles all the wiring—you just define the nodes and their types.
+=========================== short test summary info ============================
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-2]
+=========== 5 failed, 40 passed, 90 deselected in 202.86s (0:03:22) ============
