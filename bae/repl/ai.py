@@ -81,7 +81,7 @@ class AI:
         label: str = "1",
         model: str = "claude-sonnet-4-20250514",
         timeout: int = 60,
-        max_eval_iters: int = 5,
+        max_eval_iters: int = 0,
     ) -> None:
         self._lm = lm
         self._router = router
@@ -100,7 +100,7 @@ class AI:
 
         Extracts Python code blocks from AI responses, executes them in the
         REPL namespace, and feeds results back as the next prompt. Loops
-        until no code blocks remain or max_eval_iters is reached.
+        until no code blocks remain. Set max_eval_iters > 0 to cap iterations.
         """
         parts: list[str] = []
         if self._call_count == 0 and self._store is not None:
@@ -117,27 +117,15 @@ class AI:
         await asyncio.sleep(0)  # cancellation checkpoint
         self._router.write("ai", response, mode="NL", metadata={"type": "response", "label": self._label})
 
-        for _ in range(self._max_eval_iters):
+        _iters = 0
+        while not self._max_eval_iters or _iters < self._max_eval_iters:
+            _iters += 1
             # Tool call tags take precedence over <run> blocks
-            tool_codes = translate_tool_calls(response)
-            if tool_codes:
+            tool_results = run_tool_calls(response)
+            if tool_results:
                 all_outputs = []
-                for tool_code in tool_codes:
-                    output = ""
-                    try:
-                        result, captured = await async_exec(tool_code, self._namespace)
-                        if asyncio.iscoroutine(result):
-                            result = await result
-                        output = captured
-                        if result is not None:
-                            output += repr(result)
-                        output = output or "(no output)"
-                    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
-                        raise
-                    except BaseException:
-                        output = traceback.format_exc()
-
-                    self._router.write("py", tool_code, mode="PY",
+                for tag, output in tool_results:
+                    self._router.write("py", tag, mode="PY",
                         metadata={"type": "tool_translated", "label": self._label})
                     if output:
                         self._router.write("py", output, mode="PY",
@@ -177,6 +165,10 @@ class AI:
             self._router.write("py", code, mode="PY", metadata={"type": "ai_exec", "label": self._label})
             if output:
                 self._router.write("py", output, mode="PY", metadata={"type": "ai_exec_result", "label": self._label})
+
+            # No-output with no extra blocks: nothing to feed back
+            if output == "(no output)" and extra == 0:
+                break
 
             # Build feedback
             feedback = f"[Output]\n{output}"
@@ -291,123 +283,104 @@ class AI:
         return f"ai:{self._label} -- await ai('question'). session {sid}, {n} calls."
 
 
-def _translate_read(arg: str) -> str:
+def _exec_read(arg: str) -> str:
     arg = arg.strip()
     m = _LINE_RANGE_RE.match(arg)
     if m:
-        return _translate_edit_read(arg)
-    return (
-        f"_c = open({arg!r}).read()\n"
-        f"print(_c[:{_MAX_TOOL_OUTPUT}])\n"
-        f"if len(_c) > {_MAX_TOOL_OUTPUT}: print('... (truncated)')"
-    )
+        return _exec_edit_read(arg)
+    content = Path(arg).read_text()
+    if len(content) > _MAX_TOOL_OUTPUT:
+        return content[:_MAX_TOOL_OUTPUT] + "\n... (truncated)"
+    return content
 
 
-def _translate_write(filepath: str, content: str) -> str:
+def _exec_write(filepath: str, content: str) -> str:
     fp = filepath.strip()
-    return (
-        f"open({fp!r}, 'w').write({content!r})\n"
-        f"print(f'Wrote {{len({content!r})}} chars to {fp}')"
-    )
+    Path(fp).parent.mkdir(parents=True, exist_ok=True)
+    Path(fp).write_text(content)
+    return f"Wrote {len(content)} chars to {fp}"
 
 
-def _translate_edit_read(arg: str) -> str:
+def _exec_edit_read(arg: str) -> str:
     arg = arg.strip()
     m = _LINE_RANGE_RE.match(arg)
     if m:
         fp = m.group(1).strip()
         s, e = int(m.group(2)), int(m.group(3))
-        return (
-            f"_lines = open({fp!r}).readlines()\n"
-            f"for i, ln in enumerate(_lines[{s-1}:{e}], start={s}):\n"
-            f"    print(f'{{i:4d}} | {{ln}}', end='')"
+        lines = Path(fp).read_text().splitlines(True)
+        return "".join(
+            f"{i:4d} | {ln}" for i, ln in enumerate(lines[s - 1:e], start=s)
         )
-    # No line range — fall back to full read
-    return (
-        f"_c = open({arg!r}).read()\n"
-        f"print(_c[:{_MAX_TOOL_OUTPUT}])\n"
-        f"if len(_c) > {_MAX_TOOL_OUTPUT}: print('... (truncated)')"
-    )
+    return _exec_read(arg)
 
 
-def _translate_edit_replace(filepath: str, start: int, end: int, content: str) -> str:
+def _exec_edit_replace(filepath: str, start: int, end: int, content: str) -> str:
     fp = filepath.strip()
-    return (
-        f"_lines = open({fp!r}).readlines()\n"
-        f"_new = {content!r}.splitlines(True)\n"
-        f"_lines[{start-1}:{end}] = _new\n"
-        f"open({fp!r}, 'w').writelines(_lines)\n"
-        f"print(f'Replaced lines {start}-{end} in {fp}')"
-    )
+    lines = Path(fp).read_text().splitlines(True)
+    lines[start - 1:end] = content.splitlines(True)
+    Path(fp).write_text("".join(lines))
+    return f"Replaced lines {start}-{end} in {fp}"
 
 
-def _translate_glob(pattern: str) -> str:
+def _exec_glob(pattern: str) -> str:
+    import glob as g
     p = pattern.strip()
-    return (
-        f"import glob as _g\n"
-        f"_hits = sorted(_g.glob({p!r}, recursive=True))\n"
-        f"print('\\n'.join(_hits[:{_MAX_TOOL_OUTPUT // 40}]))\n"
-        f"if len(_hits) > {_MAX_TOOL_OUTPUT // 40}: "
-        f"print(f'... ({{len(_hits)}} total)')"
-    )
+    hits = sorted(g.glob(p, recursive=True))
+    limit = _MAX_TOOL_OUTPUT // 40
+    result = "\n".join(hits[:limit])
+    if len(hits) > limit:
+        result += f"\n... ({len(hits)} total)"
+    return result or "(no matches)"
 
 
-def _translate_grep(arg: str) -> str:
-    arg = arg.strip().strip('"').strip("'")
-    # Split optional path restriction: <Grep:pattern path>
+def _exec_grep(arg: str) -> str:
+    arg = arg.strip()
     parts = arg.rsplit(" ", 1)
     if len(parts) == 2 and ("/" in parts[1] or parts[1].endswith(".py")):
-        pattern, path = parts[0], parts[1]
+        pattern, path = parts[0].strip('"').strip("'"), parts[1]
     else:
-        pattern, path = arg, "."
-    return (
-        f"import pathlib as _pl, re as _re\n"
-        f"_pat, _out, _skip = {pattern!r}, [], "
-        f"{{'.venv', '.git', '__pycache__', 'node_modules'}}\n"
-        f"for _f in sorted(_pl.Path({path!r}).rglob('*.py')):\n"
-        f"    if _skip & set(_f.parts): continue\n"
-        f"    try:\n"
-        f"        for _i, _ln in enumerate(_f.read_text().splitlines(), 1):\n"
-        f"            if _re.search(_pat, _ln):\n"
-        f"                _out.append(f'{{_f}}:{{_i}}:{{_ln}}')\n"
-        f"    except (OSError, UnicodeDecodeError): pass\n"
-        f"_txt = '\\n'.join(_out[:{_MAX_TOOL_OUTPUT // 80}])\n"
-        f"print(_txt if _txt else '(no matches)')\n"
-        f"if len(_out) > {_MAX_TOOL_OUTPUT // 80}: "
-        f"print(f'... ({{len(_out)}} total matches)')"
-    )
+        pattern, path = arg.strip('"').strip("'"), "."
+    skip = {".venv", ".git", "__pycache__", "node_modules"}
+    matches: list[str] = []
+    limit = _MAX_TOOL_OUTPUT // 80
+    p = Path(path)
+    files = [p] if p.is_file() else sorted(p.rglob("*.py"))
+    for f in files:
+        if skip & set(f.parts):
+            continue
+        try:
+            for i, ln in enumerate(f.read_text().splitlines(), 1):
+                if re.search(pattern, ln):
+                    matches.append(f"{f}:{i}:{ln}")
+        except (OSError, UnicodeDecodeError):
+            pass
+    result = "\n".join(matches[:limit])
+    if len(matches) > limit:
+        result += f"\n... ({len(matches)} total matches)"
+    return result or "(no matches)"
 
 
-def _normalize_tool(name: str) -> str:
-    """Normalize tool tag name to canonical short form."""
-    return {
-        "r": "R", "read": "R",
-        "w": "W", "write": "W",
-        "e": "E", "edit": "E",
-        "g": "G", "glob": "G",
-        "grep": "Grep",
-    }.get(name.lower(), name)
+_TOOL_NAMES = {
+    "r": "R", "read": "R",
+    "w": "W", "write": "W",
+    "e": "E", "edit": "E",
+    "g": "G", "glob": "G",
+    "grep": "Grep",
+}
+
+_TOOL_EXEC = {
+    "R": _exec_read,
+    "E": _exec_edit_read,
+    "G": _exec_glob,
+    "Grep": _exec_grep,
+}
 
 
-def _route_tool(tool: str, arg: str) -> str | None:
-    """Route a normalized tool name + arg to the appropriate translator."""
-    if tool == "R":
-        return _translate_read(arg)
-    if tool == "E":
-        return _translate_edit_read(arg)
-    if tool == "G":
-        return _translate_glob(arg)
-    if tool == "Grep":
-        return _translate_grep(arg)
-    return None
+def run_tool_calls(text: str) -> list[tuple[str, str]]:
+    """Detect and execute ALL tool call tags in prose.
 
-
-def translate_tool_calls(text: str) -> list[str]:
-    """Detect ALL terse tool call tags in prose and return Python code strings.
-
-    Returns empty list if no tool call tags found. Skips tags inside
-    <run>...</run> blocks or markdown fences. Tool calls are independent
-    operations -- ALL tags in a response are translated, not just the first.
+    Returns list of (description, output) pairs. Empty list if no tags found.
+    Skips tags inside <run>...</run> blocks or markdown fences.
 
     Accepts case-insensitive tags, full word variants (Read, Write, Edit,
     Glob, Grep), and OSC 8 hyperlink-wrapped tool calls.
@@ -416,42 +389,57 @@ def translate_tool_calls(text: str) -> list[str]:
     prose = _EXEC_BLOCK_RE.sub("", text)
     prose = re.sub(r"```.*?```", "", prose, flags=re.DOTALL)
 
-    results: list[tuple[int, str]] = []
-    # Track matched spans to avoid double-matching (W/E-replace vs single-line)
+    # Collect (position, tag_text, callable) triples
+    pending: list[tuple[int, str, object]] = []
     consumed: set[int] = set()
 
-    # Collect Write tags (group 2=filepath, group 3=content after regex change)
+    # Write tags (group 2=filepath, group 3=content)
     for wm in _WRITE_TAG_RE.finditer(prose):
-        results.append((wm.start(), _translate_write(wm.group(2), wm.group(3))))
+        tag = wm.group(0).split("\n", 1)[0].strip()
+        pending.append((wm.start(), tag,
+                        lambda fp=wm.group(2), c=wm.group(3): _exec_write(fp, c)))
         consumed.update(range(wm.start(), wm.end()))
 
-    # Collect Edit-with-replacement tags (group 2=filepath, 3=start, 4=end, 5=content)
+    # Edit-with-replacement (group 2=filepath, 3=start, 4=end, 5=content)
     for em in _EDIT_REPLACE_RE.finditer(prose):
-        results.append((em.start(), _translate_edit_replace(
-            em.group(2), int(em.group(3)), int(em.group(4)), em.group(5))))
+        tag = em.group(0).split("\n", 1)[0].strip()
+        pending.append((em.start(), tag,
+                        lambda fp=em.group(2), s=int(em.group(3)),
+                        e=int(em.group(4)), c=em.group(5): _exec_edit_replace(fp, s, e, c)))
         consumed.update(range(em.start(), em.end()))
 
-    # Collect single-line tags (R/Read, E/Edit, G/Glob, Grep)
+    # Single-line tags
     for m in _TOOL_TAG_RE.finditer(prose):
         if m.start() in consumed:
             continue
-        tool = _normalize_tool(m.group(1))
-        code = _route_tool(tool, m.group(2))
-        if code:
-            results.append((m.start(), code))
+        tool = _TOOL_NAMES.get(m.group(1).lower())
+        fn = _TOOL_EXEC.get(tool) if tool else None
+        if fn:
+            tag = m.group(0).strip()
+            pending.append((m.start(), tag,
+                            lambda f=fn, a=m.group(2): f(a)))
 
-    # Collect OSC 8 hyperlink-wrapped tool calls
+    # OSC 8 hyperlink-wrapped tool calls
     for m in _OSC8_TOOL_RE.finditer(prose):
         if m.start() in consumed:
             continue
-        tool = _normalize_tool(m.group(1))
-        code = _route_tool(tool, m.group(2))
-        if code:
-            results.append((m.start(), code))
+        tool = _TOOL_NAMES.get(m.group(1).lower())
+        fn = _TOOL_EXEC.get(tool) if tool else None
+        if fn:
+            tag = f"<{m.group(1)}:{m.group(2)}>"
+            pending.append((m.start(), tag,
+                            lambda f=fn, a=m.group(2): f(a)))
 
-    # Sort by position and return code strings only
-    results.sort(key=lambda x: x[0])
-    return [code for _, code in results]
+    # Execute in order
+    pending.sort(key=lambda x: x[0])
+    results: list[tuple[str, str]] = []
+    for _, tag, fn in pending:
+        try:
+            output = fn()
+        except Exception as exc:
+            output = f"{type(exc).__name__}: {exc}"
+        results.append((tag, output))
+    return results
 
 
 def _load_prompt() -> str:
