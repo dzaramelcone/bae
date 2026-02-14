@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-14)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v5.0 Stream Views — Phase 22 (Tool Call Translation)
+**Current focus:** v5.0 Stream Views — Phase 23
 
 ## Current Position
 
-Phase: 22 of 25 (Tool Call Translation)
-Plan: 22-01 complete (1 of 2)
-Status: Plan 22-01 complete, ready for Plan 22-02
-Last activity: 2026-02-14 — Plan 22-01 complete (translate_tool_calls pure function)
+Phase: 23 of 25
+Plan: ready for Phase 23
+Status: Phase 22 complete (tool call translation pipeline)
+Last activity: 2026-02-14 — Phase 22 complete (eval loop integration + prompt vocabulary)
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 [███___] 30%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 [████__] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 69 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 3 v5.0)
+- Total plans completed: 70 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 4 v5.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -38,6 +38,7 @@ Recent context for v5.0:
 - **Execution convention: xml_tag** -- `<run>code</run>` for executable, regular fences for illustrative. 100% convention compliance across all models. Selected over fence_annotation (97.2%) for clean separation.
 - **xml_tag implemented** -- extract_executable() with `<run>` regex replaces extract_code(). Eval loop executes only first block. No backward compat (bare fences no longer execute).
 - **translate_tool_calls() implemented** -- Pure function: text -> list[str] of Python code. All 5 tool types (R, W, E, G, Grep). Fence/run exclusion. ALL tags translated (list return). Output truncation to 4000 chars.
+- **Tool call translation wired into eval loop** -- translate_tool_calls() checked before extract_executable() on each iteration. Tool tags take precedence over `<run>` blocks. All tool calls executed independently, outputs combined with --- separator into single [Tool output] feedback. System prompt teaches AI all 5 tag formats with reference table and fewshot examples.
 
 ### Pending Todos
 
@@ -52,6 +53,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 22-01-PLAN.md
+Stopped at: Completed Phase 22 (22-02-PLAN.md)
 Branch: main
 Resume file: None
