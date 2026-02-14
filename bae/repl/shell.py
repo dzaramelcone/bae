@@ -29,7 +29,7 @@ from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mo
 from bae.repl.namespace import seed
 from bae.repl.store import SessionStore
 from bae.repl.tasks import TaskManager
-from bae.repl.views import UserView
+from bae.repl.views import UserView, ViewMode, VIEW_CYCLE, VIEW_FORMATTERS
 from bae.repl.toolbar import (
     TASKS_PER_PAGE,
     ToolbarConfig,
@@ -119,6 +119,13 @@ def _build_key_bindings(shell: CortexShell) -> KeyBindings:
         """Shift+Tab cycles modes."""
         idx = MODE_CYCLE.index(shell.mode)
         shell.mode = MODE_CYCLE[(idx + 1) % len(MODE_CYCLE)]
+        event.app.invalidate()
+
+    @kb.add("c-v")
+    def cycle_view(event):
+        """Ctrl+V cycles view modes."""
+        idx = VIEW_CYCLE.index(shell.view_mode)
+        shell._set_view(VIEW_CYCLE[(idx + 1) % len(VIEW_CYCLE)])
         event.app.invalidate()
 
     @kb.add("enter")
@@ -222,7 +229,8 @@ class CortexShell:
                 name, cfg["color"], store=self.store, markdown=cfg.get("markdown", False)
             )
         self.namespace["channels"] = self.router
-        self.router.py._formatter = UserView()
+        self.view_mode = ViewMode.USER
+        self._set_view(ViewMode.USER)
         from bae.lm import ClaudeCLIBackend
 
         self._lm = ClaudeCLIBackend()
@@ -251,6 +259,7 @@ class CortexShell:
                     "bottom-toolbar": "bg:#1c1c1c #808080",
                     "bottom-toolbar.text": "",
                     "toolbar.mode": "bg:#303030 #ffffff bold",
+                    "toolbar.view": "bg:#303030 #ffaf87",
                     "toolbar.tasks": "fg:ansiyellow bold",
                     "toolbar.mem": "#808080",
                     "toolbar.cwd": "#808080",
@@ -298,6 +307,13 @@ class CortexShell:
         self._active_session = label
         self.ai = self._get_or_create_session(label)
         self.namespace["ai"] = self.ai
+
+    def _set_view(self, mode: ViewMode) -> None:
+        """Switch all channels to the given view mode."""
+        self.view_mode = mode
+        formatter = VIEW_FORMATTERS[mode]()
+        for ch in self.router._channels.values():
+            ch._formatter = formatter
 
     async def _run_nl(self, text: str) -> None:
         """NL mode: AI conversation, self-contained error handling.
