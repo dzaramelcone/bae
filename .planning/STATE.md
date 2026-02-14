@@ -102,6 +102,7 @@ v4.0 architectural decisions:
 - async_exec returns unawaited coroutine for async code -- caller tracks via TaskManager, not inline await
 - prompt_toolkit Condition filter gates digit/arrow/esc bindings to task menu mode only
 - PY async expressions tracked as mode="py" tasks -- visible in toolbar count and cancellable via menu
+- Concurrent AI calls (asyncio.gather) already work -- responses interleave on [ai] channel, just need session indicators (e.g. [ai:1]) to distinguish
 
 ### Pending Todos
 
