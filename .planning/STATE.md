@@ -48,7 +48,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##########] 100%
 | 20-01 | Rich markdown + task menu scrollback | 4min | 2 | 5 |
 | 20-02 | Multi-session AI + cross-session memory | 3min | 1 | 5 |
 | 20-03 | AI eval loop + concurrent session tests | 3min | 2 | 3 |
-| 20-04 | Gap closure: coroutine safety in PY dispatch | 2min | 2 | 4 |
+| 20-04 | Gap closure: coroutine crash + AI prompt rewrite | 3min | 2 | 3 |
 | 20-05 | Gap closure: session indicator + eval output tee | 2min | 2 | 4 |
 
 ## Accumulated Context
@@ -120,6 +120,8 @@ v4.0 architectural decisions:
 - [Phase 20]: _send() extracted from __call__ for reusable subprocess communication
 - [Phase 20]: Channel._display metadata label -- label_text computed once before markdown/non-markdown branch
 - [Phase 20]: Eval loop output tee -- output var initialized before try block so error path can also set it for display
+- [Phase 20]: Coroutine collection guard via _contains_coroutines() before repr() -- .close() each to prevent RuntimeWarning
+- [Phase 20]: AI prompt defaults to NL answers with explicit "When to write code" criteria -- stops runaway code generation loops
 
 ### Pending Todos
 
@@ -136,6 +138,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 20-05-PLAN.md (gap closure: session indicator + eval output tee)
+Stopped at: Completed 20-04-PLAN.md (gap closure: coroutine crash + AI prompt rewrite)
 Branch: main
 Resume file: None
