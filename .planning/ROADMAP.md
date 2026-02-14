@@ -50,7 +50,7 @@
 - [x] **Phase 17: Namespace** - Reflective shared namespace with bae objects and introspection
 - [ ] **Phase 18: AI Agent** - NL-first AI operating in conversation while producing correct code
 - [x] **Phase 19: Task Lifecycle** - Background task management and custom prompt configuration
-- [ ] **Phase 20: AI Eval Loop** - AI executes code/commands in REPL namespace and bash, pipes results back into conversation
+- [x] **Phase 20: AI Eval Loop** - AI executes code/commands in REPL namespace and bash, pipes results back into conversation
 
 ## Phase Details
 
@@ -171,8 +171,8 @@ Plans:
 - [x] 20-01-PLAN.md — Rich markdown rendering + task menu scrollback
 - [x] 20-02-PLAN.md — Multi-session AI management + cross-session memory
 - [x] 20-03-PLAN.md — AI eval loop (extract-execute-feedback) + concurrent session tests
-- [ ] 20-04-PLAN.md — Gap closure: unawaited coroutine crash fix + AI prompt rewrite
-- [ ] 20-05-PLAN.md — Gap closure: channel session indicators + eval output tee
+- [x] 20-04-PLAN.md — Gap closure: unawaited coroutine crash fix + AI prompt rewrite
+- [x] 20-05-PLAN.md — Gap closure: channel session indicators + eval output tee
 
 ## Progress
 
@@ -200,7 +200,7 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19 -> 20
 | 17. Namespace | v4.0 | 3/3 | Complete | 2026-02-13 |
 | 18. AI Agent | v4.0 | 2/2 | Complete | 2026-02-13 |
 | 19. Task Lifecycle | v4.0 | 5/5 | Complete | 2026-02-14 |
-| 20. AI Eval Loop | v4.0 | 3/5 | In Progress | |
+| 20. AI Eval Loop | v4.0 | 5/5 | Complete | 2026-02-14 |
 
 ---
 *Last updated: 2026-02-14 after creating gap closure plans for Phase 20*
