@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v4.0 Cortex — Phase 18 AI Agent
+**Current focus:** v4.0 Cortex — Phase 19 Task Lifecycle
 
 ## Current Position
 
-Phase: 18 of 19 (AI Agent)
-Plan: 2 of 2 complete
-Status: Phase complete
-Last activity: 2026-02-13 -- AI wired into shell with CLI backend, NL mode live
+Phase: 19 of 19 (Task Lifecycle)
+Plan: 1 of 2 complete
+Status: In progress
+Last activity: 2026-02-13 -- ToolbarConfig class TDD'd with built-in widgets
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [########-] 83%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [#########] 92%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 56 (13 v1.0 + 21 v2.0 + 9 v3.0 + 13 v4.0)
+- Total plans completed: 57 (13 v1.0 + 21 v2.0 + 9 v3.0 + 14 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -40,6 +40,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [########-] 83%
 | 17-03 | Gap closure: REPL annotation resolution | 2min | 2 | 2 |
 | 18-01 | AI class (CLI backend) | 5min | 2 | 3 |
 | 18-02 | Shell AI wiring | 2min | 2 | 2 |
+| 19-01 | ToolbarConfig (TDD) | 2min | 2 | 2 |
 
 ## Accumulated Context
 
@@ -85,6 +86,8 @@ v4.0 architectural decisions:
 - CLAUDECODE env var unset in subprocess to allow nested CLI invocation
 - ClaudeCLIBackend for ai.fill/choose_type -- consistent no-API-key approach
 - AI.__call__ owns [ai] channel output; shell NL handler only catches errors
+- ToolbarConfig widget factories use closures over shell object -- deferred MODE_NAMES import avoids circular imports
+- MODE_NAMES values used as-is in toolbar widgets (uppercase PY/NL/GRAPH/BASH)
 
 ### Pending Todos
 
@@ -101,6 +104,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Phase 18 complete (AI Agent -- 2 of 2 plans done, UAT passed with noted future work)
+Stopped at: Completed 19-01-PLAN.md (ToolbarConfig TDD -- 1 of 2 phase 19 plans done)
 Branch: main
 Resume file: None
