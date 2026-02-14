@@ -3,11 +3,16 @@
 UserView renders AI code execution as framed Rich Panels with syntax
 highlighting and buffered code+output grouping. Non-AI writes fall
 through to standard color-coded prefix display.
+
+DebugView renders raw channel data with full metadata headers.
+
+AISelfView labels writes with AI-perspective tags (ai-output, exec-code, etc).
 """
 
 from __future__ import annotations
 
 import os
+from enum import Enum
 from io import StringIO
 
 from prompt_toolkit import print_formatted_text
@@ -117,3 +122,68 @@ class UserView:
                 ("", line),
             ])
             print_formatted_text(text)
+
+
+class DebugView:
+    """Raw channel data with full metadata headers for debugging.
+
+    Renders [channel] key=value header followed by indented content lines.
+    No Rich panels, no syntax highlighting, no markdown -- raw data only.
+    """
+
+    def render(self, channel_name, color, content, *, metadata=None):
+        meta = metadata or {}
+        meta_str = " ".join(f"{k}={v}" for k, v in sorted(meta.items()))
+        header = f"[{channel_name}] {meta_str}" if meta_str else f"[{channel_name}]"
+        print_formatted_text(FormattedText([(f"{color} bold", header)]))
+        for line in content.splitlines():
+            print_formatted_text(FormattedText([
+                ("fg:#808080", "  "),
+                ("", line),
+            ]))
+
+
+class AISelfView:
+    """AI-perspective display labeling each write by semantic role.
+
+    Tags: ai-output, exec-code, exec-result, tool-call, tool-output, error.
+    No buffering, no transformation, no Rich panels.
+    """
+
+    _tag_map = {
+        "response": "ai-output",
+        "ai_exec": "exec-code",
+        "ai_exec_result": "exec-result",
+        "tool_translated": "tool-call",
+        "tool_result": "tool-output",
+        "error": "error",
+    }
+
+    def render(self, channel_name, color, content, *, metadata=None):
+        meta = metadata or {}
+        content_type = meta.get("type", "")
+        tag = self._tag_map.get(content_type, content_type or channel_name)
+        if "label" in meta:
+            tag = f"{tag}:{meta['label']}"
+        print_formatted_text(FormattedText([("fg:#b0b040 bold", f"[{tag}]")]))
+        for line in content.splitlines():
+            print_formatted_text(FormattedText([
+                ("fg:#808080", "  "),
+                ("", line),
+            ]))
+
+
+class ViewMode(Enum):
+    """Display modes for channel content rendering."""
+    USER = "user"
+    DEBUG = "debug"
+    AI_SELF = "ai-self"
+
+
+VIEW_CYCLE: list[ViewMode] = [ViewMode.USER, ViewMode.DEBUG, ViewMode.AI_SELF]
+
+VIEW_FORMATTERS: dict[ViewMode, type] = {
+    ViewMode.USER: UserView,
+    ViewMode.DEBUG: DebugView,
+    ViewMode.AI_SELF: AISelfView,
+}
