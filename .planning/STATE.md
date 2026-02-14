@@ -110,6 +110,7 @@ v4.0 architectural decisions:
 - AI auto code extraction + eval loop (AI produces code → extract → exec in namespace → feed output back)
 - AI markdown rendering for [ai] channel output
 - AI streaming/progressive display for NL responses (currently blocking)
+- Task menu UX: render as numbered list below input instead of in toolbar
 
 ### Blockers/Concerns
 

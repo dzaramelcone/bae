@@ -55,11 +55,15 @@ skipped: 0
 ## Gaps
 
 - truth: "AI task cancellable via Ctrl-C task menu during NL query"
-  status: failed
+  status: fixed
   reason: "User reported: AI tasks cause stuttering/ignoring inputs so ctrl+c is ignored"
   severity: major
   test: 7
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "AI subprocess inherits parent stdin fd -- Claude CLI and prompt_toolkit compete for same stdin, causing dropped keystrokes and input lag. Missing stdin=asyncio.subprocess.DEVNULL in create_subprocess_exec call."
+  artifacts:
+    - path: "bae/repl/ai.py"
+      issue: "create_subprocess_exec missing stdin=DEVNULL -- subprocess inherits terminal stdin"
+  fix_applied:
+    - "stdin=asyncio.subprocess.DEVNULL added to ai.py and bash.py (cd66894)"
+    - "Session reset after CancelledError to prevent lock errors (28ea212)"
+  debug_session: ".planning/debug/ai-input-stutter.md"
