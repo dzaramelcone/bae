@@ -256,6 +256,15 @@ class TestPromptFile:
         prompt = _load_prompt()
         assert "Code execution convention" in prompt
 
+    def test_prompt_mentions_tool_tags(self):
+        """System prompt contains all 5 tool tag formats."""
+        prompt = _load_prompt()
+        assert "<R:" in prompt
+        assert "<W:" in prompt
+        assert "<E:" in prompt
+        assert "<G:" in prompt
+        assert "<Grep:" in prompt
+
 
 # --- TestAILabel ---
 

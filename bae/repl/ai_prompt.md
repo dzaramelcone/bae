@@ -69,7 +69,39 @@ Assistant:
 ns(graph)
 </run>
 </example>
+
+<example>
+User: what's in src/main.py?
+Assistant:
+<R:src/main.py>
+</example>
+
+<example>
+User: find all Python test files
+Assistant:
+<G:tests/**/*.py>
+</example>
+
+<example>
+User: search for uses of asyncio.gather
+Assistant:
+<Grep:asyncio.gather>
+</example>
 </examples>
+
+## File and search tools
+You have shorthand tags for file operations. These execute directly -- no <run> block needed.
+
+| Tag | Purpose | Example |
+|-----|---------|---------|
+| `<R:path>` | Read file | `<R:src/main.py>` |
+| `<W:path>content</W>` | Write file | `<W:out.txt>hello</W>` |
+| `<E:path:start-end>` | Show lines | `<E:src/main.py:10-25>` |
+| `<E:path:start-end>new content</E>` | Replace lines | `<E:src/main.py:10-15>fixed code</E>` |
+| `<G:pattern>` | Find files | `<G:src/**/*.py>` |
+| `<Grep:pattern>` | Search content | `<Grep:def main>` |
+
+Tags go on their own line. Line numbers are 1-based, inclusive. Output is truncated to 4000 chars. Use `<E:path:start-end>` for targeted reads of large files.
 
 ## Tools
 - `ns()` list all namespace objects with types.
