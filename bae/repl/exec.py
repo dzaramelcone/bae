@@ -11,6 +11,15 @@ from io import StringIO
 _EXPR_CAPTURED = object()
 
 
+def _ensure_cortex_module(namespace: dict) -> None:
+    """Register <cortex> as a module so get_type_hints resolves REPL-defined classes."""
+    mod = sys.modules.get('<cortex>')
+    if mod is None:
+        mod = types.ModuleType('<cortex>')
+        sys.modules['<cortex>'] = mod
+    mod.__dict__.update(namespace)
+
+
 async def async_exec(code: str, namespace: dict) -> tuple[object | None, str]:
     """Execute code with PyCF_ALLOW_TOP_LEVEL_AWAIT, capturing stdout.
 
@@ -31,6 +40,7 @@ async def async_exec(code: str, namespace: dict) -> tuple[object | None, str]:
         expr_captured = True
         ast.fix_missing_locations(tree)
 
+    _ensure_cortex_module(namespace)
     compiled = compile(tree, "<cortex>", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
     fn = types.FunctionType(compiled, namespace)
 
