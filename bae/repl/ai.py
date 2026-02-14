@@ -34,19 +34,28 @@ _EXEC_BLOCK_RE = re.compile(
 _MAX_TOOL_OUTPUT = 4000
 
 _TOOL_TAG_RE = re.compile(
-    r"^[ \t]*<(R|E|G|Grep):([^>]+)>\s*$",
-    re.MULTILINE,
+    r"^[ \t]*<(R|Read|E|Edit|G|Glob|Grep):([^>]+)>\s*$",
+    re.MULTILINE | re.IGNORECASE,
 )
 
 _WRITE_TAG_RE = re.compile(
-    r"^[ \t]*<W:([^>]+)>\s*\n(.*?)\n[ \t]*</W>",
-    re.DOTALL | re.MULTILINE,
+    r"^[ \t]*<(W|Write):([^>]+)>\s*\n(.*?)\n[ \t]*</(W|Write)>",
+    re.DOTALL | re.MULTILINE | re.IGNORECASE,
 )
 
 _EDIT_REPLACE_RE = re.compile(
-    r"^[ \t]*<E:([^:>]+):(\d+)-(\d+)>\s*\n(.*?)\n[ \t]*</E>",
-    re.DOTALL | re.MULTILINE,
+    r"^[ \t]*<(E|Edit):([^:>]+):(\d+)-(\d+)>\s*\n(.*?)\n[ \t]*</(E|Edit)>",
+    re.DOTALL | re.MULTILINE | re.IGNORECASE,
 )
+
+# OSC 8 hyperlink: \033]8;params;ToolName:args\033\\ or \007
+_OSC8_TOOL_RE = re.compile(
+    r"\033\]8;[^;]*;(Read|Write|Edit|Glob|Grep|R|W|E|G):([^\033\007]+)(?:\033\\|\007)",
+    re.IGNORECASE,
+)
+
+# Line range suffix in Read args: path:start-end or path:start:end
+_LINE_RANGE_RE = re.compile(r"^(.+?):(\d+)[-:](\d+)$")
 
 MAX_CONTEXT_CHARS = 2000
 _PROMPT_FILE = Path(__file__).parent / "ai_prompt.md"
@@ -282,10 +291,13 @@ class AI:
         return f"ai:{self._label} -- await ai('question'). session {sid}, {n} calls."
 
 
-def _translate_read(filepath: str) -> str:
-    fp = filepath.strip()
+def _translate_read(arg: str) -> str:
+    arg = arg.strip()
+    m = _LINE_RANGE_RE.match(arg)
+    if m:
+        return _translate_edit_read(arg)
     return (
-        f"_c = open({fp!r}).read()\n"
+        f"_c = open({arg!r}).read()\n"
         f"print(_c[:{_MAX_TOOL_OUTPUT}])\n"
         f"if len(_c) > {_MAX_TOOL_OUTPUT}: print('... (truncated)')"
     )
@@ -300,17 +312,22 @@ def _translate_write(filepath: str, content: str) -> str:
 
 
 def _translate_edit_read(arg: str) -> str:
-    parts = arg.rsplit(":", 1)
-    fp = parts[0].strip()
-    if len(parts) == 2 and "-" in parts[1]:
-        start, end = parts[1].split("-", 1)
-        s, e = int(start), int(end)
+    arg = arg.strip()
+    m = _LINE_RANGE_RE.match(arg)
+    if m:
+        fp = m.group(1).strip()
+        s, e = int(m.group(2)), int(m.group(3))
         return (
             f"_lines = open({fp!r}).readlines()\n"
             f"for i, ln in enumerate(_lines[{s-1}:{e}], start={s}):\n"
             f"    print(f'{{i:4d}} | {{ln}}', end='')"
         )
-    return _translate_read(fp)
+    # No line range — fall back to full read
+    return (
+        f"_c = open({arg!r}).read()\n"
+        f"print(_c[:{_MAX_TOOL_OUTPUT}])\n"
+        f"if len(_c) > {_MAX_TOOL_OUTPUT}: print('... (truncated)')"
+    )
 
 
 def _translate_edit_replace(filepath: str, start: int, end: int, content: str) -> str:
@@ -351,45 +368,76 @@ def _translate_grep(pattern: str) -> str:
     )
 
 
+def _normalize_tool(name: str) -> str:
+    """Normalize tool tag name to canonical short form."""
+    return {
+        "r": "R", "read": "R",
+        "w": "W", "write": "W",
+        "e": "E", "edit": "E",
+        "g": "G", "glob": "G",
+        "grep": "Grep",
+    }.get(name.lower(), name)
+
+
+def _route_tool(tool: str, arg: str) -> str | None:
+    """Route a normalized tool name + arg to the appropriate translator."""
+    if tool == "R":
+        return _translate_read(arg)
+    if tool == "E":
+        return _translate_edit_read(arg)
+    if tool == "G":
+        return _translate_glob(arg)
+    if tool == "Grep":
+        return _translate_grep(arg)
+    return None
+
+
 def translate_tool_calls(text: str) -> list[str]:
     """Detect ALL terse tool call tags in prose and return Python code strings.
 
     Returns empty list if no tool call tags found. Skips tags inside
     <run>...</run> blocks or markdown fences. Tool calls are independent
     operations -- ALL tags in a response are translated, not just the first.
+
+    Accepts case-insensitive tags, full word variants (Read, Write, Edit,
+    Glob, Grep), and OSC 8 hyperlink-wrapped tool calls.
     """
     # Strip executable and illustrative blocks before scanning
     prose = _EXEC_BLOCK_RE.sub("", text)
     prose = re.sub(r"```.*?```", "", prose, flags=re.DOTALL)
 
-    results: list[str] = []
+    results: list[tuple[int, str]] = []
     # Track matched spans to avoid double-matching (W/E-replace vs single-line)
     consumed: set[int] = set()
 
-    # Collect Write tags
+    # Collect Write tags (group 2=filepath, group 3=content after regex change)
     for wm in _WRITE_TAG_RE.finditer(prose):
-        results.append((wm.start(), _translate_write(wm.group(1), wm.group(2))))
+        results.append((wm.start(), _translate_write(wm.group(2), wm.group(3))))
         consumed.update(range(wm.start(), wm.end()))
 
-    # Collect Edit-with-replacement tags
+    # Collect Edit-with-replacement tags (group 2=filepath, 3=start, 4=end, 5=content)
     for em in _EDIT_REPLACE_RE.finditer(prose):
         results.append((em.start(), _translate_edit_replace(
-            em.group(1), int(em.group(2)), int(em.group(3)), em.group(4))))
+            em.group(2), int(em.group(3)), int(em.group(4)), em.group(5))))
         consumed.update(range(em.start(), em.end()))
 
-    # Collect single-line tags (R, E-read, G, Grep)
+    # Collect single-line tags (R/Read, E/Edit, G/Glob, Grep)
     for m in _TOOL_TAG_RE.finditer(prose):
         if m.start() in consumed:
             continue
-        tool, arg = m.group(1), m.group(2)
-        if tool == "R":
-            results.append((m.start(), _translate_read(arg)))
-        elif tool == "E":
-            results.append((m.start(), _translate_edit_read(arg)))
-        elif tool == "G":
-            results.append((m.start(), _translate_glob(arg)))
-        elif tool == "Grep":
-            results.append((m.start(), _translate_grep(arg)))
+        tool = _normalize_tool(m.group(1))
+        code = _route_tool(tool, m.group(2))
+        if code:
+            results.append((m.start(), code))
+
+    # Collect OSC 8 hyperlink-wrapped tool calls
+    for m in _OSC8_TOOL_RE.finditer(prose):
+        if m.start() in consumed:
+            continue
+        tool = _normalize_tool(m.group(1))
+        code = _route_tool(tool, m.group(2))
+        if code:
+            results.append((m.start(), code))
 
     # Sort by position and return code strings only
     results.sort(key=lambda x: x[0])

@@ -630,6 +630,42 @@ class TestTranslateToolCalls:
         text = "<W:foo.txt>\nsome content but no closing tag"
         assert translate_tool_calls(text) == []
 
+    def test_case_insensitive_tags(self):
+        """Tags are case-insensitive: <read:>, <GLOB:>, <grep:> all work."""
+        assert len(translate_tool_calls("<read:foo.py>")) == 1
+        assert len(translate_tool_calls("<GLOB:*.py>")) == 1
+        assert len(translate_tool_calls("<grep:main>")) == 1
+
+    def test_full_word_variants(self):
+        """Full word tags work: <Read:>, <Write:>, <Edit:>, <Glob:>, <Grep:>."""
+        assert len(translate_tool_calls("<Read:foo.py>")) == 1
+        assert len(translate_tool_calls("<Glob:*.py>")) == 1
+        result = translate_tool_calls("<Write:out.txt>\nhello\n</Write>")
+        assert len(result) == 1
+        assert "out.txt" in result[0]
+
+    def test_read_with_line_range_dash(self):
+        """<R:path:start-end> routes to line-range read."""
+        result = translate_tool_calls("<R:foo.py:10-20>")
+        assert len(result) == 1
+        assert "readlines()" in result[0]
+        assert "[9:20]" in result[0]
+
+    def test_read_with_line_range_colon(self):
+        """<R:path:start:end> routes to line-range read (colon separator)."""
+        result = translate_tool_calls("<R:foo.py:10:20>")
+        assert len(result) == 1
+        assert "readlines()" in result[0]
+        assert "[9:20]" in result[0]
+
+    def test_osc8_tool_call(self):
+        """OSC 8 hyperlink-wrapped tool calls are detected."""
+        text = "\033]8;id=123;Glob:tests/**/*.py\033\\\\"
+        result = translate_tool_calls(text)
+        assert len(result) == 1
+        assert "glob" in result[0]
+        assert "tests/**/*.py" in result[0]
+
 
 # --- TestEvalLoopToolCalls ---
 
