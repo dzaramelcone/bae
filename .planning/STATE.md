@@ -45,6 +45,7 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##########] 100%
 | 19-03 | Gap closure: dispatch + cancel guard | 3min | 2 | 3 |
 | 19-04 | TaskManager lifecycle + process groups | 3min | 2 | 2 |
 | 19-05 | Shell + toolbar TaskManager integration | 7min | 2 | 8 |
+| 20-01 | Rich markdown + task menu scrollback | 4min | 2 | 5 |
 | 20-02 | Multi-session AI + cross-session memory | 3min | 1 | 5 |
 
 ## Accumulated Context
@@ -108,14 +109,14 @@ v4.0 architectural decisions:
 - @N prefix in NL mode for session routing (e.g. @2 follow up) -- explicit, no keybinding needed
 - Cross-session context injected on first prompt only -- subsequent calls use --resume with conversation history
 - Session label included in channel metadata for output routing
+- [Phase 20]: Rich Console with force_terminal=True for ANSI capture to StringIO (markdown rendering)
+- [Phase 20]: Task menu prints to scrollback (not toolbar) -- permanent scroll history
 
 ### Pending Todos
 
 - Update `tests/traces/json_structured_fill_reference.py` -- drifted from real backend
 - Bump Python requirement to 3.14 stable
-- AI auto code extraction + eval loop → Phase 20
-- AI markdown rendering → Phase 20
-- Task menu UX below input → Phase 20
+- AI auto code extraction + eval loop → Phase 20 Plan 03
 - AI bash dispatch (Claude XML tool calls need parsing) → deferred past v4.0
 - AI streaming/progressive display for NL responses (currently blocking)
 
@@ -126,6 +127,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 20-02-PLAN.md (Multi-session AI management and cross-session memory)
+Stopped at: Completed 20-01-PLAN.md (Rich markdown rendering + task menu scrollback)
 Branch: main
 Resume file: None
