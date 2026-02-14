@@ -132,8 +132,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 18-01-PLAN.md — AI callable class with context builder, code extractor, and unit tests
-- [ ] 18-02-PLAN.md — Shell integration wiring and integration tests
+- [x] 18-01-PLAN.md — AI callable class with CLI backend, context builder, code extractor, and unit tests
+- [x] 18-02-PLAN.md — Shell integration wiring and integration tests
 
 ### Phase 19: Task Lifecycle
 **Goal**: User can monitor, kill, and manage background tasks, and customize what the prompt displays
@@ -172,7 +172,7 @@ Phases execute in numeric order: 14 -> 15 -> 16 -> 17 -> 18 -> 19
 | 15. Session Store | v4.0 | 4/4 | Complete | 2026-02-13 |
 | 16. Channel I/O | v4.0 | 2/2 | Complete | 2026-02-13 |
 | 17. Namespace | v4.0 | 3/3 | Complete | 2026-02-13 |
-| 18. AI Agent | v4.0 | 0/2 | In progress | - |
+| 18. AI Agent | v4.0 | 2/2 | Complete | 2026-02-13 |
 | 19. Task Lifecycle | v4.0 | 0/? | Not started | - |
 
 ---
