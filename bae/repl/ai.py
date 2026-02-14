@@ -1,16 +1,18 @@
-"""AI agent for natural language interaction with bae.
+"""AI agent for natural language interaction in cortex.
 
-Wraps pydantic-ai Agent for NL conversation, delegates fill/choose_type
-to the existing bae LM protocol, and extracts code blocks from responses.
+Uses Claude CLI subprocess with session persistence for conversation.
+Delegates fill/choose_type to bae's LM protocol.
 """
 
 from __future__ import annotations
 
+import asyncio
 import inspect
+import os
 import re
+import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING
-
-from pydantic_ai import Agent
 
 if TYPE_CHECKING:
     from bae.lm import LM
@@ -23,7 +25,7 @@ _CODE_BLOCK_RE = re.compile(
 )
 
 MAX_CONTEXT_CHARS = 2000
-MAX_HISTORY_MESSAGES = 20
+_PROMPT_FILE = Path(__file__).parent / "ai_prompt.md"
 
 
 class AI:
@@ -41,33 +43,61 @@ class AI:
         lm: LM,
         router: ChannelRouter,
         namespace: dict,
-        model: str = "anthropic:claude-sonnet-4-20250514",
+        model: str = "claude-sonnet-4-20250514",
+        timeout: int = 60,
     ) -> None:
         self._lm = lm
         self._router = router
         self._namespace = namespace
-        self._history: list = []
-        self._agent: Agent | None = None
         self._model = model
-
-    def _ensure_agent(self) -> Agent:
-        """Lazy-init the pydantic-ai Agent (defers API key check)."""
-        if self._agent is None:
-            self._agent = Agent(self._model, system_prompt=_system_prompt())
-        return self._agent
+        self._timeout = timeout
+        self._session_id = str(uuid.uuid4())
+        self._call_count = 0
 
     async def __call__(self, prompt: str) -> str:
-        """NL conversation with namespace context."""
-        agent = self._ensure_agent()
+        """NL conversation with namespace context via Claude CLI."""
         context = _build_context(self._namespace)
         full_prompt = f"{context}\n\n{prompt}" if context else prompt
 
-        result = await agent.run(
-            full_prompt,
-            message_history=self._history[-MAX_HISTORY_MESSAGES:] or None,
+        cmd = [
+            "claude",
+            "-p", full_prompt,
+            "--model", self._model,
+            "--output-format", "text",
+            "--tools", "",
+            "--strict-mcp-config",
+            "--setting-sources", "",
+        ]
+
+        if self._call_count == 0:
+            cmd += ["--session-id", self._session_id,
+                    "--system-prompt", _load_prompt()]
+        else:
+            cmd += ["--resume", self._session_id]
+
+        # Unset CLAUDECODE to allow nested CLI invocation
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
-        self._history = result.all_messages()
-        response = result.output
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                process.communicate(), timeout=self._timeout,
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            raise RuntimeError(f"AI timed out after {self._timeout}s")
+
+        if process.returncode != 0:
+            stderr = stderr_bytes.decode()
+            raise RuntimeError(f"AI failed: {stderr}")
+
+        response = stdout_bytes.decode().strip()
+        self._call_count += 1
         self._router.write("ai", response, mode="NL", metadata={"type": "response"})
         return response
 
@@ -87,41 +117,14 @@ class AI:
         return _CODE_BLOCK_RE.findall(text)
 
     def __repr__(self) -> str:
-        n = len(self._history)
-        return f"ai -- await ai('question'). {n} messages in history."
+        sid = self._session_id[:8]
+        n = self._call_count
+        return f"ai -- await ai('question'). session {sid}, {n} calls."
 
 
-def _system_prompt() -> str:
-    """Static system prompt for the cortex AI agent."""
-    return """\
-You are the AI assistant inside cortex, a Python REPL built on bae (a framework for type-driven agent graphs).
-
-Your role:
-- Answer questions about the user's namespace, graphs, and code
-- Produce correct Python code when asked
-- Use bae's API correctly (Node, Graph, Dep, Recall, fill, choose_type)
-- When asked to do system operations, suggest appropriate bash commands
-- When ambiguous, ask clarifying questions rather than guessing
-
-Context:
-- You will receive the current namespace state with each message
-- Variables, graphs, traces, and channel objects are all available
-- The user can execute any Python you produce via the PY mode
-- Code blocks should use ```python fences
-
-bae quick reference:
-- Nodes are Pydantic models: class MyNode(Node): field: str
-- Graph topology from return types: async def __call__(self) -> NextNode | None: ...
-- Dep(fn) for dependency injection, Recall() for trace recall
-- graph = Graph(start=MyNode); result = await graph.arun(MyNode(field="value"), lm=lm)
-- lm.fill(NodeClass, resolved_context, instruction) populates plain fields
-- lm.choose_type([TypeA, TypeB], context) picks a successor type
-
-Rules:
-- Be concise. The REPL is a conversation, not documentation.
-- When producing code, make it complete and directly executable.
-- Use the namespace context to give specific, relevant answers.
-- Never fabricate variable values -- only reference what's in the namespace."""
+def _load_prompt() -> str:
+    """Load the system prompt from ai_prompt.md."""
+    return _PROMPT_FILE.read_text()
 
 
 def _build_context(namespace: dict) -> str:

@@ -10,7 +10,7 @@ import pytest
 from bae.graph import Graph
 from bae.markers import Dep
 from bae.node import Node
-from bae.repl.ai import AI, _build_context
+from bae.repl.ai import AI, _build_context, _load_prompt, _PROMPT_FILE
 
 
 # --- Test fixtures ---
@@ -167,25 +167,65 @@ class TestBuildContext:
 
 
 class TestAIRepr:
-    """Tests for AI.__repr__ history display."""
+    """Tests for AI.__repr__ session display."""
 
-    def test_repr_no_history(self, ai):
-        """AI with empty history shows 0 messages."""
-        assert repr(ai) == "ai -- await ai('question'). 0 messages in history."
+    def test_repr_fresh(self, ai):
+        """AI with no calls shows session ID prefix and 0 calls."""
+        r = repr(ai)
+        assert "await ai('question')" in r
+        assert "0 calls" in r
+        assert "session " in r
 
-    def test_repr_with_history(self, ai):
-        """AI with history items shows correct count."""
-        ai._history = ["msg"] * 5
-        assert repr(ai) == "ai -- await ai('question'). 5 messages in history."
+    def test_repr_after_calls(self, ai):
+        """AI with calls shows correct count."""
+        ai._call_count = 3
+        assert "3 calls" in repr(ai)
 
 
-# --- TestAILazyInit ---
+# --- TestAIInit ---
 
 
-class TestAILazyInit:
-    """Tests for lazy Agent construction."""
+class TestAIInit:
+    """Tests for AI construction."""
 
-    def test_agent_none_at_construction(self, mock_lm, mock_router):
-        """Agent is None immediately after AI construction."""
-        ai = AI(lm=mock_lm, router=mock_router, namespace={})
-        assert ai._agent is None
+    def test_session_id_is_uuid(self, ai):
+        """Session ID is a valid UUID string."""
+        import uuid
+
+        uuid.UUID(ai._session_id)  # raises if invalid
+
+    def test_call_count_starts_zero(self, ai):
+        """Call count starts at zero."""
+        assert ai._call_count == 0
+
+    def test_stores_references(self, mock_lm, mock_router):
+        """AI stores lm, router, namespace references."""
+        ns = {"x": 1}
+        ai = AI(lm=mock_lm, router=mock_router, namespace=ns)
+        assert ai._lm is mock_lm
+        assert ai._router is mock_router
+        assert ai._namespace is ns
+
+
+# --- TestPromptFile ---
+
+
+class TestPromptFile:
+    """Tests for system prompt loading."""
+
+    def test_prompt_file_exists(self):
+        """ai_prompt.md exists next to ai.py."""
+        assert _PROMPT_FILE.exists()
+
+    def test_prompt_loads(self):
+        """System prompt loads as non-empty string."""
+        prompt = _load_prompt()
+        assert isinstance(prompt, str)
+        assert len(prompt) > 50
+
+    def test_prompt_mentions_bae(self):
+        """System prompt references bae API."""
+        prompt = _load_prompt()
+        assert "bae" in prompt
+        assert "Node" in prompt
+        assert "Graph" in prompt
