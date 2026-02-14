@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 20 of 20 (AI Eval Loop)
-Plan: 3 of 3 complete
+Plan: 5 of 5 complete
 Status: Complete
-Last activity: 2026-02-14 -- AI eval loop: extract-execute-feedback with concurrent session routing
+Last activity: 2026-02-14 -- Gap closure: session indicator display + eval output visibility
 
 Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##########] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 62 (13 v1.0 + 21 v2.0 + 9 v3.0 + 19 v4.0)
+- Total plans completed: 64 (13 v1.0 + 21 v2.0 + 9 v3.0 + 21 v4.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -48,6 +48,8 @@ Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 [##########] 100%
 | 20-01 | Rich markdown + task menu scrollback | 4min | 2 | 5 |
 | 20-02 | Multi-session AI + cross-session memory | 3min | 1 | 5 |
 | 20-03 | AI eval loop + concurrent session tests | 3min | 2 | 3 |
+| 20-04 | Gap closure: coroutine safety in PY dispatch | 2min | 2 | 4 |
+| 20-05 | Gap closure: session indicator + eval output tee | 2min | 2 | 4 |
 
 ## Accumulated Context
 
@@ -116,6 +118,8 @@ v4.0 architectural decisions:
 - [Phase 20]: Coroutines from async_exec awaited inline in eval loop (needs results, unlike PY dispatch fire-and-forget)
 - [Phase 20]: CancelledError propagates out of eval loop; all other exceptions fed back as traceback for AI self-correction
 - [Phase 20]: _send() extracted from __call__ for reusable subprocess communication
+- [Phase 20]: Channel._display metadata label -- label_text computed once before markdown/non-markdown branch
+- [Phase 20]: Eval loop output tee -- output var initialized before try block so error path can also set it for display
 
 ### Pending Todos
 
@@ -123,6 +127,7 @@ v4.0 architectural decisions:
 - Bump Python requirement to 3.14 stable
 - AI bash dispatch (Claude XML tool calls need parsing) → deferred past v4.0
 - AI streaming/progressive display for NL responses (currently blocking)
+- GWT-inspired stream UX: multi-session output needs visual sectioning (headers/fences per source), attention model (squelch/queue/pause when saturated), debug mode for raw I/O streams per session. Shared namespace = global workspace, channels = broadcast, missing piece = attention bottleneck. Deferred to broader design effort.
 
 ### Blockers/Concerns
 
@@ -131,6 +136,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 20-03-PLAN.md (AI eval loop + concurrent session tests) -- Phase 20 complete
+Stopped at: Completed 20-05-PLAN.md (gap closure: session indicator + eval output tee)
 Branch: main
 Resume file: None
