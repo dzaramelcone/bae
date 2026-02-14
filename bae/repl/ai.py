@@ -101,10 +101,13 @@ class AI:
         except asyncio.CancelledError:
             process.kill()
             await process.wait()
+            self._reset_session()
             raise
 
         if process.returncode != 0:
             stderr = stderr_bytes.decode()
+            if "already in use" in stderr:
+                self._reset_session()
             raise RuntimeError(f"AI failed: {stderr}")
 
         response = stdout_bytes.decode().strip()
@@ -115,6 +118,11 @@ class AI:
         self._call_count += 1
         self._router.write("ai", response, mode="NL", metadata={"type": "response"})
         return response
+
+    def _reset_session(self) -> None:
+        """Start a fresh CLI session after cancellation or lock error."""
+        self._session_id = str(uuid.uuid4())
+        self._call_count = 0
 
     async def fill(self, target: type[Node], context: dict | None = None) -> Node:
         """Populate a node's plain fields via bae's LM fill."""
