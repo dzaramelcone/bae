@@ -31,6 +31,23 @@ _EXEC_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 
+_MAX_TOOL_OUTPUT = 4000
+
+_TOOL_TAG_RE = re.compile(
+    r"^[ \t]*<(R|E|G|Grep):([^>]+)>\s*$",
+    re.MULTILINE,
+)
+
+_WRITE_TAG_RE = re.compile(
+    r"^[ \t]*<W:([^>]+)>\s*\n(.*?)\n[ \t]*</W>",
+    re.DOTALL | re.MULTILINE,
+)
+
+_EDIT_REPLACE_RE = re.compile(
+    r"^[ \t]*<E:([^:>]+):(\d+)-(\d+)>\s*\n(.*?)\n[ \t]*</E>",
+    re.DOTALL | re.MULTILINE,
+)
+
 MAX_CONTEXT_CHARS = 2000
 _PROMPT_FILE = Path(__file__).parent / "ai_prompt.md"
 
@@ -229,13 +246,118 @@ class AI:
         return f"ai:{self._label} -- await ai('question'). session {sid}, {n} calls."
 
 
+def _translate_read(filepath: str) -> str:
+    fp = filepath.strip()
+    return (
+        f"_c = open({fp!r}).read()\n"
+        f"print(_c[:{_MAX_TOOL_OUTPUT}])\n"
+        f"if len(_c) > {_MAX_TOOL_OUTPUT}: print('... (truncated)')"
+    )
+
+
+def _translate_write(filepath: str, content: str) -> str:
+    fp = filepath.strip()
+    return (
+        f"open({fp!r}, 'w').write({content!r})\n"
+        f"print(f'Wrote {{len({content!r})}} chars to {fp}')"
+    )
+
+
+def _translate_edit_read(arg: str) -> str:
+    parts = arg.rsplit(":", 1)
+    fp = parts[0].strip()
+    if len(parts) == 2 and "-" in parts[1]:
+        start, end = parts[1].split("-", 1)
+        s, e = int(start), int(end)
+        return (
+            f"_lines = open({fp!r}).readlines()\n"
+            f"for i, ln in enumerate(_lines[{s-1}:{e}], start={s}):\n"
+            f"    print(f'{{i:4d}} | {{ln}}', end='')"
+        )
+    return _translate_read(fp)
+
+
+def _translate_edit_replace(filepath: str, start: int, end: int, content: str) -> str:
+    fp = filepath.strip()
+    return (
+        f"_lines = open({fp!r}).readlines()\n"
+        f"_new = {content!r}.splitlines(True)\n"
+        f"_lines[{start-1}:{end}] = _new\n"
+        f"open({fp!r}, 'w').writelines(_lines)\n"
+        f"print(f'Replaced lines {start}-{end} in {fp}')"
+    )
+
+
+def _translate_glob(pattern: str) -> str:
+    p = pattern.strip()
+    return (
+        f"import glob as _g\n"
+        f"_hits = sorted(_g.glob({p!r}, recursive=True))\n"
+        f"print('\\n'.join(_hits[:{_MAX_TOOL_OUTPUT // 40}]))\n"
+        f"if len(_hits) > {_MAX_TOOL_OUTPUT // 40}: "
+        f"print(f'... ({{len(_hits)}} total)')"
+    )
+
+
+def _translate_grep(pattern: str) -> str:
+    p = pattern.strip()
+    return (
+        f"import subprocess as _sp\n"
+        f"_r = _sp.run("
+        f"['grep', '-rn', '--include=*.py', "
+        f"'--exclude-dir=.venv', '--exclude-dir=.git', "
+        f"'--exclude-dir=__pycache__', '--exclude-dir=node_modules', "
+        f"{p!r}, '.'], "
+        f"capture_output=True, text=True, timeout=10)\n"
+        f"_out = _r.stdout[:{_MAX_TOOL_OUTPUT}]\n"
+        f"print(_out if _out else '(no matches)')\n"
+        f"if len(_r.stdout) > {_MAX_TOOL_OUTPUT}: print('... (truncated)')"
+    )
+
+
 def translate_tool_calls(text: str) -> list[str]:
-    """Detect terse tool call tags in prose and return Python code strings.
+    """Detect ALL terse tool call tags in prose and return Python code strings.
 
     Returns empty list if no tool call tags found. Skips tags inside
-    <run>...</run> blocks or markdown fences.
+    <run>...</run> blocks or markdown fences. Tool calls are independent
+    operations -- ALL tags in a response are translated, not just the first.
     """
-    raise NotImplementedError
+    # Strip executable and illustrative blocks before scanning
+    prose = _EXEC_BLOCK_RE.sub("", text)
+    prose = re.sub(r"```.*?```", "", prose, flags=re.DOTALL)
+
+    results: list[str] = []
+    # Track matched spans to avoid double-matching (W/E-replace vs single-line)
+    consumed: set[int] = set()
+
+    # Collect Write tags
+    for wm in _WRITE_TAG_RE.finditer(prose):
+        results.append((wm.start(), _translate_write(wm.group(1), wm.group(2))))
+        consumed.update(range(wm.start(), wm.end()))
+
+    # Collect Edit-with-replacement tags
+    for em in _EDIT_REPLACE_RE.finditer(prose):
+        results.append((em.start(), _translate_edit_replace(
+            em.group(1), int(em.group(2)), int(em.group(3)), em.group(4))))
+        consumed.update(range(em.start(), em.end()))
+
+    # Collect single-line tags (R, E-read, G, Grep)
+    for m in _TOOL_TAG_RE.finditer(prose):
+        if m.start() in consumed:
+            continue
+        tool, arg = m.group(1), m.group(2)
+        if tool == "R":
+            results.append((m.start(), _translate_read(arg)))
+        elif tool == "E":
+            results.append((m.start(), _translate_edit_read(arg)))
+        elif tool == "G":
+            results.append((m.start(), _translate_glob(arg)))
+        elif tool == "Grep":
+            results.append((m.start(), _translate_grep(arg)))
+
+    # Sort by position and return code strings only
+    results.sort(key=lambda x: x[0])
+    return [code for _, code in results]
 
 
 def _load_prompt() -> str:
