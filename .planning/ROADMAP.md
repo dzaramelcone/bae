@@ -118,11 +118,10 @@ Plans:
   2. Execution output renders in a separate panel below the code panel
   3. Code and output panels appear as a grouped visual unit (no interleaved channel lines between them)
   4. AI-initiated code execution does NOT echo the code as a redundant [py] channel line
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 24-01: TBD
-- [ ] 24-02: TBD
+- [ ] 24-01-PLAN.md — UserView formatter with buffered exec grouping, panel rendering, shell wiring
 
 ### Phase 25: Views Completion
 **Goal**: User can cycle between debug, AI-self, and user views at runtime
@@ -169,8 +168,8 @@ Phases 21 and 23 are parallel-safe (no dependencies between them). Phase 22 foll
 | 21. Execution Convention | v5.0 | 2/2 | Complete | 2026-02-14 |
 | 22. Tool Call Translation | v5.0 | 2/2 | Complete | 2026-02-14 |
 | 23. View Framework | v5.0 | 1/1 | Complete | 2026-02-14 |
-| 24. Execution Display | v5.0 | 0/TBD | Not started | - |
+| 24. Execution Display | v5.0 | 0/1 | Not started | - |
 | 25. Views Completion | v5.0 | 0/TBD | Not started | - |
 
 ---
-*Last updated: 2026-02-14 after Phase 23 View Framework complete*
+*Last updated: 2026-02-14 after Phase 24 planning complete*
