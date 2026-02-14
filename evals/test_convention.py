@@ -1,8 +1,6 @@
-"""Parametrized eval: 3 conventions x 3 models x 5 scenarios x 3 reps = 135 test cases.
+"""Parametrized eval: 6 conventions x 3 models x 5 scenarios x 3 reps = 270 test cases.
 
 Tests convention compliance across Claude model tiers.
-Each test dispatches a single-shot prompt with a convention-specific system prompt
-and validates the response follows the convention correctly.
 """
 
 from __future__ import annotations
@@ -25,7 +23,7 @@ SCENARIOS = [
     ("Show me how to define a Node, then create one for me", "mixed"),
 ]
 
-CONVENTIONS = ["fence_annotation", "wrapper_marker", "inverse"]
+CONVENTIONS = list(SYSTEM_PROMPTS.keys())
 
 
 @pytest.mark.e2e

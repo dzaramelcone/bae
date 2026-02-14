@@ -1,15 +1,15 @@
 ============================= test session starts ==============================
-platform darwin -- Python 3.14.3, pytest-9.0.2, pluggy-1.6.0 -- /Users/dzaramelcone/lab/bae/.venv/bin/python
+platform darwin -- Python 3.13.0, pytest-9.0.2, pluggy-1.6.0 -- /Library/Frameworks/Python.framework/Versions/3.13/bin/python3
 cachedir: .pytest_cache
 rootdir: /Users/dzaramelcone/lab/bae
 configfile: pyproject.toml
-plugins: anyio-4.12.1, asyncio-1.3.0, logfire-4.22.0
+plugins: anyio-4.11.0, xdist-3.8.0, langsmith-0.6.7, asyncio-1.3.0, logfire-4.22.0, typeguard-4.4.4
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collecting ... collected 135 items / 90 deselected / 45 selected
+collecting ... collected 270 items / 225 deselected / 45 selected
 
-evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-0] PASSED [  2%]
-evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-1] PASSED [  4%]
-evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-2] PASSED [  6%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-0] FAILED [  2%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-1] FAILED [  4%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-2] FAILED [  6%]
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What's 2**100?-0] PASSED [  8%]
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What's 2**100?-1] PASSED [ 11%]
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What's 2**100?-2] PASSED [ 13%]
@@ -22,7 +22,7 @@ evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annot
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-Show me how to define a Node, -0] PASSED [ 28%]
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-Show me how to define a Node, -1] PASSED [ 31%]
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-Show me how to define a Node, -2] PASSED [ 33%]
-evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What is a Graph in bae?-0] PASSED [ 35%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What is a Graph in bae?-0] FAILED [ 35%]
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What is a Graph in bae?-1] FAILED [ 37%]
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What is a Graph in bae?-2] FAILED [ 40%]
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What's 2**100?-0] PASSED [ 42%]
@@ -38,8 +38,8 @@ evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-Show me how to define a Node, -1] PASSED [ 64%]
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-Show me how to define a Node, -2] PASSED [ 66%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What is a Graph in bae?-0] PASSED [ 68%]
-evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What is a Graph in bae?-1] FAILED [ 71%]
-evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What is a Graph in bae?-2] PASSED [ 73%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What is a Graph in bae?-1] PASSED [ 71%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What is a Graph in bae?-2] FAILED [ 73%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What's 2**100?-0] PASSED [ 75%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What's 2**100?-1] PASSED [ 77%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What's 2**100?-2] PASSED [ 80%]
@@ -51,118 +51,247 @@ evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-f
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What variables do I have?-2] PASSED [ 93%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-Show me how to define a Node, -0] PASSED [ 95%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-Show me how to define a Node, -1] PASSED [ 97%]
-evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-Show me how to define a Node, -2] PASSED [100%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-Show me how to define a Node, -2] FAILED [100%]
 
 =================================== FAILURES ===================================
-_ test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What is a Graph in bae?-1] _
-evals/test_convention.py:45: in test_convention_compliance
+_ test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-0] _
+evals/test_convention.py:43: in test_convention_compliance
     validate_response(response, convention, expected)
-evals/prompts.py:277: in validate_response
+evals/prompts.py:265: in validate_response
     assert len(all_python) == 0, (
            ^^^^^^^^^^^^^^^^^^^^
 E   AssertionError: Expected no code blocks, got 1.
 E   Response:
-E   A Graph in bae is a directed agent graph that orchestrates execution flow through a collection of Node classes. It uses type hints to automatically route from one node to the next.
+E   ```python:exec
+E   # Let me look at the bae module to understand what Graph is
+E   import bae
+E   help(bae.Graph)
+E   ```
+_ test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   ```python:exec
+E   # Let me look at the bae module to understand what Graph is
+E   import bae
+E   help(bae.Graph)
+E   ```
+_ test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   ```python:exec
+E   # Let me look up the Graph class in the bae package
+E   import bae
+E   help(bae.Graph)
+E   ```
+_ test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What is a Graph in bae?-0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In `bae` (Build Anything Engine), a **Graph** is the core abstraction that represents a computation graph or workflow. It's a collection of interconnected nodes where:
 E   
-E   Key concepts:
+E   1. **Nodes** are the building blocks - each node represents a unit of computation or data
+E   2. **Edges** connect nodes through dependencies - when one node depends on another node's output
+E   3. **Execution** happens automatically based on the dependency graph - nodes are evaluated in the correct order
 E   
-E   - **Type-based routing**: Each Node declares what type it produces. The Graph uses that type to determine which Node runs next.
-E   - **Terminal nodes**: Execution stops when a Node produces a type that no other Node accepts, or when a Node explicitly marks itself as terminal.
-E   - **Dependency injection**: Fields annotated with `Dep(fn)` are automatically resolved before the Node executes.
-E   - **State accumulation**: The Graph maintains a context object that accumulates outputs from all executed nodes.
-E   
-E   Here's the basic pattern:
+E   Here's a simple example:
 E   
 E   ```python
-E   # Illustrative example
-E   class StartNode(Node):
-E       def run(self) -> str:
-E           return "hello"
+E   from bae import Graph, Node
 E   
-E   class NextNode(Node):
-E       message: str  # Receives output from StartNode
+E   class AddNode(Node):
+E       a: int
+E       b: int
 E       
-E       def run(self) -> int:
-E           return len(self.message)
+E       def run(self):
+E           return self.a + self.b
 E   
-E   # Graph routes: StartNode → NextNode (because NextNode accepts str)
-E   graph = Graph(nodes=[StartNode, NextNode])
-E   result = graph.run(StartNode)
+E   # Create a graph
+E   g = Graph()
+E   
+E   # Add nodes to the graph
+E   result = g.add(AddNode(a=5, b=3))
+E   
+E   # Execute the graph
+E   output = g.run()
 E   ```
 E   
-E   The Graph handles the entire execution flow automatically based on these type annotations.
+E   The Graph handles:
+E   - **Dependency resolution** - figures out what order to run nodes
+E   - **Caching** - avoids re-computing unchanged nodes
+E   - **Data flow** - passes outputs from one node as inputs to another
+E   - **Parallel execution** - can run independent nodes concurrently
+E   
+E   Graphs can be composed and nested, making them powerful for building complex workflows from simple components.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What is a Graph in bae?-1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In bae, a **Graph** is a container that holds and manages a collection of nodes and their dependencies. It's the core orchestration structure that:
+E   
+E   1. **Stores nodes**: You add nodes to a graph, and the graph tracks their relationships
+E   2. **Resolves dependencies**: When you run a node, the graph automatically figures out which other nodes need to run first based on their `Dep()` annotations
+E   3. **Executes computation**: The graph runs nodes in the correct order, passing data between them
+E   
+E   Here's a basic example:
+E   
+E   ```python
+E   from bae import Graph, Node, Dep
+E   from typing import Annotated
+E   
+E   # Define some nodes
+E   class Add(Node):
+E       a: int
+E       b: int
+E       
+E       def run(self):
+E           return self.a + self.b
+E   
+E   class Multiply(Node):
+E       x: int
+E       y: Annotated[int, Dep(Add)]  # depends on Add's result
+E       
+E       def run(self):
+E           return self.x * self.y
+E   
+E   # Create and use a graph
+E   graph = Graph()
+E   result = graph.run(Multiply(x=3, Add(a=5, b=2)))
+E   # Add runs first (5+2=7), then Multiply (3*7=21)
+E   ```
+E   
+E   The Graph handles all the dependency resolution and execution ordering automatically, so you just declare what depends on what, and bae figures out the rest.
 _ test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What is a Graph in bae?-2] _
-evals/test_convention.py:45: in test_convention_compliance
+evals/test_convention.py:43: in test_convention_compliance
     validate_response(response, convention, expected)
-evals/prompts.py:277: in validate_response
+evals/prompts.py:265: in validate_response
     assert len(all_python) == 0, (
            ^^^^^^^^^^^^^^^^^^^^
 E   AssertionError: Expected no code blocks, got 1.
 E   Response:
-E   A Graph in bae is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
-E   
-E   Here's how it works:
+E   In bae, a **Graph** is a declarative way to define and compose AI agents with dependencies between nodes.
 E   
 E   ```python
-E   # Illustrative example of a Graph
-E   from bae import Node, Graph
+E   from bae import Graph, Node
 E   
-E   class Start(Node):
-E       def run(self) -> str:
-E           return "hello"
+E   # Define a graph with nodes that depend on each other
+E   graph = Graph(
+E       nodes={
+E           "user_input": Node(lambda: "hello"),
+E           "processed": Node(lambda user_input: user_input.upper()),
+E           "final": Node(lambda processed: f"Result: {processed}")
+E       }
+E   )
 E   
-E   class ProcessText(Node):
-E       def run(self, text: str) -> int:
-E           return len(text)
-E   
-E   class End(Node):
-E       def run(self, length: int) -> None:
-E           print(f"Length: {length}")
-E   
-E   # The Graph infers edges from type annotations
-E   graph = Graph(nodes=[Start, ProcessText, End])
-E   # Start() -> str matches ProcessText(text: str)
-E   # ProcessText() -> int matches End(length: int)
+E   # Run the graph
+E   result = graph.run()
 E   ```
 E   
-E   The graph automatically connects nodes where one's output type matches another's input parameter type, creating an execution flow without explicit edge definitions.
-_ test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What is a Graph in bae?-1] _
-evals/test_convention.py:45: in test_convention_compliance
+E   Key features:
+E   
+E   - **Dependency injection**: Nodes automatically receive values from other nodes based on parameter names
+E   - **Execution order**: The graph figures out the right order to run nodes based on their dependencies
+E   - **Type safety**: Uses Python type hints and the `Dep` annotation to declare dependencies
+E   - **Reusable**: Define once, run multiple times with different inputs
+E   
+E   Think of it as a computational graph where each node is a function, and edges are data dependencies between them.
+_ test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
     validate_response(response, convention, expected)
-evals/prompts.py:277: in validate_response
+evals/prompts.py:265: in validate_response
     assert len(all_python) == 0, (
            ^^^^^^^^^^^^^^^^^^^^
 E   AssertionError: Expected no code blocks, got 1.
 E   Response:
-E   A **Graph** in bae is a directed agent graph built from Node type hints. It's the core execution engine that:
+E   In **bae** (Anthropic's Python framework), a **Graph** is a data structure that represents a directed acyclic graph (DAG) of computation nodes. It's used to define workflows or pipelines where:
 E   
-E   1. **Routes execution through nodes** based on their type annotations
-E   2. **Chains nodes together** where each node's output type determines which node runs next
-E   3. **Resolves dependencies** automatically using field annotations like `Dep()`
-E   4. **Executes in sequence** until a terminal node is reached or the graph completes
+E   - **Nodes** are individual computational units (functions or classes)
+E   - **Edges** represent data flow between nodes
+E   - **Dependencies** are automatically resolved based on type annotations
 E   
-E   Think of it as a state machine where nodes are states and their return types are transitions. The Graph inspects your Node definitions, understands their input/output types, and orchestrates the flow automatically.
+E   Key features:
 E   
-E   Example structure:
+E   1. **Declarative**: You define what depends on what using type hints
+E   2. **Lazy evaluation**: The graph is built but not executed until you run it
+E   3. **Composable**: Graphs can be nested and combined
+E   4. **Type-safe**: Uses Python's type system for dependency resolution
+E   
+E   **Basic example structure:**
 E   ```python
-E   # Illustrative
-E   class StartNode(Node):
-E       def execute(self) -> str:
-E           return "hello"
-E   
-E   class ProcessNode(Node):
-E       input: str  # expects StartNode's output
-E       def execute(self) -> int:
-E           return len(self.input)
-E   
-E   # The Graph automatically connects StartNode → ProcessNode
-E   graph = Graph([StartNode, ProcessNode])
-E   result = graph.run()  # executes in order
+E   class MyGraph(Graph):
+E       step1: OutputType = Node(compute_step1)
+E       step2: OutputType = Node(compute_step2, input_param=step1)  # depends on step1
+E       result: FinalType = Node(combine, a=step1, b=step2)
 E   ```
 E   
-E   The Graph handles all the wiring—you just define nodes with clear input/output types and it figures out the dependencies.
+E   When you execute the graph, it automatically:
+E   - Determines execution order based on dependencies
+E   - Passes outputs from one node to dependent nodes
+E   - Returns the final result
+E   
+E   Graphs are useful for building complex data pipelines, machine learning workflows, or any multi-step process with clear dependencies.
+E   
+E   Do you have a specific question about how Graphs work or how to use them?
+_ test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-Show me how to define a Node, -2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:307: in validate_response
+    assert len(all_python) > len(exec_blocks), (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected illustrative blocks beyond exec blocks. Total: 1, exec: 1.
+E   Response:
+E   I'll show you how to define a Node and create one for you.
+E   
+E   ```python:exec
+E   from cortex import Node
+E   
+E   # Define a simple Node
+E   class Greeter(Node):
+E       """A simple node that greets someone"""
+E       name: str
+E       
+E       def forward(self):
+E           return f"Hello, {self.name}!"
+E   
+E   # Create an instance
+E   greeter = Greeter(name="Claude")
+E   result = greeter.forward()
+E   print(result)
+E   ```
+E   
+E   Here's what happened:
+E   
+E   1. **Define a Node**: Inherit from `Node` and add fields (like `name`). The `forward()` method is where the node does its computation.
+E   
+E   2. **Create an instance**: Pass the required fields when initializing the node (e.g., `name="Claude"`).
+E   
+E   3. **Use it**: Call `forward()` to execute the node's logic.
+E   
+E   You now have a `Greeter` node that can greet anyone! You can create more instances with different names if you'd like.
 =========================== short test summary info ============================
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-fence_annotation-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What is a Graph in bae?-0]
 FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What is a Graph in bae?-1]
 FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-fence_annotation-What is a Graph in bae?-2]
-FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What is a Graph in bae?-1]
-=========== 3 failed, 42 passed, 90 deselected in 212.07s (0:03:32) ============
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-fence_annotation-Show me how to define a Node, -2]
+=========== 8 failed, 37 passed, 225 deselected in 225.15s (0:03:45) ===========

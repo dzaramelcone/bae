@@ -1,0 +1,252 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.0, pytest-9.0.2, pluggy-1.6.0 -- /Library/Frameworks/Python.framework/Versions/3.13/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/dzaramelcone/lab/bae
+configfile: pyproject.toml
+plugins: anyio-4.11.0, xdist-3.8.0, langsmith-0.6.7, asyncio-1.3.0, logfire-4.22.0, typeguard-4.4.4
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 270 items / 225 deselected / 45 selected
+
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What is a Graph in bae?-0] FAILED [  2%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What is a Graph in bae?-1] FAILED [  4%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What is a Graph in bae?-2] FAILED [  6%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What's 2**100?-0] PASSED [  8%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What's 2**100?-1] PASSED [ 11%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What's 2**100?-2] PASSED [ 13%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-Explain how Dep works with an -0] PASSED [ 15%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-Explain how Dep works with an -1] PASSED [ 17%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-Explain how Dep works with an -2] PASSED [ 20%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What variables do I have?-0] PASSED [ 22%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What variables do I have?-1] PASSED [ 24%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What variables do I have?-2] PASSED [ 26%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-Show me how to define a Node, -0] PASSED [ 28%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-Show me how to define a Node, -1] PASSED [ 31%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-Show me how to define a Node, -2] PASSED [ 33%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What is a Graph in bae?-0] FAILED [ 35%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What is a Graph in bae?-1] FAILED [ 37%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What is a Graph in bae?-2] FAILED [ 40%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What's 2**100?-0] PASSED [ 42%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What's 2**100?-1] PASSED [ 44%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What's 2**100?-2] PASSED [ 46%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-Explain how Dep works with an -0] PASSED [ 48%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-Explain how Dep works with an -1] PASSED [ 51%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-Explain how Dep works with an -2] PASSED [ 53%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What variables do I have?-0] PASSED [ 55%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What variables do I have?-1] PASSED [ 57%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What variables do I have?-2] PASSED [ 60%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-Show me how to define a Node, -0] PASSED [ 62%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-Show me how to define a Node, -1] PASSED [ 64%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-Show me how to define a Node, -2] PASSED [ 66%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-What is a Graph in bae?-0] PASSED [ 68%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-What is a Graph in bae?-1] PASSED [ 71%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-What is a Graph in bae?-2] FAILED [ 73%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-What's 2**100?-0] PASSED [ 75%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-What's 2**100?-1] PASSED [ 77%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-What's 2**100?-2] PASSED [ 80%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-Explain how Dep works with an -0] PASSED [ 82%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-Explain how Dep works with an -1] PASSED [ 84%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-Explain how Dep works with an -2] PASSED [ 86%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-What variables do I have?-0] PASSED [ 88%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-What variables do I have?-1] PASSED [ 91%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-What variables do I have?-2] PASSED [ 93%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-Show me how to define a Node, -0] PASSED [ 95%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-Show me how to define a Node, -1] PASSED [ 97%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-Show me how to define a Node, -2] PASSED [100%]
+
+=================================== FAILURES ===================================
+_ test_convention_compliance[claude-opus-4-6-xml_tag-What is a Graph in bae?-0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   <run>
+E   # Let me look at the bae module to find information about Graph
+E   import bae
+E   help(bae.Graph)
+E   </run>
+_ test_convention_compliance[claude-opus-4-6-xml_tag-What is a Graph in bae?-1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   <run>
+E   # Let me look at the bae module to understand what a Graph is
+E   import bae
+E   help(bae.Graph)
+E   </run>
+_ test_convention_compliance[claude-opus-4-6-xml_tag-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   <run>
+E   # Let me look at the bae module to find information about Graph
+E   import bae
+E   help(bae.Graph)
+E   </run>
+_ test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What is a Graph in bae?-0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In bae, a **Graph** is a container that holds and manages a collection of nodes and their dependencies. It's the core execution engine that:
+E   
+E   <run>
+E   from bae import Graph, Node, Dep
+E   from typing import Annotated
+E   
+E   # A Graph orchestrates nodes and their dependencies
+E   graph = Graph()
+E   
+E   class DataNode(Node):
+E       value: int = 42
+E   
+E   class ProcessorNode(Node):
+E       data: Annotated[DataNode, Dep()]
+E       
+E       def result(self):
+E           return self.data.value * 2
+E   
+E   # Add nodes to the graph
+E   graph.add(DataNode)
+E   graph.add(ProcessorNode)
+E   
+E   # The graph resolves dependencies and executes
+E   processor = graph.get(ProcessorNode)
+E   print(f"Result: {processor.result()}")
+E   print(f"\nGraph contains: {list(graph.nodes.keys())}")
+E   </run>
+E   
+E   Key features:
+E   - **Dependency resolution**: Automatically instantiates nodes and their dependencies
+E   - **Singleton management**: Each node type is instantiated once per graph
+E   - **Lazy evaluation**: Nodes are only created when requested
+E   - **Execution context**: Provides a shared namespace for related nodes to interact
+E   
+E   Think of it as a dependency injection container that manages your application's object graph.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What is a Graph in bae?-1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In bae, a `Graph` is a container that holds and manages a collection of nodes. It's the fundamental execution unit that:
+E   
+E   <run>
+E   from bae import Graph, Node
+E   
+E   # A Graph contains nodes and their dependencies
+E   g = Graph()
+E   
+E   class Example(Node):
+E       value: int = 1
+E   
+E   # You can add nodes to a graph
+E   g.add(Example)
+E   
+E   # The graph manages execution and dependency resolution
+E   print(f"Graph contains: {list(g.nodes.keys())}")
+E   </run>
+E   
+E   Key features of a Graph:
+E   
+E   1. **Node registry** - Stores all nodes by their type
+E   2. **Dependency resolution** - Automatically figures out what order to execute nodes based on their dependencies
+E   3. **Execution context** - Runs nodes and caches their results
+E   4. **Namespace isolation** - Each graph has its own execution context
+E   
+E   You typically create a graph, add nodes to it, and then run it to get computed values from your node DAG (directed acyclic graph).
+_ test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 2.
+E   Response:
+E   In bae, a `Graph` is a declarative way to define a computational graph of nodes and their dependencies. It's the core abstraction for building AI agents and workflows.
+E   
+E   <run>
+E   from bae import Graph, Node
+E   import inspect
+E   
+E   # Let's look at the Graph class
+E   print(inspect.getdoc(Graph))
+E   </run>
+E   
+E   Key concepts:
+E   
+E   - **Nodes**: Each node in a graph represents a computation step (like an LLM call, tool use, or data transformation)
+E   - **Dependencies**: Nodes can depend on other nodes using `Dep()` annotations
+E   - **Execution**: The graph automatically resolves dependencies and executes nodes in the correct order
+E   - **State management**: Graphs track state across the computation
+E   
+E   Example structure:
+E   ```python
+E   class MyGraph(Graph):
+E       class fetch_data(Node):
+E           result: str
+E           
+E       class process(Node):
+E           data: Annotated[str, Dep(fetch_data)]
+E           result: str
+E   ```
+E   
+E   The graph ensures `fetch_data` runs before `process`, and `process` receives the output from `fetch_data` via dependency injection.
+_ test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 2.
+E   Response:
+E   I'd be happy to help explain Graphs in bae! Let me show you:
+E   <run>
+E   import bae
+E   help(bae.Graph)
+E   </run>
+E   
+E   A **Graph** in bae is a core data structure that represents a directed acyclic graph (DAG) of computations. Here are the key points:
+E   
+E   1. **Purpose**: It's the underlying execution engine that manages how nodes and their dependencies are computed.
+E   
+E   2. **Node Connections**: Graphs connect nodes together, where edges represent data flow and dependencies between nodes.
+E   
+E   3. **Lazy Evaluation**: Graphs enable lazy evaluation - computations aren't executed until their results are actually needed.
+E   
+E   4. **Execution**: When you evaluate a node that's part of a graph, the graph automatically resolves all upstream dependencies in the correct order.
+E   
+E   5. **Context Manager**: Typically used as a context manager to define which graph nodes belong to:
+E   ```python
+E   with bae.Graph() as g:
+E       node1 = bae.Node(...)
+E       node2 = bae.Node(...)
+E   ```
+E   
+E   6. **Composition**: Graphs can be composed together, allowing you to build complex computational pipelines from simpler building blocks.
+E   
+E   The Graph is fundamental to bae's reactive, data-flow programming model - it automatically handles dependency resolution and ensures efficient computation.
+=========================== short test summary info ============================
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What is a Graph in bae?-0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-xml_tag-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What is a Graph in bae?-0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-xml_tag-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-xml_tag-What is a Graph in bae?-2]
+=========== 7 failed, 38 passed, 225 deselected in 222.87s (0:03:42) ===========

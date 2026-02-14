@@ -1,0 +1,480 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.0, pytest-9.0.2, pluggy-1.6.0 -- /Library/Frameworks/Python.framework/Versions/3.13/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/dzaramelcone/lab/bae
+configfile: pyproject.toml
+plugins: anyio-4.11.0, xdist-3.8.0, langsmith-0.6.7, asyncio-1.3.0, logfire-4.22.0, typeguard-4.4.4
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 270 items / 225 deselected / 45 selected
+
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What is a Graph in bae?-0] FAILED [  2%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What is a Graph in bae?-1] FAILED [  4%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What is a Graph in bae?-2] FAILED [  6%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What's 2**100?-0] PASSED [  8%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What's 2**100?-1] PASSED [ 11%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What's 2**100?-2] PASSED [ 13%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-Explain how Dep works with an -0] PASSED [ 15%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-Explain how Dep works with an -1] PASSED [ 17%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-Explain how Dep works with an -2] PASSED [ 20%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What variables do I have?-0] PASSED [ 22%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What variables do I have?-1] PASSED [ 24%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What variables do I have?-2] PASSED [ 26%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-Show me how to define a Node, -0] PASSED [ 28%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-Show me how to define a Node, -1] PASSED [ 31%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-Show me how to define a Node, -2] PASSED [ 33%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What is a Graph in bae?-0] FAILED [ 35%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What is a Graph in bae?-1] FAILED [ 37%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What is a Graph in bae?-2] FAILED [ 40%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What's 2**100?-0] PASSED [ 42%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What's 2**100?-1] PASSED [ 44%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What's 2**100?-2] PASSED [ 46%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-Explain how Dep works with an -0] FAILED [ 48%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-Explain how Dep works with an -1] PASSED [ 51%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-Explain how Dep works with an -2] PASSED [ 53%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What variables do I have?-0] PASSED [ 55%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What variables do I have?-1] PASSED [ 57%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What variables do I have?-2] PASSED [ 60%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-Show me how to define a Node, -0] PASSED [ 62%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-Show me how to define a Node, -1] PASSED [ 64%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-Show me how to define a Node, -2] PASSED [ 66%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What is a Graph in bae?-0] FAILED [ 68%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What is a Graph in bae?-1] FAILED [ 71%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What is a Graph in bae?-2] FAILED [ 73%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What's 2**100?-0] PASSED [ 75%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What's 2**100?-1] PASSED [ 77%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What's 2**100?-2] PASSED [ 80%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-Explain how Dep works with an -0] PASSED [ 82%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-Explain how Dep works with an -1] PASSED [ 84%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-Explain how Dep works with an -2] PASSED [ 86%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What variables do I have?-0] PASSED [ 88%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What variables do I have?-1] PASSED [ 91%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What variables do I have?-2] PASSED [ 93%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-Show me how to define a Node, -0] PASSED [ 95%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-Show me how to define a Node, -1] FAILED [ 97%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-Show me how to define a Node, -2] PASSED [100%]
+
+=================================== FAILURES ===================================
+_ test_convention_compliance[claude-opus-4-6-yaml_meta-What is a Graph in bae?-0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In **bae** (the framework you're working in), a `Graph` is the core abstraction for defining and executing computational workflows as directed acyclic graphs (DAGs). Let me look at the actual implementation:
+E   
+E   ```python
+E   # %% exec
+E   import inspect
+E   try:
+E       from bae import Graph
+E       print(inspect.getdoc(Graph))
+E       print("\n--- MRO ---")
+E       print(Graph.__mro__)
+E       print("\n--- Key attributes/methods ---")
+E       for name in sorted(dir(Graph)):
+E           if not name.startswith('_'):
+E               obj = getattr(Graph, name, None)
+E               print(f"  {name}: {type(obj).__name__}")
+E   except ImportError:
+E       try:
+E           from bae.graph import Graph
+E           print(inspect.getdoc(Graph))
+E       except:
+E           print("Could not import Graph from bae")
+E   ```
+_ test_convention_compliance[claude-opus-4-6-yaml_meta-What is a Graph in bae?-1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In **bae** (the framework you're working in), a `Graph` is the core execution construct that connects and runs `Node` instances in a directed acyclic graph (DAG). Let me look at the actual implementation:
+E   
+E   ```python
+E   # %% exec
+E   import inspect
+E   try:
+E       from bae import Graph
+E       print(inspect.getdoc(Graph))
+E       print("\n---\n")
+E       # Show the class signature and key methods
+E       print("MRO:", [c.__name__ for c in Graph.__mro__])
+E       print("\nKey attributes/methods:")
+E       for name, obj in inspect.getmembers(Graph):
+E           if not name.startswith('_'):
+E               kind = type(obj).__name__
+E               print(f"  {name}: {kind}")
+E   except ImportError:
+E       try:
+E           from bae.graph import Graph
+E           print(inspect.getdoc(Graph))
+E       except ImportError:
+E           print("Could not import Graph from bae - let me search for it")
+E           import subprocess
+E           result = subprocess.run(["grep", "-r", "class Graph", "/usr/lib/python3/", "--include=*.py", "-l"], capture_output=True, text=True, timeout=5)
+E           print(result.stdout[:2000] if result.stdout else "Not found in standard paths")
+E   ```
+_ test_convention_compliance[claude-opus-4-6-yaml_meta-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In **bae** (the framework you're working in), a `Graph` is the core computational abstraction — it's a directed acyclic graph (DAG) of `Node` objects that defines a dataflow pipeline.
+E   
+E   Let me look at the actual implementation to give you precise details:
+E   
+E   ```python
+E   # %% exec
+E   import inspect
+E   try:
+E       from bae import Graph
+E       print(inspect.getdoc(Graph))
+E       print("\n--- Source ---")
+E       print(inspect.getsource(Graph))
+E   except ImportError:
+E       try:
+E           from cortex.graph import Graph
+E           print(inspect.getdoc(Graph))
+E           print("\n--- Source ---")
+E           print(inspect.getsource(Graph))
+E       except Exception as e:
+E           print(f"Could not find Graph: {e}")
+E   ```
+_ test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What is a Graph in bae?-0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In bae, a **Graph** is a container that manages a collection of nodes and their dependencies. It's the core execution engine that:
+E   
+E   1. **Resolves dependencies** - Figures out what nodes need to run based on what you request
+E   2. **Executes nodes** - Runs them in the correct order, respecting their dependency relationships
+E   3. **Caches results** - Stores computed values so they don't need to be recomputed
+E   4. **Manages state** - Keeps track of the node namespace and their values
+E   
+E   ```python
+E   # %% exec
+E   from bae import Graph, Node, Dep
+E   from typing import Annotated
+E   
+E   class A(Node):
+E       val: int = 5
+E   
+E   class B(Node):
+E       a: Annotated[int, Dep(A.val)]
+E       val: int = lambda self: self.a * 2
+E   
+E   # Create a graph and run it
+E   g = Graph()
+E   result = g.run(B.val)
+E   print(f"Result: {result}")  # Will compute A.val=5, then B.val=10
+E   ```
+E   
+E   The graph acts like a smart calculator - you tell it what you want (like `B.val`), and it automatically figures out it needs to compute `A.val` first, then uses that to compute `B.val`.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What is a Graph in bae?-1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   A **Graph** in bae is a container that holds multiple nodes and manages their execution and dependencies.
+E   
+E   Key points:
+E   
+E   1. **Container for Nodes**: A Graph groups related nodes together into a logical unit
+E   2. **Dependency Resolution**: It automatically resolves dependencies between nodes based on their type annotations
+E   3. **Execution Management**: Handles running nodes in the correct order based on their dependencies
+E   4. **Composable**: Graphs can contain other graphs as nodes, allowing hierarchical composition
+E   
+E   Basic example:
+E   
+E   ```python
+E   from bae import Graph, Node
+E   
+E   class AddOne(Node):
+E       x: int
+E       
+E       def run(self):
+E           return self.x + 1
+E   
+E   class Double(Node):
+E       x: int
+E       
+E       def run(self):
+E           return self.x * 2
+E   
+E   # Create a graph with nodes
+E   graph = Graph(
+E       add=AddOne(x=5),
+E       double=Double(x=Dep(AddOne))  # depends on AddOne's output
+E   )
+E   
+E   # Execute the graph
+E   result = graph()  # Runs AddOne first, then Double with AddOne's result
+E   ```
+E   
+E   The Graph ensures nodes execute in dependency order and handles passing outputs between nodes automatically.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In bae, a **Graph** is a collection of nodes that represents a computation or workflow. It's the core abstraction for building and executing complex operations.
+E   
+E   Key characteristics:
+E   
+E   - **Composed of Nodes**: A Graph contains Node instances that define individual computation steps
+E   - **Manages Dependencies**: Automatically resolves dependencies between nodes (using `Dep` annotations)
+E   - **Execution Engine**: Can execute the entire graph or specific nodes, handling the dependency chain
+E   - **Type-Safe**: Leverages Python's type system to ensure correct data flow between nodes
+E   
+E   Here's a simple example:
+E   
+E   ```python
+E   from bae import Graph, Node, Dep
+E   from typing import Annotated
+E   
+E   class FetchData(Node):
+E       data: str = "hello"
+E   
+E   class ProcessData(Node):
+E       input: Annotated[str, Dep(FetchData)]
+E       output: str
+E       
+E       def run(self):
+E           self.output = self.input.upper()
+E   
+E   # Create and execute the graph
+E   g = Graph(nodes=[FetchData(), ProcessData()])
+E   result = g.execute()
+E   ```
+E   
+E   The Graph handles figuring out that `ProcessData` needs `FetchData` to run first, executes them in order, and returns the results.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-Explain how Dep works with an -0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:277: in validate_response
+    assert len(exec_blocks) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no executable blocks, got 1.
+E   Response:
+E   Dep is a dependency injection marker used in the cortex framework. It allows you to declaratively specify that a field should be populated by calling a function, rather than being provided directly.
+E   
+E   When you annotate a field with `Dep(func)`, the framework automatically calls `func` when the object is created and uses its return value to populate that field.
+E   
+E   ```python
+E   # %% exec
+E   from typing import Annotated
+E   from cortex import Node, Dep
+E   
+E   # Example: a function that will be called to fetch data
+E   def fetch_user_name():
+E       return "Alice"
+E   
+E   def get_timestamp():
+E       return "2026-02-14"
+E   
+E   # Node with dependency injection
+E   class UserProfile(Node):
+E       name: Annotated[str, Dep(fetch_user_name)]
+E       created_at: Annotated[str, Dep(get_timestamp)]
+E       bio: str  # regular field, provided directly
+E   
+E   # Create instance - Dep fields are auto-populated
+E   profile = UserProfile(bio="Software engineer")
+E   print(f"Name: {profile.name}")
+E   print(f"Created: {profile.created_at}")
+E   print(f"Bio: {profile.bio}")
+E   ```
+E   
+E   The key benefit is separation of concerns: you define *what* data a node needs (via the type annotation) and *how* to get it (via the Dep function), and the framework handles the wiring automatically.
+_ test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What is a Graph in bae?-0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In **bae** (a Python framework), a **Graph** is a data structure that represents a directed acyclic graph (DAG) of computational nodes. Here are the key concepts:
+E   
+E   ## Core Idea
+E   A Graph organizes **Nodes** into a dependency network where:
+E   - Each node represents a computation or data transformation
+E   - Edges represent data flow dependencies between nodes
+E   - Nodes execute in topological order (respecting dependencies)
+E   
+E   ## Key Features
+E   
+E   1. **Node Dependencies**: Nodes can depend on outputs of other nodes using the `Dep()` annotation
+E   2. **Lazy Evaluation**: The graph doesn't execute until you explicitly run it
+E   3. **Composability**: You can build complex workflows by connecting simple nodes
+E   4. **Type Safety**: Uses Python type hints and Pydantic for validation
+E   
+E   ## Basic Example Structure
+E   ```python
+E   from bae import Node, Graph, Dep
+E   
+E   class FetchData(Node):
+E       data: str
+E   
+E   class ProcessData(Node):
+E       processed: Annotated[str, Dep(FetchData)]
+E   
+E   # The graph automatically resolves dependencies
+E   graph = Graph(ProcessData)
+E   result = graph.run()
+E   ```
+E   
+E   ## Benefits
+E   - **Declarative**: Define *what* should happen, not *how*
+E   - **Reusable**: Nodes are modular and can be shared
+E   - **Debuggable**: Clear execution flow and dependency tracking
+E   - **Scalable**: Can handle complex multi-step workflows
+E   
+E   The Graph essentially manages execution order and data passing so you focus on defining individual computational steps.
+_ test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What is a Graph in bae?-1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In **bae** (a Python library/framework), a **Graph** is a data structure that represents computational workflows or pipelines.
+E   
+E   Here are the key characteristics:
+E   
+E   1. **Node-based architecture**: A Graph is composed of interconnected Nodes, where each Node performs a specific computation or task.
+E   
+E   2. **Directed Acyclic Graph (DAG)**: Graphs typically follow a DAG structure, meaning data flows in one direction without cycles, making execution order deterministic.
+E   
+E   3. **Data flow**: Data moves between nodes through their inputs and outputs. Each node takes inputs, processes them, and produces outputs that can feed into other nodes.
+E   
+E   4. **Lazy evaluation**: Graphs often use lazy evaluation—they don't compute until explicitly executed, allowing for optimization of the computation plan.
+E   
+E   5. **Dependencies**: Nodes can depend on outputs of other nodes, and the Graph automatically handles dependency resolution and execution ordering.
+E   
+E   **Example structure**:
+E   ```python
+E   class MyGraph(Graph):
+E       input_node = Node(...)
+E       processing_node = Node(input=input_node.output)
+E       output_node = Node(input=processing_node.output)
+E   ```
+E   
+E   Graphs are useful for:
+E   - Building ML pipelines
+E   - Creating complex workflows with multiple processing stages
+E   - Enabling parallel execution where possible
+E   - Making computations reusable and composable
+E   
+E   Is there a specific aspect of bae Graphs you'd like to explore further?
+_ test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In **bae** (a Python data manipulation library), a **Graph** is a data structure that represents relationships between entities. Here are the key aspects:
+E   
+E   ## Core Concept
+E   A Graph in bae allows you to model connections between nodes/vertices, where each connection can have associated data (edges). It's useful for representing:
+E   - Network structures
+E   - Hierarchical relationships
+E   - Dependencies
+E   - Social connections
+E   - Any data with relational patterns
+E   
+E   ## Key Features
+E   - **Nodes**: The entities or vertices in the graph
+E   - **Edges**: The connections between nodes, which can be directed or undirected
+E   - **Attributes**: Nodes and edges can have associated data/properties
+E   
+E   ## Common Operations
+E   - Adding/removing nodes and edges
+E   - Traversing the graph (DFS, BFS)
+E   - Finding paths between nodes
+E   - Analyzing connectivity and structure
+E   
+E   ## Typical Usage Pattern
+E   ```python
+E   # Conceptual example (syntax may vary)
+E   g = Graph()
+E   g.add_node(1, label="Node1")
+E   g.add_node(2, label="Node2")
+E   g.add_edge(1, 2, weight=5)
+E   ```
+E   
+E   Without seeing your specific bae code, I can't give exact syntax. If you'd like me to show you concrete examples or explore bae's Graph API, feel free to share more context or code!
+_ test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-Show me how to define a Node, -1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:307: in validate_response
+    assert len(all_python) > len(exec_blocks), (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected illustrative blocks beyond exec blocks. Total: 1, exec: 1.
+E   Response:
+E   I'll show you how to define a Node and create one for you.
+E   
+E   ```python
+E   # %% exec
+E   from cortex import Node
+E   from typing import Annotated
+E   
+E   # Define a simple Node class
+E   class GreetingNode(Node):
+E       """A node that generates a personalized greeting"""
+E       name: str
+E       
+E       def forward(self):
+E           return f"Hello, {self.name}! Welcome to Cortex."
+E   
+E   # Create an instance of the node
+E   greeting = GreetingNode(name="Claude")
+E   result = greeting()
+E   print(result)
+E   ```
+E   
+E   Here's what's happening:
+E   
+E   1. **Define the Node**: Create a class that inherits from `Node`
+E      - Add attributes (like `name`) that will be inputs
+E      - Implement the `forward()` method with your logic
+E      - Optionally add a docstring describing what it does
+E   
+E   2. **Create an instance**: Instantiate the class with values for its attributes
+E   
+E   3. **Execute the node**: Call it like a function with `()` to run the `forward()` method
+E   
+E   You can make nodes more complex by adding multiple inputs, using dependencies with `Annotated` and `Dep()`, or chaining nodes together!
+=========================== short test summary info ============================
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What is a Graph in bae?-0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-yaml_meta-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What is a Graph in bae?-0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-yaml_meta-Explain how Dep works with an -0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What is a Graph in bae?-0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-yaml_meta-Show me how to define a Node, -1]
+========== 11 failed, 34 passed, 225 deselected in 243.79s (0:04:03) ===========

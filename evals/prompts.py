@@ -1,38 +1,40 @@
 """Convention-specific system prompts, regexes, and validation for eval harness.
 
-Three convention candidates tested across Claude model tiers:
+Six convention candidates tested across Claude model tiers:
 - fence_annotation: ```python:exec for executable, plain ```python for illustrative
 - wrapper_marker: <exec>```python...```</exec> for executable
 - inverse: ```python:example for illustrative, bare ```python remains executable
+- xml_tag: <run>code</run> for executable, fences for illustrative
+- json_tool: {"execute": "code"} JSON block for executable, fences for illustrative
+- yaml_meta: ```python with # %% exec comment for executable
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 
 
 # ---------------------------------------------------------------------------
-# System prompts -- one per convention candidate
+# Shared preamble (kept minimal)
 # ---------------------------------------------------------------------------
 
-_PROMPT_FENCE_ANNOTATION = """\
-# Session
+_PREAMBLE = """\
 You are the AI inside cortex, a Python REPL. You share a namespace with the user.
+Answer in natural language by default. Be concise.
+Only your FIRST executable block per response is run."""
 
-## Rules
-- Answer in natural language by default. Be concise.
-- Reference the namespace state directly.
+
+# ---------------------------------------------------------------------------
+# System prompts -- one per convention, kept lean
+# ---------------------------------------------------------------------------
+
+_PROMPT_FENCE_ANNOTATION = _PREAMBLE + """
 
 ## Code execution convention
-Every Python code fence you write is either EXECUTABLE or ILLUSTRATIVE.
-- EXECUTABLE: Code that should run in the REPL. Use `python:exec` annotation on the fence.
-- ILLUSTRATIVE: Examples, pseudocode, explanations. Use plain `python` annotation on the fence.
-
-Only your FIRST executable block per response is run. Additional executable blocks are ignored.
-
-Never use the `python:exec` annotation in illustrative code, even when explaining how the convention works.
+Use `python:exec` for code to run. Use plain `python` for examples.
 
 <examples>
 <example>
@@ -42,61 +44,21 @@ Assistant:
 2**100
 ```
 </example>
-
 <example>
-User: explain how Dep works with an example
-Assistant: Dep is a marker for field-level dependency injection. When a Node field is annotated with Dep(fn), the graph resolves and injects the dependency before the node executes.
-
-Here's what it looks like:
+User: explain how Dep works
+Assistant: Dep is a dependency injection marker.
 ```python
-# Illustrative -- how Dep is used in a Node definition
-class WeatherNode(Node):
-    forecast: Annotated[str, Dep(get_forecast)]
+class MyNode(Node):
+    val: Annotated[str, Dep(fetch)]
 ```
-</example>
-
-<example>
-User: show me my variables and explain what ns() does
-Assistant: `ns()` lists all namespace objects with types and summaries. Let me show you:
-```python:exec
-ns()
-```
-
-The function inspects every non-underscore entry in the namespace and prints a formatted table:
-```python
-# How ns() works internally (illustrative)
-for name, obj in sorted(namespace.items()):
-    if not name.startswith("_"):
-        print(f"{name}  {type(obj).__name__}")
-```
-</example>
-
-<example>
-User: what is a Graph in bae?
-Assistant: A Graph is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
 </example>
 </examples>
-
-## Tools
-- `ns()` list all namespace objects with types.
-    `ns(obj)` deep-inspect any object.
-- Python interpreter: define classes, call functions, import modules.
 """
 
-_PROMPT_WRAPPER_MARKER = """\
-# Session
-You are the AI inside cortex, a Python REPL. You share a namespace with the user.
-
-## Rules
-- Answer in natural language by default. Be concise.
-- Reference the namespace state directly.
+_PROMPT_WRAPPER_MARKER = _PREAMBLE + """
 
 ## Code execution convention
-Every Python code fence you write is either EXECUTABLE or ILLUSTRATIVE.
-- EXECUTABLE: Code that should run in the REPL. Wrap the entire code fence in `<exec>` tags.
-- ILLUSTRATIVE: Examples, pseudocode, explanations. Write a bare code fence with no wrapper.
-
-Only your FIRST executable block per response is run. Additional executable blocks are ignored.
+Wrap executable code in `<exec>` tags. Bare fences are illustrative.
 
 <examples>
 <example>
@@ -108,65 +70,21 @@ Assistant:
 ```
 </exec>
 </example>
-
 <example>
-User: explain how Dep works with an example
-Assistant: Dep is a marker for field-level dependency injection. When a Node field is annotated with Dep(fn), the graph resolves and injects the dependency before the node executes.
-
-Here's what it looks like:
+User: explain how Dep works
+Assistant: Dep is a dependency injection marker.
 ```python
-# Illustrative -- how Dep is used in a Node definition
-class WeatherNode(Node):
-    forecast: Annotated[str, Dep(get_forecast)]
+class MyNode(Node):
+    val: Annotated[str, Dep(fetch)]
 ```
-</example>
-
-<example>
-User: show me my variables and explain what ns() does
-Assistant: `ns()` lists all namespace objects with types and summaries. Let me show you:
-<exec>
-```python
-ns()
-```
-</exec>
-
-The function inspects every non-underscore entry in the namespace and prints a formatted table:
-```python
-# How ns() works internally (illustrative)
-for name, obj in sorted(namespace.items()):
-    if not name.startswith("_"):
-        print(f"{name}  {type(obj).__name__}")
-```
-</example>
-
-<example>
-User: what is a Graph in bae?
-Assistant: A Graph is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
 </example>
 </examples>
-
-## Tools
-- `ns()` list all namespace objects with types.
-    `ns(obj)` deep-inspect any object.
-- Python interpreter: define classes, call functions, import modules.
 """
 
-_PROMPT_INVERSE = """\
-# Session
-You are the AI inside cortex, a Python REPL. You share a namespace with the user.
-
-## Rules
-- Answer in natural language by default. Be concise.
-- Reference the namespace state directly.
+_PROMPT_INVERSE = _PREAMBLE + """
 
 ## Code execution convention
-Every Python code fence you write is either EXECUTABLE or ILLUSTRATIVE.
-- EXECUTABLE: A bare `python` fence (no annotation). This code runs in the REPL.
-- ILLUSTRATIVE: Examples, pseudocode, explanations. Use `python:example` annotation on the fence so it does NOT execute.
-
-You MUST annotate every illustrative code fence with `python:example`. A bare `python` fence is always executed.
-
-Only your FIRST executable block per response is run. Additional executable blocks are ignored.
+Bare `python` fences are executed. Tag examples with `python:example` to prevent execution.
 
 <examples>
 <example>
@@ -176,45 +94,86 @@ Assistant:
 2**100
 ```
 </example>
-
 <example>
-User: explain how Dep works with an example
-Assistant: Dep is a marker for field-level dependency injection. When a Node field is annotated with Dep(fn), the graph resolves and injects the dependency before the node executes.
-
-Here's what it looks like:
+User: explain how Dep works
+Assistant: Dep is a dependency injection marker.
 ```python:example
-# Illustrative -- how Dep is used in a Node definition
-class WeatherNode(Node):
-    forecast: Annotated[str, Dep(get_forecast)]
+class MyNode(Node):
+    val: Annotated[str, Dep(fetch)]
 ```
-</example>
-
-<example>
-User: show me my variables and explain what ns() does
-Assistant: `ns()` lists all namespace objects with types and summaries. Let me show you:
-```python
-ns()
-```
-
-The function inspects every non-underscore entry in the namespace and prints a formatted table:
-```python:example
-# How ns() works internally (illustrative)
-for name, obj in sorted(namespace.items()):
-    if not name.startswith("_"):
-        print(f"{name}  {type(obj).__name__}")
-```
-</example>
-
-<example>
-User: what is a Graph in bae?
-Assistant: A Graph is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
 </example>
 </examples>
+"""
 
-## Tools
-- `ns()` list all namespace objects with types.
-    `ns(obj)` deep-inspect any object.
-- Python interpreter: define classes, call functions, import modules.
+_PROMPT_XML_TAG = _PREAMBLE + """
+
+## Code execution convention
+Write executable code inside `<run>` tags (no fence needed). Use regular fences for examples.
+
+<examples>
+<example>
+User: what's 2**100?
+Assistant:
+<run>
+2**100
+</run>
+</example>
+<example>
+User: explain how Dep works
+Assistant: Dep is a dependency injection marker.
+```python
+class MyNode(Node):
+    val: Annotated[str, Dep(fetch)]
+```
+</example>
+</examples>
+"""
+
+_PROMPT_JSON_TOOL = _PREAMBLE + """
+
+## Code execution convention
+Write executable code as a JSON block: `{"execute": "code here"}`. Use regular fences for examples.
+
+<examples>
+<example>
+User: what's 2**100?
+Assistant:
+{"execute": "print(2**100)"}
+</example>
+<example>
+User: explain how Dep works
+Assistant: Dep is a dependency injection marker.
+```python
+class MyNode(Node):
+    val: Annotated[str, Dep(fetch)]
+```
+</example>
+</examples>
+"""
+
+_PROMPT_YAML_META = _PREAMBLE + """
+
+## Code execution convention
+Start executable code blocks with a `# %% exec` comment on the first line. Fences without this comment are illustrative.
+
+<examples>
+<example>
+User: what's 2**100?
+Assistant:
+```python
+# %% exec
+2**100
+```
+</example>
+<example>
+User: explain how Dep works
+Assistant: Dep is a dependency injection marker.
+```python
+class MyNode(Node):
+    val: Annotated[str, Dep(fetch)]
+```
+</example>
+</examples>
 """
 
 
@@ -226,6 +185,9 @@ SYSTEM_PROMPTS: dict[str, str] = {
     "fence_annotation": _PROMPT_FENCE_ANNOTATION,
     "wrapper_marker": _PROMPT_WRAPPER_MARKER,
     "inverse": _PROMPT_INVERSE,
+    "xml_tag": _PROMPT_XML_TAG,
+    "json_tool": _PROMPT_JSON_TOOL,
+    "yaml_meta": _PROMPT_YAML_META,
 }
 
 CONVENTION_REGEXES: dict[str, re.Pattern[str]] = {
@@ -239,6 +201,17 @@ CONVENTION_REGEXES: dict[str, re.Pattern[str]] = {
     ),
     "inverse": re.compile(
         r"```(?:python|py)(?!:example)\s*\n(.*?)\n```",
+        re.DOTALL,
+    ),
+    "xml_tag": re.compile(
+        r"<run>\s*\n?(.*?)\n?\s*</run>",
+        re.DOTALL,
+    ),
+    "json_tool": re.compile(
+        r'\{"execute":\s*"((?:[^"\\]|\\.)*)"\}',
+    ),
+    "yaml_meta": re.compile(
+        r"```python\s*\n# %% exec\n(.*?)\n```",
         re.DOTALL,
     ),
 }
@@ -255,6 +228,12 @@ _EXAMPLE_FENCE_RE = re.compile(
     re.DOTALL,
 )
 
+# Any code-like content for xml_tag and json_tool (they don't use fences for exec)
+_ANY_CODE_RE = re.compile(
+    r"(?:```(?:python|py)\S*\s*\n.*?\n```)|(?:<run>.*?</run>)|(?:\{\"execute\":\s*\"(?:[^\"\\]|\\.)*\"\})",
+    re.DOTALL,
+)
+
 
 # ---------------------------------------------------------------------------
 # Validation
@@ -264,7 +243,7 @@ def validate_response(response: str, convention: str, expected: str) -> None:
     """Validate that a model response follows the convention correctly.
 
     expected types:
-      no_code  -- no python fences at all
+      no_code  -- no executable or illustrative code blocks at all
       one_exec -- at least one executable block
       no_exec  -- zero executable blocks, at least one illustrative fence
       mixed    -- at least one executable AND at least one non-executable fence
@@ -274,10 +253,19 @@ def validate_response(response: str, convention: str, expected: str) -> None:
     all_python = _ALL_PYTHON_RE.findall(response)
 
     if expected == "no_code":
-        assert len(all_python) == 0, (
-            f"Expected no code blocks, got {len(all_python)}.\n"
-            f"Response:\n{response}"
-        )
+        # For fence-based conventions, check fences. For xml_tag/json_tool, also
+        # check their executable patterns.
+        if convention in ("xml_tag", "json_tool"):
+            any_code = _ANY_CODE_RE.findall(response)
+            assert len(any_code) == 0, (
+                f"Expected no code blocks, got {len(any_code)}.\n"
+                f"Response:\n{response}"
+            )
+        else:
+            assert len(all_python) == 0, (
+                f"Expected no code blocks, got {len(all_python)}.\n"
+                f"Response:\n{response}"
+            )
 
     elif expected == "one_exec":
         assert len(exec_blocks) >= 1, (
@@ -294,14 +282,12 @@ def validate_response(response: str, convention: str, expected: str) -> None:
             f"Expected at least one illustrative fence, got none.\n"
             f"Response:\n{response}"
         )
-        # Inverse silent-failure detection (Pitfall 5): verify illustrative
-        # fences actually use the :example annotation, not bare fences.
+        # Inverse silent-failure detection: verify :example annotation
         if convention == "inverse":
             example_fences = _EXAMPLE_FENCE_RE.findall(response)
             assert len(example_fences) >= 1, (
-                f"Inverse convention: expected illustrative fences with "
-                f":example annotation, but found none. The model may have "
-                f"written bare fences (silent compliance failure).\n"
+                f"Inverse convention: expected :example annotation, "
+                f"found bare fences (silent compliance failure).\n"
                 f"Response:\n{response}"
             )
 
@@ -310,12 +296,19 @@ def validate_response(response: str, convention: str, expected: str) -> None:
             f"Expected at least one executable block, got none.\n"
             f"Response:\n{response}"
         )
-        # There should be more total python fences than executable ones
-        assert len(all_python) > len(exec_blocks), (
-            f"Expected illustrative blocks beyond exec blocks. "
-            f"Total python fences: {len(all_python)}, exec: {len(exec_blocks)}.\n"
-            f"Response:\n{response}"
-        )
+        # For xml_tag/json_tool, exec doesn't use fences, so illustrative =
+        # any python fence. For fence-based, more fences than exec blocks.
+        if convention in ("xml_tag", "json_tool"):
+            assert len(all_python) >= 1, (
+                f"Expected illustrative fences alongside exec, got none.\n"
+                f"Response:\n{response}"
+            )
+        else:
+            assert len(all_python) > len(exec_blocks), (
+                f"Expected illustrative blocks beyond exec blocks. "
+                f"Total: {len(all_python)}, exec: {len(exec_blocks)}.\n"
+                f"Response:\n{response}"
+            )
 
     else:
         raise ValueError(f"Unknown expected type: {expected!r}")

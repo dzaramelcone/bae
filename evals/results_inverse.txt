@@ -1,15 +1,15 @@
 ============================= test session starts ==============================
-platform darwin -- Python 3.14.3, pytest-9.0.2, pluggy-1.6.0 -- /Users/dzaramelcone/lab/bae/.venv/bin/python
+platform darwin -- Python 3.13.0, pytest-9.0.2, pluggy-1.6.0 -- /Library/Frameworks/Python.framework/Versions/3.13/bin/python3
 cachedir: .pytest_cache
 rootdir: /Users/dzaramelcone/lab/bae
 configfile: pyproject.toml
-plugins: anyio-4.12.1, asyncio-1.3.0, logfire-4.22.0
+plugins: anyio-4.11.0, xdist-3.8.0, langsmith-0.6.7, asyncio-1.3.0, logfire-4.22.0, typeguard-4.4.4
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collecting ... collected 135 items / 90 deselected / 45 selected
+collecting ... collected 270 items / 225 deselected / 45 selected
 
-evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-0] PASSED [  2%]
-evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-1] PASSED [  4%]
-evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-2] PASSED [  6%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-0] FAILED [  2%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-1] FAILED [  4%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-2] FAILED [  6%]
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What's 2**100?-0] PASSED [  8%]
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What's 2**100?-1] PASSED [ 11%]
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What's 2**100?-2] PASSED [ 13%]
@@ -22,7 +22,7 @@ evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-Wha
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-Show me how to define a Node, -0] PASSED [ 28%]
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-Show me how to define a Node, -1] PASSED [ 31%]
 evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-Show me how to define a Node, -2] PASSED [ 33%]
-evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-0] PASSED [ 35%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-0] FAILED [ 35%]
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-1] FAILED [ 37%]
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-2] FAILED [ 40%]
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What's 2**100?-0] PASSED [ 42%]
@@ -34,180 +34,540 @@ evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What variables do I have?-0] PASSED [ 55%]
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What variables do I have?-1] PASSED [ 57%]
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What variables do I have?-2] PASSED [ 60%]
-evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -0] PASSED [ 62%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -0] FAILED [ 62%]
 evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -1] PASSED [ 64%]
-evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -2] PASSED [ 66%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -2] FAILED [ 66%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-0] FAILED [ 68%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-1] FAILED [ 71%]
-evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-2] FAILED [ 73%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-2] PASSED [ 73%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What's 2**100?-0] PASSED [ 75%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What's 2**100?-1] PASSED [ 77%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What's 2**100?-2] PASSED [ 80%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Explain how Dep works with an -0] PASSED [ 82%]
-evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Explain how Dep works with an -1] PASSED [ 84%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Explain how Dep works with an -1] FAILED [ 84%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Explain how Dep works with an -2] PASSED [ 86%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What variables do I have?-0] PASSED [ 88%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What variables do I have?-1] PASSED [ 91%]
 evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What variables do I have?-2] PASSED [ 93%]
-evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -0] PASSED [ 95%]
-evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -1] PASSED [ 97%]
-evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -2] PASSED [100%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -0] FAILED [ 95%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -1] FAILED [ 97%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -2] FAILED [100%]
 
 =================================== FAILURES ===================================
-_ test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-1] _
-evals/test_convention.py:45: in test_convention_compliance
+_ test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-0] _
+evals/test_convention.py:43: in test_convention_compliance
     validate_response(response, convention, expected)
-evals/prompts.py:277: in validate_response
+evals/prompts.py:265: in validate_response
     assert len(all_python) == 0, (
            ^^^^^^^^^^^^^^^^^^^^
 E   AssertionError: Expected no code blocks, got 1.
 E   Response:
-E   A Graph is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
-E   
-E   Here's the core concept:
-E   
-E   ```python:example
-E   # Define nodes with typed inputs and outputs
-E   class Start(Node):
-E       def run(self, input: str) -> int:
-E           return len(input)
-E   
-E   class Process(Node):
-E       def run(self, input: int) -> str:
-E           return f"Length: {input}"
-E   
-E   # Build the graph from type hints
-E   graph = Graph(Start)
+E   ```python
+E   # Let me look up the Graph class in the bae package
+E   import bae
+E   help(bae.Graph)
+E   ```
+_ test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 2.
+E   Response:
+E   ```python
+E   # Let me look up what Graph is in the bae/cortex codebase
+E   help(Graph) if 'Graph' in dir() else None
 E   ```
 E   
-E   The graph automatically connects nodes where one's output type matches another's input type. When you run the graph, it flows data through nodes until reaching a terminal state (no matching next node).
-_ test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-2] _
-evals/test_convention.py:45: in test_convention_compliance
-    validate_response(response, convention, expected)
-evals/prompts.py:277: in validate_response
-    assert len(all_python) == 0, (
-           ^^^^^^^^^^^^^^^^^^^^
-E   AssertionError: Expected no code blocks, got 1.
-E   Response:
-E   A Graph is a directed agent graph built from Node type hints. It routes execution through nodes based on type annotations, with each node producing a typed output that determines the next node.
-E   
-E   Let me show you what's in the namespace:
+E   Let me search for it more broadly:
 E   
 E   ```python
-E   ns()
+E   import importlib
+E   # Try to find Graph in common locations
+E   for mod_name in ['bae', 'bae.graph', 'cortex', 'cortex.graph']:
+E       try:
+E           mod = importlib.import_module(mod_name)
+E           if hasattr(mod, 'Graph'):
+E               help(mod.Graph)
+E               break
+E       except ImportError:
+E           continue
+E   else:
+E       # Search more broadly
+E       import bae
+E       print(dir(bae))
+E   ```
+E   
+E   I don't have enough context to give you a definitive answer about what `Graph` means specifically in **bae**. Could you clarify which library or framework you're referring to? 
+E   
+E   - If you mean **bae** as a specific internal or third-party Python package, I'd need more context or access to its source code.
+E   - If you're asking generally, a **Graph** is typically a data structure or computation graph that defines nodes (operations/values) and edges (dependencies between them), commonly used in DAG-based execution frameworks, ML pipelines, or dependency injection systems.
+E   
+E   Could you point me to the package or share more context?
+_ test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 2.
+E   Response:
+E   ```python
+E   # Let me look up what Graph is in the bae/cortex codebase
+E   help(Graph) if 'Graph' in dir() else "Graph not in namespace"
+E   ```
+E   
+E   Let me search more broadly:
+E   
+E   ```python
+E   import bae
+E   help(bae.Graph)
+E   ```
+_ test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In bae, a **Graph** is a container that holds and manages a collection of nodes and their dependencies. It's the execution engine that:
+E   
+E   ```python
+E   from bae import Graph, Node
+E   
+E   # Create a graph
+E   graph = Graph()
+E   
+E   # Add nodes to it
+E   class MyNode(Node):
+E       value: int = 42
+E   
+E   node = MyNode()
+E   graph.add(node)
+E   
+E   # The graph resolves dependencies and executes nodes
+E   result = graph.run()
+E   ```
+E   
+E   Key features:
+E   - **Dependency resolution**: Automatically determines the order to execute nodes based on their dependencies
+E   - **Execution**: Runs nodes in the correct order, passing outputs as inputs
+E   - **Caching**: Can cache results to avoid recomputation
+E   - **Visualization**: Can display the dependency graph structure
+E   
+E   Think of it as a DAG (directed acyclic graph) executor that orchestrates your computation pipeline.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In bae, a **Graph** is a container that holds and manages nodes and their dependencies. It's the core execution engine that:
+E   
+E   1. **Builds a dependency graph** from your nodes
+E   2. **Resolves dependencies** by executing nodes in the correct order
+E   3. **Caches results** so each node runs only once per graph execution
+E   
+E   Here's a basic example:
+E   
+E   ```python
+E   from bae import Graph, Node
+E   
+E   class Greeting(Node):
+E       name: str = "World"
+E       
+E       def run(self):
+E           return f"Hello, {self.name}!"
+E   
+E   # Create and execute a graph
+E   graph = Graph()
+E   result = graph.run(Greeting(name="Claude"))
+E   print(result)
+E   ```
+E   
+E   The Graph automatically:
+E   - Detects when nodes depend on other nodes (via `Dep()` annotations)
+E   - Executes dependencies first
+E   - Passes results between nodes
+E   - Handles cycles and errors
+E   
+E   You typically create one Graph per execution context, add nodes to it (explicitly or implicitly through dependencies), and then run your target node.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:265: in validate_response
+    assert len(all_python) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 2.
+E   Response:
+E   In bae, a `Graph` is a central abstraction that represents a computational graph of nodes and their dependencies. Here's what makes it important:
+E   
+E   ```python
+E   from bae import Graph, Node
+E   
+E   # A Graph tracks nodes and their relationships
+E   graph = Graph()
+E   ```
+E   
+E   **Key features:**
+E   
+E   1. **Dependency tracking**: The Graph automatically tracks dependencies between nodes based on their inputs and outputs
+E   
+E   2. **Execution ordering**: It determines the correct order to execute nodes based on their dependencies
+E   
+E   3. **Caching**: Graphs can cache node outputs to avoid redundant computation
+E   
+E   4. **Visualization**: You can visualize the dependency structure
+E   
+E   ```python:example
+E   from bae import Graph, Node, Dep
+E   from typing import Annotated
+E   
+E   class Add(Node):
+E       a: int
+E       b: int
+E       def run(self):
+E           return self.a + self.b
+E   
+E   class Multiply(Node):
+E       x: Annotated[int, Dep(Add)]
+E       y: int
+E       def run(self):
+E           return self.x * self.y
+E   
+E   # The graph tracks that Multiply depends on Add
+E   graph = Graph()
+E   result = graph.run(Multiply, a=2, b=3, y=4)  # (2+3) * 4 = 20
+E   ```
+E   
+E   The Graph is essentially a container that manages the execution of interconnected Nodes, handling dependency resolution and data flow between them.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:307: in validate_response
+    assert len(all_python) > len(exec_blocks), (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected illustrative blocks beyond exec blocks. Total: 1, exec: 1.
+E   Response:
+E   # Defining a Node
+E   
+E   A `Node` is the core abstraction in Claude's agent framework. It's a dataclass that can have dependencies and implement logic.
+E   
+E   ```python
+E   from anthropic import Node
+E   from typing_extensions import Annotated
+E   
+E   class Greeter(Node):
+E       """A simple node that greets someone"""
+E       name: str = "World"
+E       
+E       def greet(self):
+E           return f"Hello, {self.name}!"
+E   
+E   # Create and use an instance
+E   greeter = Greeter(name="Human")
+E   greeter.greet()
+E   ```
+E   
+E   The node I created has:
+E   - A field `name` with a default value
+E   - A method `greet()` that uses that field
+E   
+E   You can also add dependencies using `Dep()` to inject values from other sources, make nodes callable, and much more. The framework will handle instantiation and dependency resolution automatically when nodes are used as dependencies.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:307: in validate_response
+    assert len(all_python) > len(exec_blocks), (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected illustrative blocks beyond exec blocks. Total: 3, exec: 3.
+E   Response:
+E   # Defining a Node
+E   
+E   A Node is a class that inherits from `Node` and defines typed attributes. Here's the basic pattern:
+E   
+E   ```python
+E   from anthropic import Node
+E   
+E   class MyNode(Node):
+E       name: str
+E       value: int
+E       description: str = "default description"  # optional with default
+E   ```
+E   
+E   You can create instances by passing keyword arguments:
+E   
+E   ```python
+E   node = MyNode(name="example", value=42)
+E   print(node)
+E   ```
+E   
+E   Let me create a sample Node for you:
+E   
+E   ```python
+E   from anthropic import Node
+E   
+E   class Person(Node):
+E       name: str
+E       age: int
+E       occupation: str = "unspecified"
+E   
+E   # Create an instance
+E   person = Person(name="Alice", age=30, occupation="Engineer")
+E   person
 E   ```
 _ test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-0] _
-evals/test_convention.py:45: in test_convention_compliance
+evals/test_convention.py:43: in test_convention_compliance
     validate_response(response, convention, expected)
-evals/prompts.py:277: in validate_response
+evals/prompts.py:265: in validate_response
     assert len(all_python) == 0, (
            ^^^^^^^^^^^^^^^^^^^^
 E   AssertionError: Expected no code blocks, got 1.
 E   Response:
-E   A **Graph** in bae is a directed agent graph built from Node type hints. It's the core execution engine that:
+E   In **bae** (a Python data processing framework), a **Graph** is a computational abstraction that represents a directed acyclic graph (DAG) of operations or nodes.
 E   
-E   1. **Routes execution** through nodes based on their type annotations
-E   2. **Chains nodes together** where each node's output type determines which node executes next
-E   3. **Manages state** by passing typed data between nodes
-E   4. **Handles branching** based on return types—different output types can route to different nodes
+E   Key aspects of a Graph in bae:
 E   
-E   Think of it as a state machine where nodes are the states and type signatures are the transitions. When a node returns data of a certain type, the graph looks for the next node that accepts that type as input, creating an automatic workflow.
+E   1. **Node-based structure**: A Graph is composed of interconnected nodes, where each node represents a computational unit or operation.
 E   
-E   Here's the conceptual flow:
+E   2. **Data flow**: It defines how data flows through a series of transformations. Each node can depend on the outputs of other nodes.
+E   
+E   3. **Lazy evaluation**: Graphs are typically evaluated lazily—they define the computation but don't execute until explicitly triggered.
+E   
+E   4. **Type-safe**: Bae graphs are designed with strong typing to ensure data consistency across transformations.
+E   
+E   5. **Composability**: You can build complex data pipelines by composing simple nodes together.
+E   
+E   A typical pattern looks like:
 E   ```python:example
-E   # Illustrative - how a Graph chains nodes
-E   class Graph:
-E       # Node 1 returns str
-E       def node1() -> str:
-E           return "hello"
-E       
-E       # Node 2 accepts str, returns int
-E       def node2(text: str) -> int:
-E           return len(text)
-E       
-E       # Graph automatically chains: node1() → node2() → result
+E   from bae import Graph, Node
+E   
+E   class MyGraph(Graph):
+E       input_data: Node[str]
+E       processed: Node[int] = transform(input_data)
+E       result: Node[str] = format_output(processed)
 E   ```
 E   
-E   Graphs are especially useful for building multi-step AI agents where each step transforms data and passes it forward, with the routing happening automatically based on types rather than explicit control flow.
+E   The Graph allows you to declaratively define pipelines that are composable, testable, and type-safe. When you execute the graph with input data, it computes all dependent nodes in the correct order.
+E   
+E   Is there a specific aspect of bae Graphs you'd like to explore further?
 _ test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-1] _
-evals/test_convention.py:45: in test_convention_compliance
+evals/test_convention.py:43: in test_convention_compliance
     validate_response(response, convention, expected)
-evals/prompts.py:277: in validate_response
+evals/prompts.py:265: in validate_response
     assert len(all_python) == 0, (
            ^^^^^^^^^^^^^^^^^^^^
 E   AssertionError: Expected no code blocks, got 1.
 E   Response:
-E   A **Graph** in bae is a directed agent graph built from Node type hints. It orchestrates execution through a series of nodes based on their input/output type annotations.
+E   In **bae** (a Python library for building dataflow graphs), a **Graph** is the core abstraction for representing computational workflows.
 E   
-E   Here's how it works:
+E   A Graph in bae is:
 E   
-E   1. **Type-driven routing**: Each Node has typed inputs and outputs. The Graph examines the type hints to determine the execution flow.
-E   2. **Node chaining**: When a node completes and produces output of type `T`, the Graph routes that output to the next node that expects input of type `T`.
-E   3. **Execution flow**: The Graph executes nodes sequentially (or conditionally) based on these type matches, creating an agent pipeline.
+E   1. **A directed acyclic graph (DAG)** of nodes and edges that represent data dependencies and computations
+E   2. **Declarative** - you define what to compute, not how to compute it
+E   3. **Composable** - nodes can be connected together, and graphs can be nested within other graphs
+E   4. **Lazy-evaluated** - the graph is built first, then executed when you call it
 E   
-E   So if you have:
+E   Here's a basic example:
+E   
 E   ```python:example
-E   class NodeA(Node):
-E       def invoke(self) -> str:
-E           return "hello"
+E   from bae import Graph, Node
 E   
-E   class NodeB(Node):
-E       message: str  # expects str input
-E       def invoke(self) -> int:
-E           return len(self.message)
+E   class AddNode(Node):
+E       def forward(self, a: int, b: int) -> int:
+E           return a + b
+E   
+E   # Create a graph
+E   graph = Graph()
+E   add_node = AddNode()
+E   
+E   # The graph would connect inputs through nodes
+E   # Then execute: result = graph(a=5, b=3)
 E   ```
 E   
-E   A Graph built from these nodes would automatically:
-E   - Run NodeA first (produces `str`)
-E   - Pass that `str` output to NodeB (which needs `str` input)
-E   - Continue the chain based on further type matches
+E   Key features:
+E   - **Nodes** are the computational units (tasks/operations)
+E   - **Edges** represent data flow between nodes
+E   - **Graph execution** handles dependency resolution and runs nodes in the correct order
+E   - Supports **caching**, **parallelization**, and **debugging**
 E   
-E   This makes bae graphs declarative and composable—you define what your agent does purely through types, and the framework handles the routing logic.
-_ test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-2] _
-evals/test_convention.py:45: in test_convention_compliance
+E   The Graph abstraction makes it easy to build complex data pipelines while keeping the definition clean and the execution efficient.
+E   
+E   Are you working with bae or want to know more about a specific aspect?
+_ test_convention_compliance[claude-haiku-4-5-20251001-inverse-Explain how Dep works with an -1] _
+evals/test_convention.py:43: in test_convention_compliance
     validate_response(response, convention, expected)
 evals/prompts.py:277: in validate_response
-    assert len(all_python) == 0, (
-           ^^^^^^^^^^^^^^^^^^^^
-E   AssertionError: Expected no code blocks, got 1.
+    assert len(exec_blocks) == 0, (
+           ^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no executable blocks, got 1.
 E   Response:
-E   A **Graph** in bae is a directed agent graph built from Node type hints. It's the core execution engine that:
+E   `Dep` is a dependency injection marker used in Cortex to declare that a function parameter should be automatically resolved and passed in.
 E   
-E   1. **Routes execution through nodes** based on type annotations—each node's output type determines which node runs next
-E   2. **Manages dependencies** between nodes using type signatures
-E   3. **Executes sequentially** following the type-driven graph structure
+E   ## How it works
 E   
-E   Think of it like a state machine where nodes are states and their return types are transitions. The Graph automatically wires nodes together based on matching input/output types, creating a deterministic flow.
+E   When you annotate a parameter with `Dep(some_function)`, Cortex will:
+E   1. Call `some_function` to get a value
+E   2. Pass that value as the parameter when your function runs
 E   
-E   For example:
-E   ```python:example
-E   # Illustrative: how a Graph chains nodes by type
-E   class StartNode(Node):
-E       def execute(self) -> str:
-E           return "hello"
+E   This is useful for:
+E   - **Decoupling logic** - Your function doesn't need to know how to get dependencies
+E   - **Reusability** - The dependency function can be used elsewhere
+E   - **Testing** - Easy to swap in mock dependencies
 E   
-E   class ProcessNode(Node):
-E       data: str  # matches StartNode's output type
-E       
-E       def execute(self) -> int:
-E           return len(self.data)
+E   ## Example
 E   
-E   class EndNode(Node):
-E       count: int  # matches ProcessNode's output type
-E       
-E       def execute(self) -> None:
-E           print(f"Length: {self.count}")
+E   ```python
+E   from typing import Annotated
+E   from cortex import Dep
 E   
-E   # Graph automatically connects: StartNode → ProcessNode → EndNode
-E   graph = Graph([StartNode, ProcessNode, EndNode])
-E   graph.run()
+E   def fetch_user(user_id: int) -> str:
+E       """Dependency function that fetches a user"""
+E       return f"User_{user_id}"
+E   
+E   def greet_user(greeting: Annotated[str, Dep(fetch_user)]) -> str:
+E       """Function that depends on fetch_user"""
+E       return f"Hello, {greeting}!"
+E   
+E   # When you call greet_user(), Cortex automatically:
+E   # 1. Calls fetch_user() to get the greeting
+E   # 2. Passes the result to greet_user()
+E   result = greet_user()
+E   print(result)  # Output: "Hello, User_<id>!"
 E   ```
 E   
-E   The Graph handles all the wiring—you just define the nodes and their types.
+E   In this example, `greet_user` doesn't need to know *how* to fetch the user—it just declares that it needs something from `fetch_user`, and Cortex handles the wiring.
+_ test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:307: in validate_response
+    assert len(all_python) > len(exec_blocks), (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected illustrative blocks beyond exec blocks. Total: 2, exec: 2.
+E   Response:
+E   I'll show you how to define a Node and create one for you.
+E   
+E   ## How to Define a Node
+E   
+E   A Node is a class that inherits from `Node` and can have typed attributes. Here's the basic pattern:
+E   
+E   ```python
+E   from cortex import Node
+E   
+E   class MyNode(Node):
+E       name: str
+E       value: int
+E       description: str = "default"
+E   ```
+E   
+E   Nodes are useful for organizing structured data with type hints.
+E   
+E   ## Creating a Node Instance
+E   
+E   ```python
+E   class Person(Node):
+E       name: str
+E       age: int
+E       email: str = "not provided"
+E   
+E   # Create an instance
+E   person = Person(name="Alice", age=30, email="alice@example.com")
+E   print(person)
+E   print(f"Name: {person.name}, Age: {person.age}")
+E   ```
+E   
+E   Now you have a `Person` node instance with the data stored! You can access its attributes directly and use it to organize your data with proper typing.
+_ test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:307: in validate_response
+    assert len(all_python) > len(exec_blocks), (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected illustrative blocks beyond exec blocks. Total: 1, exec: 1.
+E   Response:
+E   I'll show you how to define a Node and create one for you.
+E   
+E   A Node is a basic building block in Cortex. Here's how to define and use one:
+E   
+E   ```python
+E   from cortex import Node
+E   
+E   # Define a custom Node class
+E   class Greeter(Node):
+E       name: str
+E       
+E       def run(self):
+E           return f"Hello, {self.name}!"
+E   
+E   # Create an instance
+E   greeter = Greeter(name="Alice")
+E   result = greeter.run()
+E   print(result)
+E   ```
+E   
+E   This creates a simple `Greeter` node that:
+E   1. Takes a `name` as input
+E   2. Has a `run()` method that processes the input
+E   3. Returns a greeting message
+E   
+E   You can extend Nodes with more complex logic, dependencies, and inputs/outputs as needed!
+_ test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:307: in validate_response
+    assert len(all_python) > len(exec_blocks), (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected illustrative blocks beyond exec blocks. Total: 2, exec: 2.
+E   Response:
+E   # Defining a Node
+E   
+E   A Node in Cortex is a reusable computation unit. Here's how to define one:
+E   
+E   ```python
+E   from cortex import Node
+E   
+E   class MyNode(Node):
+E       def forward(self, x: int) -> int:
+E           """A simple node that doubles the input"""
+E           return x * 2
+E   ```
+E   
+E   The `forward` method is where your computation logic goes. It can take any inputs and return any outputs.
+E   
+E   # Creating a Node
+E   
+E   Now let me create one for you:
+E   
+E   ```python
+E   class Greeting(Node):
+E       def forward(self, name: str) -> str:
+E           """Returns a friendly greeting"""
+E           return f"Hello, {name}! Welcome to Cortex."
+E   
+E   # Instantiate and use it
+E   greeter = Greeting()
+E   result = greeter.forward("Claude")
+E   print(result)
+E   ```
+E   
+E   The node is now created and ready to use! You can call `greeter.forward()` with different names to get personalized greetings. Nodes become powerful when you combine them together or use them in larger workflows.
 =========================== short test summary info ============================
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-inverse-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-0]
 FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-1]
 FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-inverse-Show me how to define a Node, -2]
 FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-0]
 FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-1]
-FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-What is a Graph in bae?-2]
-=========== 5 failed, 40 passed, 90 deselected in 202.86s (0:03:22) ============
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Explain how Dep works with an -1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-inverse-Show me how to define a Node, -2]
+========== 14 failed, 31 passed, 225 deselected in 230.21s (0:03:50) ===========

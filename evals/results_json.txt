@@ -1,0 +1,268 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.0, pytest-9.0.2, pluggy-1.6.0 -- /Library/Frameworks/Python.framework/Versions/3.13/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/dzaramelcone/lab/bae
+configfile: pyproject.toml
+plugins: anyio-4.11.0, xdist-3.8.0, langsmith-0.6.7, asyncio-1.3.0, logfire-4.22.0, typeguard-4.4.4
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 270 items / 225 deselected / 45 selected
+
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What is a Graph in bae?-0] FAILED [  2%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What is a Graph in bae?-1] FAILED [  4%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What is a Graph in bae?-2] FAILED [  6%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What's 2**100?-0] PASSED [  8%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What's 2**100?-1] PASSED [ 11%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What's 2**100?-2] PASSED [ 13%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-Explain how Dep works with an -0] PASSED [ 15%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-Explain how Dep works with an -1] PASSED [ 17%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-Explain how Dep works with an -2] PASSED [ 20%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What variables do I have?-0] PASSED [ 22%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What variables do I have?-1] PASSED [ 24%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What variables do I have?-2] PASSED [ 26%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-Show me how to define a Node, -0] PASSED [ 28%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-Show me how to define a Node, -1] PASSED [ 31%]
+evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-Show me how to define a Node, -2] PASSED [ 33%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What is a Graph in bae?-0] FAILED [ 35%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What is a Graph in bae?-1] FAILED [ 37%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What is a Graph in bae?-2] FAILED [ 40%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What's 2**100?-0] PASSED [ 42%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What's 2**100?-1] PASSED [ 44%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What's 2**100?-2] PASSED [ 46%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-Explain how Dep works with an -0] PASSED [ 48%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-Explain how Dep works with an -1] PASSED [ 51%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-Explain how Dep works with an -2] PASSED [ 53%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What variables do I have?-0] PASSED [ 55%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What variables do I have?-1] PASSED [ 57%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What variables do I have?-2] PASSED [ 60%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-Show me how to define a Node, -0] PASSED [ 62%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-Show me how to define a Node, -1] PASSED [ 64%]
+evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-Show me how to define a Node, -2] PASSED [ 66%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-What is a Graph in bae?-0] PASSED [ 68%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-What is a Graph in bae?-1] PASSED [ 71%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-What is a Graph in bae?-2] PASSED [ 73%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-What's 2**100?-0] PASSED [ 75%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-What's 2**100?-1] PASSED [ 77%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-What's 2**100?-2] PASSED [ 80%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-Explain how Dep works with an -0] PASSED [ 82%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-Explain how Dep works with an -1] PASSED [ 84%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-Explain how Dep works with an -2] PASSED [ 86%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-What variables do I have?-0] PASSED [ 88%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-What variables do I have?-1] PASSED [ 91%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-What variables do I have?-2] PASSED [ 93%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-Show me how to define a Node, -0] FAILED [ 95%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-Show me how to define a Node, -1] FAILED [ 97%]
+evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-Show me how to define a Node, -2] PASSED [100%]
+
+=================================== FAILURES ===================================
+_ test_convention_compliance[claude-opus-4-6-json_tool-What is a Graph in bae?-0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   {"execute": "import inspect\ntry:\n    from bae import Graph\n    print(inspect.getdoc(Graph))\n    print('\\n---SOURCE---\\n')\n    print(inspect.getsource(Graph))\nexcept Exception as e:\n    print(e)"}
+_ test_convention_compliance[claude-opus-4-6-json_tool-What is a Graph in bae?-1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   {"execute": "import bae; help(bae.Graph)"}
+_ test_convention_compliance[claude-opus-4-6-json_tool-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 2.
+E   Response:
+E   {"execute": "import inspect\ntry:\n    from bae import Graph\n    print(inspect.getdoc(Graph))\n    print('\\n--- MRO ---')\n    print(Graph.__mro__)\n    print('\\n--- Source ---')\n    print(inspect.getsource(Graph))\nexcept ImportError:\n    try:\n        import bae\n        print(dir(bae))\n    except:\n        print('bae not available')"}
+E   
+E   Let me look at what's available:
+E   
+E   {"execute": "try:\n    import bae\n    print(dir(bae))\nexcept ImportError:\n    # Try searching for it\n    import subprocess\n    result = subprocess.run(['pip', 'show', 'bae'], capture_output=True, text=True)\n    print(result.stdout or result.stderr)\n    result2 = subprocess.run(['find', '/usr', '-name', 'bae*', '-type', 'f'], capture_output=True, text=True)\n    print(result2.stdout)"}
+E   
+E   I don't have the `bae` library available in this environment. Could you clarify which `bae` package you're referring to? There are a few possibilities:
+E   
+E   1. **A private/internal library** you have installed locally — if so, could you share more context or import it in this session?
+E   2. **A specific open-source package** — could you share a link or the full package name?
+E   
+E   If you can import it or point me to its source, I can inspect the `Graph` class for you and explain what it does.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What is a Graph in bae?-0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In bae, a **Graph** is a container that holds and manages nodes in a computational graph. It's the core structure that:
+E   
+E   1. **Stores nodes**: Keeps track of all Node instances
+E   2. **Manages dependencies**: Automatically resolves dependencies between nodes (via `Dep` annotations)
+E   3. **Handles execution**: Runs nodes in the correct order based on their dependencies
+E   4. **Provides context**: Nodes can access the graph they belong to via `self.graph`
+E   
+E   Here's a basic example:
+E   
+E   ```python
+E   from bae import Graph, Node
+E   
+E   class MyNode(Node):
+E       async def run(self):
+E           return "Hello from node!"
+E   
+E   # Create and use a graph
+E   graph = Graph()
+E   node = MyNode()
+E   graph.add(node)
+E   
+E   result = await graph.run(node)
+E   ```
+E   
+E   The Graph automatically:
+E   - Detects dependencies between nodes
+E   - Executes them in topological order
+E   - Caches results to avoid redundant computation
+E   - Handles async execution
+E   
+E   Think of it as an orchestrator that makes sure all your nodes get the data they need and run in the right sequence.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What is a Graph in bae?-1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In bae, a `Graph` is a container that manages nodes and their dependencies. It's the core execution engine that:
+E   
+E   1. **Holds nodes**: You add `Node` instances to it
+E   2. **Resolves dependencies**: Automatically figures out which nodes depend on which others (via `Dep` annotations)
+E   3. **Executes nodes**: Runs them in the correct order based on dependencies
+E   4. **Caches results**: Stores node outputs so they're only computed once per graph execution
+E   
+E   Here's a basic example:
+E   
+E   ```python
+E   from bae import Graph, Node, Dep
+E   from typing import Annotated
+E   
+E   class NameNode(Node):
+E       def run(self):
+E           return "Alice"
+E   
+E   class GreetingNode(Node):
+E       name: Annotated[str, Dep(NameNode)]
+E       
+E       def run(self):
+E           return f"Hello, {self.name}!"
+E   
+E   graph = Graph()
+E   graph.add(NameNode())
+E   graph.add(GreetingNode())
+E   result = graph.run(GreetingNode)  # Returns "Hello, Alice!"
+E   ```
+E   
+E   The Graph automatically runs `NameNode` first, then passes its result to `GreetingNode`.
+_ test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What is a Graph in bae?-2] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:260: in validate_response
+    assert len(any_code) == 0, (
+           ^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected no code blocks, got 1.
+E   Response:
+E   In bae, a **Graph** is a collection of nodes that defines the structure and flow of your application. It's the core abstraction that orchestrates how data flows through your system.
+E   
+E   ```python
+E   from bae import Graph, Node
+E   
+E   class MyGraph(Graph):
+E       # Define nodes as class attributes
+E       input_node: InputNode
+E       processor: ProcessorNode
+E       output_node: OutputNode
+E   ```
+E   
+E   Key characteristics:
+E   
+E   - **Declarative structure**: You define nodes as typed class attributes
+E   - **Automatic dependency resolution**: The graph analyzes node dependencies (via `Dep` annotations) and determines execution order
+E   - **Execution engine**: When you run a graph, it executes nodes in the correct order, passing data between them
+E   - **Type safety**: Uses Python type hints to validate connections between nodes
+E   
+E   The graph handles the orchestration - you just declare what nodes exist and how they depend on each other, and bae figures out the rest.
+_ test_convention_compliance[claude-haiku-4-5-20251001-json_tool-Show me how to define a Node, -0] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:295: in validate_response
+    assert len(exec_blocks) >= 1, (
+           ^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected at least one executable block, got none.
+E   Response:
+E   I'll show you how to define a Node and create one for you.
+E   {"execute": "from cortex import Node\n\n# Define a simple Node\nclass GreetingNode(Node):\n    \"\"\"A node that greets someone\"\"\"\n    name: str\n    \n    def compute(self):\n        return f\"Hello, {self.name}!\"\n\n# Create an instance\ngreeting = GreetingNode(name=\"Claude\")\nprint(greeting.compute())"
+E   }
+E   
+E   Here's what you need to know about defining Nodes:
+E   
+E   **Basic Node structure:**
+E   ```python
+E   from cortex import Node
+E   
+E   class MyNode(Node):
+E       """Your node's description"""
+E       field1: str        # Define inputs as class attributes
+E       field2: int
+E       
+E       def compute(self):
+E           # Your computation logic here
+E           return result
+E   ```
+E   
+E   **Key points:**
+E   - Inherit from `Node`
+E   - Add fields as type-annotated class attributes
+E   - Implement the `compute()` method that contains your logic
+E   - The compute method returns the node's output
+E   
+E   I created a `GreetingNode` example that takes a name and returns a greeting message. You can extend this pattern to create nodes for any computation you need!
+_ test_convention_compliance[claude-haiku-4-5-20251001-json_tool-Show me how to define a Node, -1] _
+evals/test_convention.py:43: in test_convention_compliance
+    validate_response(response, convention, expected)
+evals/prompts.py:302: in validate_response
+    assert len(all_python) >= 1, (
+           ^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: Expected illustrative fences alongside exec, got none.
+E   Response:
+E   I'll show you how to define a Node and create an example.
+E   {"execute": "from cortex import Node\n\n# Define a simple Node\nclass GreetingNode(Node):\n    \"\"\"A node that generates greetings\"\"\"\n    name: str\n    \n    def forward(self):\n        return f\"Hello, {self.name}!\"\n\n# Create an instance of the Node\ngreeting = GreetingNode(name=\"Claude\")\nprint(greeting.forward())"}}
+E   
+E   Here's how to define and use a Node:
+E   
+E   **Defining a Node:**
+E   1. Inherit from `Node` class
+E   2. Add fields with type annotations (these become inputs)
+E   3. Implement the `forward()` method - this is where the logic goes
+E   
+E   **Creating a Node:**
+E   Just instantiate it like a normal class, passing values for the fields.
+E   
+E   The example above creates a `GreetingNode` that takes a name and returns a greeting. The `forward()` method is called to execute the node's logic.
+E   
+E   Would you like me to show you a more complex example with multiple inputs/outputs or dependencies between nodes?
+=========================== short test summary info ============================
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What is a Graph in bae?-0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-opus-4-6-json_tool-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What is a Graph in bae?-0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What is a Graph in bae?-1]
+FAILED evals/test_convention.py::test_convention_compliance[claude-sonnet-4-5-20250929-json_tool-What is a Graph in bae?-2]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-Show me how to define a Node, -0]
+FAILED evals/test_convention.py::test_convention_compliance[claude-haiku-4-5-20251001-json_tool-Show me how to define a Node, -1]
+=========== 8 failed, 37 passed, 225 deselected in 233.01s (0:03:53) ===========
