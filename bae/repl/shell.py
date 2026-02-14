@@ -9,7 +9,8 @@ import traceback
 from io import StringIO
 from pathlib import Path
 
-from prompt_toolkit import PromptSession
+from prompt_toolkit import PromptSession, print_formatted_text
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.completion import DynamicCompleter
 from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings
@@ -28,13 +29,28 @@ from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mo
 from bae.repl.namespace import seed
 from bae.repl.store import SessionStore
 from bae.repl.tasks import TaskManager
-from bae.repl.toolbar import TASKS_PER_PAGE, ToolbarConfig, make_cwd_widget, make_mode_widget, make_tasks_widget, render_task_menu
+from bae.repl.toolbar import TASKS_PER_PAGE, ToolbarConfig, make_cwd_widget, make_mode_widget, make_tasks_widget
 
 # Register kitty keyboard protocol Shift+Enter (CSI u encoding).
 # Terminals supporting the kitty protocol (Ghostty, kitty, iTerm2 CSI u mode)
 # send \x1b[13;2u for Shift+Enter. Map it to Escape+Enter so the same
 # "insert newline" binding handles both kitty Shift+Enter and Escape+Enter.
 ANSI_SEQUENCES["\x1b[13;2u"] = (Keys.Escape, Keys.ControlM)
+
+
+def _print_task_menu(shell: CortexShell) -> None:
+    """Print numbered task list to scrollback above the prompt."""
+    active = shell.tm.active()
+    if not active:
+        return
+    for i, tt in enumerate(active, start=1):
+        line = FormattedText([
+            ("bold fg:ansiyellow", f"  {i}"),
+            ("", f" {tt.name}"),
+        ])
+        print_formatted_text(line)
+    hint = FormattedText([("fg:#808080", "  #=cancel  ^C=all  esc=back")])
+    print_formatted_text(hint)
 
 
 def _build_key_bindings(shell: CortexShell) -> KeyBindings:
@@ -84,6 +100,7 @@ def _build_key_bindings(shell: CortexShell) -> KeyBindings:
             return
         shell._task_menu = True
         shell._task_menu_page = 0
+        _print_task_menu(shell)
         event.app.invalidate()
 
     @kb.add("escape", eager=True, filter=task_menu_active)
@@ -124,6 +141,8 @@ def _build_key_bindings(shell: CortexShell) -> KeyBindings:
             if not shell.tm.active():
                 shell._task_menu = False
                 shell._task_menu_page = 0
+            else:
+                _print_task_menu(shell)
             event.app.invalidate()
 
     return kb
@@ -142,10 +161,13 @@ class CortexShell:
         self.namespace["store"] = self.store
         self.router = ChannelRouter()
         for name, cfg in CHANNEL_DEFAULTS.items():
-            self.router.register(name, cfg["color"], store=self.store)
+            self.router.register(name, cfg["color"], store=self.store, markdown=cfg.get("markdown", False))
         self.namespace["channels"] = self.router
         from bae.lm import ClaudeCLIBackend
-        self.ai = AI(lm=ClaudeCLIBackend(), router=self.router, namespace=self.namespace, tm=self.tm)
+        self._lm = ClaudeCLIBackend()
+        self._ai_sessions: dict[str, AI] = {}
+        self._active_session: str = "1"
+        self.ai = self._get_or_create_session("1")
         self.namespace["ai"] = self.ai
         self.toolbar = ToolbarConfig()
         self.toolbar.add("mode", make_mode_widget(self))
@@ -190,13 +212,29 @@ class CortexShell:
         return None
 
     def _toolbar(self):
-        """Bottom toolbar: task menu when active, normal widgets otherwise."""
-        if self._task_menu:
-            return render_task_menu(self.tm, self._task_menu_page)
+        """Bottom toolbar: always normal widgets. Task menu prints to scrollback."""
         return self.toolbar.render()
 
+    def _get_or_create_session(self, label: str) -> AI:
+        """Return AI session by label, creating if needed."""
+        if label not in self._ai_sessions:
+            self._ai_sessions[label] = AI(
+                lm=self._lm, router=self.router, namespace=self.namespace,
+                tm=self.tm, store=self.store, label=label,
+            )
+        return self._ai_sessions[label]
+
+    def _switch_session(self, label: str) -> None:
+        """Switch active AI session, updating namespace pointer."""
+        self._active_session = label
+        self.ai = self._get_or_create_session(label)
+        self.namespace["ai"] = self.ai
+
     async def _run_nl(self, text: str) -> None:
-        """NL mode: AI conversation, self-contained error handling."""
+        """NL mode: AI conversation, self-contained error handling.
+
+        Parses @N prefix to route to a specific AI session.
+        """
         try:
             await self.ai(text)
         except asyncio.CancelledError:
@@ -272,7 +310,14 @@ class CortexShell:
                 tb = traceback.format_exc()
                 self.router.write("py", tb.rstrip("\n"), mode="PY", metadata={"type": "error"})
         elif self.mode == Mode.NL:
-            self.tm.submit(self._run_nl(text), name=f"ai:{text[:30]}", mode="nl")
+            prompt = text
+            if text.startswith("@") and len(text) > 1:
+                rest = text[1:]
+                space = rest.find(" ")
+                if space > 0:
+                    label, prompt = rest[:space], rest[space + 1:]
+                    self._switch_session(label)
+            self.tm.submit(self._run_nl(prompt), name=f"ai:{self._active_session}:{prompt[:30]}", mode="nl")
         elif self.mode == Mode.GRAPH:
             self.tm.submit(self._run_graph(text), name=f"graph:{text[:30]}", mode="graph")
         elif self.mode == Mode.BASH:

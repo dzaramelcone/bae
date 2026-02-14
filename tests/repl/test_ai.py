@@ -235,3 +235,86 @@ class TestPromptFile:
         assert "bae" in prompt
         assert "Node" in prompt
         assert "Graph" in prompt
+
+
+# --- TestAILabel ---
+
+
+class TestAILabel:
+    """Tests for AI label support."""
+
+    def test_ai_label_default(self, mock_lm, mock_router):
+        """AI label defaults to '1'."""
+        ai = AI(lm=mock_lm, router=mock_router, namespace={})
+        assert ai._label == "1"
+
+    def test_ai_label_custom(self, mock_lm, mock_router):
+        """AI with explicit label stores it."""
+        ai = AI(lm=mock_lm, router=mock_router, namespace={}, label="2")
+        assert ai._label == "2"
+
+    def test_ai_repr_with_label(self, mock_lm, mock_router):
+        """repr includes label prefix."""
+        ai = AI(lm=mock_lm, router=mock_router, namespace={}, label="3")
+        r = repr(ai)
+        assert r.startswith("ai:3")
+        assert "await ai('question')" in r
+
+
+# --- TestCrossSessionContext ---
+
+
+class TestCrossSessionContext:
+    """Tests for SessionStore.cross_session_context."""
+
+    @pytest.fixture
+    def store(self, tmp_path):
+        from bae.repl.store import SessionStore
+        s = SessionStore(tmp_path / "ctx.db")
+        yield s
+        s.close()
+
+    def test_cross_session_context_empty(self, store):
+        """No previous sessions returns empty string."""
+        assert store.cross_session_context() == ""
+
+    def test_cross_session_context_excludes_current(self, store):
+        """Entries from current session are excluded."""
+        store.record("PY", "repl", "input", "x = 1")
+        assert store.cross_session_context() == ""
+
+    def test_cross_session_context_excludes_debug(self, store):
+        """Debug channel entries are filtered out."""
+        # Insert a previous-session entry on debug channel
+        store._conn.execute(
+            "INSERT INTO entries(session_id, timestamp, mode, channel, direction, content, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("old-session", 1.0, "DEBUG", "debug", "output", "debug msg", "{}"),
+        )
+        store._conn.commit()
+        assert store.cross_session_context() == ""
+
+    def test_cross_session_context_budget(self, store):
+        """Output truncated to budget."""
+        for i in range(30):
+            store._conn.execute(
+                "INSERT INTO entries(session_id, timestamp, mode, channel, direction, content, metadata) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("old-session", float(i), "PY", "repl", "input", "x" * 200, "{}"),
+            )
+        store._conn.commit()
+        result = store.cross_session_context(budget=500)
+        assert len(result) <= 500
+
+    def test_cross_session_context_format(self, store):
+        """Output starts with [Previous session context]."""
+        store._conn.execute(
+            "INSERT INTO entries(session_id, timestamp, mode, channel, direction, content, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("old-session", 1.0, "PY", "repl", "input", "hello world", "{}"),
+        )
+        store._conn.commit()
+        result = store.cross_session_context()
+        assert result.startswith("[Previous session context]")
+        assert "[PY:repl]" in result
+        assert "hello world" in result

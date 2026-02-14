@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from bae.lm import LM
     from bae.node import Node
     from bae.repl.channels import ChannelRouter
+    from bae.repl.store import SessionStore
     from bae.repl.tasks import TaskManager
 
 _CODE_BLOCK_RE = re.compile(
@@ -45,6 +46,8 @@ class AI:
         router: ChannelRouter,
         namespace: dict,
         tm: TaskManager | None = None,
+        store: SessionStore | None = None,
+        label: str = "1",
         model: str = "claude-sonnet-4-20250514",
         timeout: int = 60,
     ) -> None:
@@ -52,6 +55,8 @@ class AI:
         self._router = router
         self._namespace = namespace
         self._tm = tm
+        self._store = store
+        self._label = label
         self._model = model
         self._timeout = timeout
         self._session_id = str(uuid.uuid4())
@@ -59,8 +64,16 @@ class AI:
 
     async def __call__(self, prompt: str) -> str:
         """NL conversation with namespace context via Claude CLI."""
+        parts: list[str] = []
+        if self._call_count == 0 and self._store is not None:
+            cross = self._store.cross_session_context()
+            if cross:
+                parts.append(cross)
         context = _build_context(self._namespace)
-        full_prompt = f"{context}\n\n{prompt}" if context else prompt
+        if context:
+            parts.append(context)
+        parts.append(prompt)
+        full_prompt = "\n\n".join(parts)
 
         cmd = [
             "claude",
@@ -116,7 +129,7 @@ class AI:
         # after we've already written the response.
         await asyncio.sleep(0)
         self._call_count += 1
-        self._router.write("ai", response, mode="NL", metadata={"type": "response"})
+        self._router.write("ai", response, mode="NL", metadata={"type": "response", "label": self._label})
         return response
 
     def _reset_session(self) -> None:
@@ -142,7 +155,7 @@ class AI:
     def __repr__(self) -> str:
         sid = self._session_id[:8]
         n = self._call_count
-        return f"ai -- await ai('question'). session {sid}, {n} calls."
+        return f"ai:{self._label} -- await ai('question'). session {sid}, {n} calls."
 
 
 def _load_prompt() -> str:

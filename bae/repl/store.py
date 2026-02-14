@@ -142,6 +142,21 @@ class SessionStore:
             for e in entries[-n:]:
                 print(f"  {self._format_entry(e)}")
 
+    def cross_session_context(self, budget: int = 2000) -> str:
+        """Summarize recent entries from previous sessions for AI context."""
+        entries = self.recent(n=50)
+        prev = [
+            e for e in entries
+            if e["session_id"] != self.session_id and e["channel"] != "debug"
+        ]
+        if not prev:
+            return ""
+        lines = []
+        for e in prev[:20]:
+            lines.append(f"[{e['mode']}:{e['channel']}] {e['content'][:200]}")
+        result = "[Previous session context]\n" + "\n".join(lines)
+        return result[:budget]
+
     def close(self) -> None:
         """Close the database connection."""
         self._conn.close()
