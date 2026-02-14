@@ -100,19 +100,19 @@ class TestBuiltinWidgets:
 
     def test_make_tasks_widget_empty(self):
         shell = MagicMock()
-        shell.tasks = set()
+        shell.tm.active.return_value = []
         widget = make_tasks_widget(shell)
         assert widget() == []
 
     def test_make_tasks_widget_with_tasks(self):
         shell = MagicMock()
-        shell.tasks = {MagicMock(), MagicMock()}
+        shell.tm.active.return_value = [MagicMock(), MagicMock()]
         widget = make_tasks_widget(shell)
         assert widget() == [("class:toolbar.tasks", " 2 tasks ")]
 
     def test_make_tasks_widget_singular(self):
         shell = MagicMock()
-        shell.tasks = {MagicMock()}
+        shell.tm.active.return_value = [MagicMock()]
         widget = make_tasks_widget(shell)
         assert widget() == [("class:toolbar.tasks", " 1 task ")]
 

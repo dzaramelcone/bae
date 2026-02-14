@@ -42,10 +42,17 @@ async def test_for_loop_with_print_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_await_expr_returns_value():
+async def test_await_expr_returns_coroutine():
+    """Async expressions return unawaited coroutine for TaskManager tracking.
+
+    The caller (shell._dispatch PY) awaits the coroutine via tm.submit().
+    The result is captured in namespace['_'] after the coroutine completes.
+    """
     ns = {"asyncio": asyncio}
     result, stdout = await async_exec("await asyncio.sleep(0) or 'done'", ns)
-    assert result == "done"
+    assert asyncio.iscoroutine(result), f"Expected coroutine, got {type(result)}"
+    await result
+    assert ns["_"] == "done"
     assert stdout == ""
 
 

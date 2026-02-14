@@ -1,16 +1,16 @@
-"""Tests for task tracking, interrupt routing, subprocess cleanup, and toolbar wiring."""
+"""Tests for TaskManager wiring, task menu UX, subprocess cleanup, and toolbar integration."""
 
 from __future__ import annotations
 
 import asyncio
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from bae.repl.modes import Mode
-from bae.repl.shell import CortexShell, DOUBLE_PRESS_THRESHOLD, _build_key_bindings, _show_kill_menu
-from bae.repl.toolbar import ToolbarConfig
+from bae.repl.shell import CortexShell, _build_key_bindings
+from bae.repl.tasks import TaskManager
+from bae.repl.toolbar import TASKS_PER_PAGE, ToolbarConfig, render_task_menu
 
 
 # --- Fixtures ---
@@ -33,7 +33,6 @@ def _mock_event(shell):
     event.app.invalidate = MagicMock()
     event.current_buffer.reset = MagicMock()
 
-    # Wrap create_background_task: track calls AND close coroutines to suppress warnings
     _calls = []
 
     def _create_bg_task(coro):
@@ -45,47 +44,48 @@ def _mock_event(shell):
     return event
 
 
-# --- TestTrackTask ---
+# --- TestSubmit ---
 
-class TestTrackTask:
-    """_track_task: register, auto-remove, naming."""
+class TestSubmit:
+    """TaskManager.submit via CortexShell.tm."""
 
     @pytest.mark.asyncio
-    async def test_track_task_adds_to_set(self, shell):
-        """Tracked task appears in shell.tasks immediately."""
+    async def test_submit_creates_tracked_task(self, shell):
+        """tm.submit() returns TrackedTask with RUNNING state."""
         async def noop():
             await asyncio.sleep(10)
 
-        task = shell._track_task(noop(), name="test:add")
-        assert task in shell.tasks
-        task.cancel()
+        tt = shell.tm.submit(noop(), name="test:add", mode="nl")
+        assert tt.state.value == "running"
+        assert len(shell.tm.active()) == 1
+        shell.tm.revoke(tt.task_id)
         try:
-            await task
+            await tt.task
         except asyncio.CancelledError:
             pass
 
     @pytest.mark.asyncio
-    async def test_track_task_removes_on_completion(self, shell):
-        """Task removed from shell.tasks after it completes."""
+    async def test_submit_removes_on_completion(self, shell):
+        """After task completes, tm.active() is empty."""
         async def quick():
             return 42
 
-        task = shell._track_task(quick(), name="test:done")
-        await task
+        tt = shell.tm.submit(quick(), name="test:done", mode="nl")
+        await tt.task
         # done_callback fires synchronously after await
-        assert task not in shell.tasks
+        assert len(shell.tm.active()) == 0
 
     @pytest.mark.asyncio
-    async def test_track_task_sets_name(self, shell):
-        """Task gets the name passed to _track_task."""
+    async def test_submit_sets_name(self, shell):
+        """TrackedTask.name matches what was passed to submit."""
         async def noop():
             await asyncio.sleep(10)
 
-        task = shell._track_task(noop(), name="test:foo")
-        assert task.get_name() == "test:foo"
-        task.cancel()
+        tt = shell.tm.submit(noop(), name="test:foo", mode="nl")
+        assert tt.name == "test:foo"
+        shell.tm.revoke(tt.task_id)
         try:
-            await task
+            await tt.task
         except asyncio.CancelledError:
             pass
 
@@ -93,15 +93,13 @@ class TestTrackTask:
 # --- TestInterruptHandler ---
 
 class TestInterruptHandler:
-    """Ctrl-C key binding: exit, kill menu, double-press kill all."""
+    """Ctrl-C key binding: exit, task menu, kill all."""
 
     def test_ctrl_c_no_tasks_exits(self, shell):
-        """Ctrl-C with no tasks exits the REPL (preserves REPL-12)."""
+        """Ctrl-C with no tasks exits the REPL."""
         kb = _build_key_bindings(shell)
         event = _mock_event(shell)
-        shell.tasks = set()
 
-        # Find and call the c-c handler
         handler = _get_handler(kb, "c-c")
         handler(event)
 
@@ -110,46 +108,153 @@ class TestInterruptHandler:
         assert isinstance(kwargs.get("exception") or args[0] if args else None, KeyboardInterrupt) or \
                isinstance(kwargs.get("exception"), KeyboardInterrupt)
 
-    def test_ctrl_c_with_tasks_shows_menu(self, shell):
-        """Ctrl-C with running tasks opens kill menu dialog."""
-        kb = _build_key_bindings(shell)
-        event = _mock_event(shell)
-        shell.tasks = {MagicMock()}
-
-        handler = _get_handler(kb, "c-c")
-        handler(event)
-
-        assert len(event.app.create_background_task._calls) == 1
-
     @pytest.mark.asyncio
-    async def test_double_ctrl_c_kills_all(self, shell):
-        """Double Ctrl-C within threshold cancels all tracked tasks."""
+    async def test_ctrl_c_opens_task_menu(self, shell):
+        """Ctrl-C with running tasks sets _task_menu = True."""
         async def sleepy():
             await asyncio.sleep(100)
 
-        t1 = shell._track_task(sleepy(), name="t1")
-        t2 = shell._track_task(sleepy(), name="t2")
+        shell.tm.submit(sleepy(), name="t1", mode="nl")
 
         kb = _build_key_bindings(shell)
         event = _mock_event(shell)
 
         handler = _get_handler(kb, "c-c")
-        # First press -- opens menu (or sets timestamp)
-        handler(event)
-        # Second press within threshold -- kills all
         handler(event)
 
-        # Let event loop process cancellations
+        assert shell._task_menu is True
+        event.app.invalidate.assert_called()
+
+        # cleanup
+        shell.tm.revoke_all(graceful=False)
         await asyncio.sleep(0)
 
-        assert t1.cancelled()
-        assert t2.cancelled()
-        # Clean up
-        for t in [t1, t2]:
-            try:
-                await t
-            except asyncio.CancelledError:
-                pass
+    @pytest.mark.asyncio
+    async def test_ctrl_c_in_menu_kills_all(self, shell):
+        """Ctrl-C while task menu open calls tm.revoke_all() and closes menu."""
+        async def sleepy():
+            await asyncio.sleep(100)
+
+        shell.tm.submit(sleepy(), name="t1", mode="nl")
+        shell.tm.submit(sleepy(), name="t2", mode="nl")
+
+        kb = _build_key_bindings(shell)
+        event = _mock_event(shell)
+
+        # Open task menu first
+        shell._task_menu = True
+
+        handler = _get_handler(kb, "c-c")
+        handler(event)
+
+        assert shell._task_menu is False
+        assert len(shell.tm.active()) == 0
+        await asyncio.sleep(0)
+
+
+# --- TestTaskMenu ---
+
+class TestTaskMenu:
+    """Task menu rendering, digit cancel, esc dismiss, pagination."""
+
+    def test_toolbar_renders_task_menu(self, shell):
+        """_task_menu=True -> _toolbar() returns render_task_menu output."""
+        shell._task_menu = True
+        # With no tasks, renders "no tasks running"
+        result = shell._toolbar()
+        assert any("no tasks running" in text for _, text in result)
+
+    def test_toolbar_renders_normal(self, shell):
+        """_task_menu=False -> _toolbar() returns normal toolbar."""
+        shell._task_menu = False
+        result = shell._toolbar()
+        # Normal toolbar has mode widget
+        assert len(result) > 0
+
+    @pytest.mark.asyncio
+    async def test_digit_cancels_task(self, shell):
+        """With task menu open, digit '1' cancels the first task."""
+        async def sleepy():
+            await asyncio.sleep(100)
+
+        tt = shell.tm.submit(sleepy(), name="target", mode="nl")
+        shell._task_menu = True
+
+        kb = _build_key_bindings(shell)
+        event = _mock_event(shell)
+
+        handler = _get_handler(kb, "1")
+        handler(event)
+
+        assert tt.state.value == "revoked"
+        # Menu auto-closes when no tasks left
+        assert shell._task_menu is False
+        await asyncio.sleep(0)
+
+    @pytest.mark.asyncio
+    async def test_esc_dismisses_menu(self, shell):
+        """Esc closes task menu, returns to normal toolbar."""
+        shell._task_menu = True
+
+        kb = _build_key_bindings(shell)
+        event = _mock_event(shell)
+
+        handler = _get_handler(kb, "escape")
+        handler(event)
+
+        assert shell._task_menu is False
+
+    @pytest.mark.asyncio
+    async def test_pagination_left_right(self, shell):
+        """With >5 tasks, right increments page, left decrements."""
+        async def sleepy():
+            await asyncio.sleep(100)
+
+        for i in range(7):
+            shell.tm.submit(sleepy(), name=f"t{i}", mode="nl")
+
+        shell._task_menu = True
+        shell._task_menu_page = 0
+
+        kb = _build_key_bindings(shell)
+        event = _mock_event(shell)
+
+        # Right arrow -> page 1
+        right_handler = _get_handler(kb, "right")
+        right_handler(event)
+        assert shell._task_menu_page == 1
+
+        # Left arrow -> page 0
+        left_handler = _get_handler(kb, "left")
+        left_handler(event)
+        assert shell._task_menu_page == 0
+
+        # Left at page 0 stays at 0
+        left_handler(event)
+        assert shell._task_menu_page == 0
+
+        # cleanup
+        shell.tm.revoke_all(graceful=False)
+        await asyncio.sleep(0)
+
+    @pytest.mark.asyncio
+    async def test_menu_closes_when_empty(self, shell):
+        """After cancelling last task, _task_menu auto-closes."""
+        async def sleepy():
+            await asyncio.sleep(100)
+
+        shell.tm.submit(sleepy(), name="only", mode="nl")
+        shell._task_menu = True
+
+        kb = _build_key_bindings(shell)
+        event = _mock_event(shell)
+
+        handler = _get_handler(kb, "1")
+        handler(event)
+
+        assert shell._task_menu is False
+        assert len(shell.tm.active()) == 0
+        await asyncio.sleep(0)
 
 
 # --- TestBackgroundDispatch ---
@@ -171,30 +276,28 @@ class TestBackgroundDispatch:
         shell.mode = Mode.NL
         await shell._dispatch("hello world")
 
-        # _dispatch returned but the task hasn't finished
-        assert len(shell.tasks) == 1
-        task = next(iter(shell.tasks))
-        assert not task.done()
-        # Let it finish
+        assert len(shell.tm.active()) == 1
+        tt = shell.tm.active()[0]
+        assert not tt.task.done()
         hold.set()
-        await task
+        await tt.task
 
     @pytest.mark.asyncio
     async def test_dispatch_py_blocks(self, shell):
-        """PY dispatch blocks until execution completes."""
+        """PY dispatch blocks until execution completes (sync expressions)."""
         shell.mode = Mode.PY
         with patch("bae.repl.shell.async_exec", new_callable=AsyncMock, return_value=(42, "")) as mock_exec:
             await shell._dispatch("1+1")
             mock_exec.assert_awaited_once()
-        # PY mode does NOT create tracked tasks
-        assert len(shell.tasks) == 0
+        # Sync PY mode does NOT create tracked tasks
+        assert len(shell.tm.active()) == 0
 
     @pytest.mark.asyncio
     async def test_dispatch_bash_returns_immediately(self, shell):
         """BASH dispatch creates tracked task and returns without awaiting it."""
         hold = asyncio.Event()
 
-        async def slow_bash(text):
+        async def slow_bash(text, **kwargs):
             await hold.wait()
             return ("out", "")
 
@@ -202,11 +305,37 @@ class TestBackgroundDispatch:
         with patch("bae.repl.shell.dispatch_bash", side_effect=slow_bash):
             await shell._dispatch("sleep 10")
 
-        assert len(shell.tasks) == 1
-        task = next(iter(shell.tasks))
-        assert not task.done()
+        assert len(shell.tm.active()) == 1
+        tt = shell.tm.active()[0]
+        assert not tt.task.done()
         hold.set()
-        await task
+        await tt.task
+
+    @pytest.mark.asyncio
+    async def test_dispatch_py_async_tracked(self, shell):
+        """PY async expression (await ...) is tracked via TaskManager."""
+        hold = asyncio.Event()
+        held = asyncio.Event()
+
+        async def mock_async_exec(code, ns):
+            async def long_coro():
+                held.set()
+                await hold.wait()
+                return 99
+            return long_coro(), ""
+
+        shell.mode = Mode.PY
+        with patch("bae.repl.shell.async_exec", side_effect=mock_async_exec):
+            await shell._dispatch("await asyncio.sleep(10)")
+
+        # Should be tracked
+        assert len(shell.tm.active()) == 1
+        tt = shell.tm.active()[0]
+        assert tt.mode == "py"
+        assert tt.name.startswith("py:")
+
+        hold.set()
+        await tt.task
 
 
 # --- TestSubprocessCleanup ---
@@ -252,13 +381,11 @@ class TestSubprocessCleanup:
 
         with patch("bae.repl.ai.asyncio.create_subprocess_exec", return_value=mock_proc):
             task = asyncio.create_task(ai("test"))
-            # Let communicate() complete, then cancel before sleep(0) checkpoint
             await asyncio.sleep(0)
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
 
-        # Router.write should NOT have been called with response metadata
         for call in router.write.call_args_list:
             _, kwargs = call
             meta = kwargs.get("metadata", {})
@@ -304,45 +431,73 @@ class TestShellToolbar:
         """shell.toolbar is ToolbarConfig instance."""
         assert isinstance(shell.toolbar, ToolbarConfig)
 
+    def test_shell_has_task_manager(self, shell):
+        """shell.tm is a TaskManager instance."""
+        assert isinstance(shell.tm, TaskManager)
+        assert hasattr(shell, '_task_menu')
+        assert hasattr(shell, '_task_menu_page')
 
-# --- TestKillMenu ---
 
-class TestKillMenu:
-    """_show_kill_menu async dialog."""
+# --- TestRenderTaskMenu ---
+
+class TestRenderTaskMenu:
+    """render_task_menu() unit tests."""
 
     @pytest.mark.asyncio
-    async def test_kill_menu_empty_tasks_returns_early(self, shell):
-        """Kill menu with no tasks returns without showing dialog."""
-        shell.tasks = set()
-        # Should not raise or hang
-        await _show_kill_menu(shell)
+    async def test_empty_tasks(self):
+        """No active tasks renders 'no tasks running'."""
+        tm = TaskManager()
+        result = render_task_menu(tm)
+        assert any("no tasks running" in text for _, text in result)
 
     @pytest.mark.asyncio
-    async def test_kill_menu_cancelled_dialog_no_crash(self, shell):
-        """Kill menu handles cancelled dialog (None result)."""
+    async def test_renders_task_names(self):
+        """Active tasks appear as numbered list."""
+        tm = TaskManager()
         async def sleepy():
             await asyncio.sleep(100)
 
-        task = shell._track_task(sleepy(), name="test:menu")
+        tm.submit(sleepy(), name="alpha", mode="nl")
+        tm.submit(sleepy(), name="beta", mode="nl")
 
-        with patch("prompt_toolkit.shortcuts.checkboxlist_dialog") as mock_dialog:
-            mock_dialog.return_value.run_async = AsyncMock(return_value=None)
-            await _show_kill_menu(shell)
+        result = render_task_menu(tm)
+        texts = " ".join(text for _, text in result)
+        assert "1" in texts
+        assert "alpha" in texts
+        assert "2" in texts
+        assert "beta" in texts
 
-        # Task should NOT be cancelled (dialog was dismissed)
-        assert not task.cancelled()
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        tm.revoke_all(graceful=False)
+        await asyncio.sleep(0)
+
+    @pytest.mark.asyncio
+    async def test_pagination_indicator(self):
+        """More than TASKS_PER_PAGE tasks shows pagination indicator."""
+        tm = TaskManager()
+        async def sleepy():
+            await asyncio.sleep(100)
+
+        for i in range(7):
+            tm.submit(sleepy(), name=f"t{i}", mode="nl")
+
+        result = render_task_menu(tm, page=0)
+        texts = " ".join(text for _, text in result)
+        assert "1/2" in texts
+
+        tm.revoke_all(graceful=False)
+        await asyncio.sleep(0)
 
 
 # --- Helpers ---
 
 def _get_handler(kb, key):
-    """Extract the handler for a key from a KeyBindings object."""
+    """Extract the handler for a single-key binding from a KeyBindings object.
+
+    Matches bindings where the entire key sequence is exactly [key].
+    For multi-key sequences like ("escape", "enter"), use the full tuple.
+    """
     for binding in kb.bindings:
-        if any(k.value == key if hasattr(k, 'value') else str(k) == key for k in binding.keys):
+        keys = [k.value if hasattr(k, 'value') else str(k) for k in binding.keys]
+        if keys == [key]:
             return binding.handler
     raise ValueError(f"No binding for {key!r}")

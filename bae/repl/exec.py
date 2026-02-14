@@ -55,7 +55,10 @@ async def async_exec(code: str, namespace: dict) -> tuple[object | None, str]:
     try:
         result = fn()
         if asyncio.iscoroutine(result):
-            await result
+            # Return unawaited coroutine so caller can track it via TaskManager
+            sys.stdout = old_stdout
+            captured = buf.getvalue()
+            return result, captured
     finally:
         sys.stdout = old_stdout
     captured = buf.getvalue()

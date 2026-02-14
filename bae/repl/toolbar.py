@@ -2,14 +2,20 @@
 
 Users register callable widgets that render into the bottom toolbar.
 Built-in widgets cover mode name, running task count, and cwd.
+render_task_menu() provides the numbered task list for the inline kill menu.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from bae.repl.tasks import TaskManager
 
 ToolbarWidget = Callable[[], list[tuple[str, str]]]
+
+TASKS_PER_PAGE = 5
 
 
 class ToolbarConfig:
@@ -69,7 +75,7 @@ def make_tasks_widget(shell) -> ToolbarWidget:
     """Built-in widget: running task count (hidden when zero)."""
 
     def widget():
-        n = len(shell.tasks)
+        n = len(shell.tm.active())
         if n == 0:
             return []
         return [("class:toolbar.tasks", f" {n} task{'s' if n != 1 else ''} ")]
@@ -88,3 +94,32 @@ def make_cwd_widget() -> ToolbarWidget:
         return [("class:toolbar.cwd", f" {cwd} ")]
 
     return widget
+
+
+def render_task_menu(tm: TaskManager, page: int = 0) -> list[tuple[str, str]]:
+    """Render numbered task list for the inline kill menu, with pagination."""
+    active = tm.active()
+    if not active:
+        return [("fg:#808080", " no tasks running ")]
+
+    total_pages = (len(active) + TASKS_PER_PAGE - 1) // TASKS_PER_PAGE
+    page = min(page, total_pages - 1)
+    start = page * TASKS_PER_PAGE
+    page_tasks = active[start:start + TASKS_PER_PAGE]
+
+    parts: list[tuple[str, str]] = []
+    for i, tt in enumerate(page_tasks, start=1):
+        parts.append(("bold fg:ansiyellow", f" {i}"))
+        parts.append(("", f" {tt.name} "))
+
+    parts.append(("fg:#808080", " | "))
+    parts.append(("fg:#808080", "#=cancel "))
+    parts.append(("fg:#808080 bold", "^C"))
+    parts.append(("fg:#808080", "=all "))
+    parts.append(("fg:#808080 bold", "esc"))
+    parts.append(("fg:#808080", "=back"))
+
+    if total_pages > 1:
+        parts.append(("fg:#808080", f" \u2190/\u2192 {page + 1}/{total_pages}"))
+
+    return parts
