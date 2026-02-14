@@ -177,24 +177,26 @@ def test_list_all_sorted_alphabetically(inspector, capsys):
     assert names == sorted(names)
 
 
-def test_list_all_column_aligned(inspector, capsys):
+def test_list_all_column_aligned(inspector, ns_dict, capsys):
     """ns() output columns are aligned."""
+    # Add a short-named entry to test alignment padding
+    ns_dict["x"] = 42
     inspector()
     output = capsys.readouterr().out
     lines = output.strip().splitlines()
-    # All lines should have consistent spacing -- check that the second column
-    # starts at the same position
-    if len(lines) >= 2:
-        # Split each line into parts and check type column alignment
-        positions = []
-        for line in lines:
-            parts = line.split()
-            if len(parts) >= 2:
-                # Find where the second column starts
-                pos = line.index(parts[1], len(parts[0]))
-                positions.append(pos)
-        # All second-column positions should be equal
-        assert len(set(positions)) == 1, f"Columns not aligned: positions={positions}"
+    assert len(lines) >= 2
+    # The format is "  {name:<N}  {type:<M}  {summary}" -- the second column
+    # position should be identical across all lines. Use regex to find column 2.
+    import re
+    # Match leading indent + name + spaces + type_label
+    # Column 2 starts after "  {padded_name}  "
+    col2_positions = []
+    for line in lines:
+        # Find the position where the non-space text after the first column starts
+        m = re.match(r"^  (\S+)(\s+)(\S+)", line)
+        if m:
+            col2_positions.append(m.start(3))
+    assert len(set(col2_positions)) == 1, f"Columns not aligned: positions={col2_positions}"
 
 
 # --- NsInspector(graph) -- graph inspection ---
