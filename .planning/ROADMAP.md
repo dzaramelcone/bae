@@ -159,9 +159,12 @@ Plans:
 **Requirements**: AI-06, STORE-03, REPL-10
 **Success Criteria** (what must be TRUE):
   1. AI-generated Python code blocks are automatically extracted, executed in the REPL namespace, and results fed back to the correct AI session (multiple concurrent AI tasks supported)
-  2. On launch, AI context includes recent session history from the store (cross-session memory)
-  3. AI output renders markdown formatting in the terminal (headers, bold, code blocks, lists)
-  4. Ctrl-C task menu renders as a numbered list below the input (printed to scrollback), not in the toolbar
+  2. AI sessions spawned from PY mode (`await ai("question")`) are attachable/selectable in NL mode for continued turn-taking
+  3. NL mode has a session selector when multiple AI sessions exist
+  4. N concurrent AI prompts from PY REPL each route namespace mutations back to their correct sessions (tested)
+  5. On launch, AI context includes recent session history from the store (cross-session memory)
+  6. AI output renders markdown formatting in the terminal (headers, bold, code blocks, lists)
+  7. Ctrl-C task menu renders as a numbered list below the input (printed to scrollback), not in the toolbar
 **Plans:** 0 plans
 
 Plans:
