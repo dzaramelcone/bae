@@ -6,7 +6,7 @@ import asyncio
 import os
 
 
-async def dispatch_bash(cmd: str) -> tuple[str, str]:
+async def dispatch_bash(cmd: str, *, tm=None) -> tuple[str, str]:
     """Run a shell command, return (stdout, stderr) strings.
 
     The caller is responsible for display via channels.
@@ -30,7 +30,10 @@ async def dispatch_bash(cmd: str) -> tuple[str, str]:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=os.getcwd(),
+        start_new_session=True,
     )
+    if tm is not None:
+        tm.register_process(proc)
     try:
         raw_out, raw_err = await proc.communicate()
     except asyncio.CancelledError:

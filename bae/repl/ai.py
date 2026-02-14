@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from bae.lm import LM
     from bae.node import Node
     from bae.repl.channels import ChannelRouter
+    from bae.repl.tasks import TaskManager
 
 _CODE_BLOCK_RE = re.compile(
     r"```(?:python|py)?\s*\n(.*?)\n```",
@@ -43,12 +44,14 @@ class AI:
         lm: LM,
         router: ChannelRouter,
         namespace: dict,
+        tm: TaskManager | None = None,
         model: str = "claude-sonnet-4-20250514",
         timeout: int = 60,
     ) -> None:
         self._lm = lm
         self._router = router
         self._namespace = namespace
+        self._tm = tm
         self._model = model
         self._timeout = timeout
         self._session_id = str(uuid.uuid4())
@@ -83,7 +86,10 @@ class AI:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            start_new_session=True,
         )
+        if self._tm is not None:
+            self._tm.register_process(process)
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 process.communicate(), timeout=self._timeout,
