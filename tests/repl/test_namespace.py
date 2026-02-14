@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import os
+import textwrap
 from typing import Annotated
 from unittest.mock import MagicMock
 
@@ -372,3 +373,41 @@ def test_one_liner_ns_inspector(inspector, capsys):
     lines = output.strip().splitlines()
     ns_line = [l for l in lines if l.strip().startswith("ns ")][0]
     assert "inspect" in ns_line.lower() or "namespace" in ns_line.lower()
+
+
+# --- REPL-defined class annotation resolution ---
+
+
+async def test_inspect_repl_defined_node_class(capsys):
+    """ns(NodeClass) works for classes defined via async_exec (REPL simulation).
+
+    Classes defined in the REPL get __module__='<cortex>' from compile().
+    _ensure_cortex_module registers <cortex> in sys.modules so
+    get_type_hints() can resolve Annotated/Dep/Recall annotations.
+    """
+    from bae.repl.exec import async_exec
+
+    ns = seed()
+    # Define a Node subclass as the REPL would -- via async_exec
+    code = textwrap.dedent("""\
+        class TestNode(Node):
+            query: str
+            info: Annotated[str, Dep()]
+
+            async def __call__(self) -> None: ...
+    """)
+    await async_exec(code, ns)
+
+    test_cls = ns["TestNode"]
+    assert test_cls.__module__ == "<cortex>"
+
+    # ns(TestNode) must not crash -- it calls classify_fields + get_type_hints
+    inspector = ns["ns"]
+    inspector(test_cls)
+    output = capsys.readouterr().out
+
+    assert "TestNode(Node)" in output
+    assert "query" in output
+    assert "plain" in output
+    assert "info" in output
+    assert "dep" in output

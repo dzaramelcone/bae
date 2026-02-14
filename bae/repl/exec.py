@@ -12,7 +12,12 @@ _EXPR_CAPTURED = object()
 
 
 def _ensure_cortex_module(namespace: dict) -> None:
-    """Register <cortex> as a module so get_type_hints resolves REPL-defined classes."""
+    """Register <cortex> as a module so get_type_hints resolves REPL-defined classes.
+
+    Also sets __name__ in the namespace so classes defined via FunctionType
+    get __module__='<cortex>' (Python uses globals()['__name__'] for that).
+    """
+    namespace.setdefault('__name__', '<cortex>')
     mod = sys.modules.get('<cortex>')
     if mod is None:
         mod = types.ModuleType('<cortex>')
