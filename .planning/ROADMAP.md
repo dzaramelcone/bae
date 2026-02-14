@@ -132,11 +132,11 @@ Plans:
   2. AI self-view provides structured feedback format consumed by the eval loop
   3. User can toggle between views at runtime via keybinding (Ctrl+V or equivalent)
   4. Toolbar displays the currently active view mode
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 25-01: TBD
-- [ ] 25-02: TBD
+- [ ] 25-01-PLAN.md -- DebugView + AISelfView formatters, ViewMode enum, VIEW_FORMATTERS dict
+- [ ] 25-02-PLAN.md -- Shell wiring: _set_view, Ctrl+V keybinding, toolbar view widget
 
 ## Progress
 
@@ -169,7 +169,7 @@ Phases 21 and 23 are parallel-safe (no dependencies between them). Phase 22 foll
 | 22. Tool Call Translation | v5.0 | 2/2 | Complete | 2026-02-14 |
 | 23. View Framework | v5.0 | 1/1 | Complete | 2026-02-14 |
 | 24. Execution Display | v5.0 | 1/1 | Complete | 2026-02-14 |
-| 25. Views Completion | v5.0 | 0/TBD | Not started | - |
+| 25. Views Completion | v5.0 | 0/2 | Planned | - |
 
 ---
 *Last updated: 2026-02-14 after Phase 24 execution complete*
