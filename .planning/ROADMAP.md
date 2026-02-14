@@ -73,11 +73,12 @@
 **Success Criteria** (what must be TRUE):
   1. AI code blocks marked as executable are extracted and run by the eval loop
   2. AI code blocks shown as illustration (examples, pseudocode, explanations) are NOT executed
-  3. Existing eval loop behavior preserved for responses that do not use the new convention
-**Plans**: TBD
+  3. When AI does not use the convention, no code executes (clean break, no backward compatibility)
+**Plans**: 2 plans
 
 Plans:
-- [ ] 21-01: TBD
+- [ ] 21-01-PLAN.md -- Eval harness: test 3 convention candidates across Opus/Sonnet/Haiku, select winner
+- [ ] 21-02-PLAN.md -- Implement winning convention: replace extract_code, update prompt and eval loop
 
 ### Phase 22: Tool Call Translation
 **Goal**: AI tool call attempts are caught, translated to Python, and executed transparently
@@ -165,7 +166,7 @@ Phases 21 and 23 are parallel-safe (no dependencies between them). Phase 22 foll
 | 18. AI Agent | v4.0 | 2/2 | Complete | 2026-02-13 |
 | 19. Task Lifecycle | v4.0 | 5/5 | Complete | 2026-02-14 |
 | 20. AI Eval Loop | v4.0 | 5/5 | Complete | 2026-02-14 |
-| 21. Execution Convention | v5.0 | 0/TBD | Not started | - |
+| 21. Execution Convention | v5.0 | 0/2 | Planned | - |
 | 22. Tool Call Translation | v5.0 | 0/TBD | Not started | - |
 | 23. View Framework | v5.0 | 0/TBD | Not started | - |
 | 24. Execution Display | v5.0 | 0/TBD | Not started | - |
