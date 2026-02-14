@@ -352,19 +352,29 @@ def _translate_glob(pattern: str) -> str:
     )
 
 
-def _translate_grep(pattern: str) -> str:
-    p = pattern.strip()
+def _translate_grep(arg: str) -> str:
+    arg = arg.strip().strip('"').strip("'")
+    # Split optional path restriction: <Grep:pattern path>
+    parts = arg.rsplit(" ", 1)
+    if len(parts) == 2 and ("/" in parts[1] or parts[1].endswith(".py")):
+        pattern, path = parts[0], parts[1]
+    else:
+        pattern, path = arg, "."
     return (
-        f"import subprocess as _sp\n"
-        f"_r = _sp.run("
-        f"['grep', '-rn', '--include=*.py', "
-        f"'--exclude-dir=.venv', '--exclude-dir=.git', "
-        f"'--exclude-dir=__pycache__', '--exclude-dir=node_modules', "
-        f"{p!r}, '.'], "
-        f"capture_output=True, text=True, timeout=10)\n"
-        f"_out = _r.stdout[:{_MAX_TOOL_OUTPUT}]\n"
-        f"print(_out if _out else '(no matches)')\n"
-        f"if len(_r.stdout) > {_MAX_TOOL_OUTPUT}: print('... (truncated)')"
+        f"import pathlib as _pl, re as _re\n"
+        f"_pat, _out, _skip = {pattern!r}, [], "
+        f"{{'.venv', '.git', '__pycache__', 'node_modules'}}\n"
+        f"for _f in sorted(_pl.Path({path!r}).rglob('*.py')):\n"
+        f"    if _skip & set(_f.parts): continue\n"
+        f"    try:\n"
+        f"        for _i, _ln in enumerate(_f.read_text().splitlines(), 1):\n"
+        f"            if _re.search(_pat, _ln):\n"
+        f"                _out.append(f'{{_f}}:{{_i}}:{{_ln}}')\n"
+        f"    except (OSError, UnicodeDecodeError): pass\n"
+        f"_txt = '\\n'.join(_out[:{_MAX_TOOL_OUTPUT // 80}])\n"
+        f"print(_txt if _txt else '(no matches)')\n"
+        f"if len(_out) > {_MAX_TOOL_OUTPUT // 80}: "
+        f"print(f'... ({{len(_out)}} total matches)')"
     )
 
 

@@ -587,16 +587,30 @@ class TestTranslateToolCalls:
         assert "recursive=True" in code
 
     def test_grep_tag(self):
-        """<Grep:pattern> returns list with subprocess grep with exclusions and timeout."""
+        """<Grep:pattern> returns list with pure-Python search with exclusions."""
         result = translate_tool_calls("<Grep:def main>")
         assert len(result) == 1
         code = result[0]
-        assert "grep" in code
-        assert "--include=*.py" in code
+        assert "re" in code
+        assert "rglob" in code
         assert ".venv" in code
         assert ".git" in code
         assert "__pycache__" in code
-        assert "timeout=10" in code
+        assert "def main" in code
+
+    def test_grep_with_path(self):
+        """<Grep:pattern path> splits pattern from path restriction."""
+        result = translate_tool_calls("<Grep:translate bae/repl/ai.py>")
+        assert len(result) == 1
+        code = result[0]
+        assert "'translate'" in code or '"translate"' in code
+        assert "bae/repl/ai.py" in code
+
+    def test_grep_strips_quotes(self):
+        """<Grep:"pattern"> strips surrounding quotes from pattern."""
+        result = translate_tool_calls('<Grep:"def main">')
+        assert len(result) == 1
+        assert "def main" in result[0]
 
     def test_no_tags_returns_empty(self):
         """Plain prose with no tool tags returns empty list."""
