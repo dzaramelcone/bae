@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-14)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v5.0 Stream Views — Phase 24
+**Current focus:** v5.0 Stream Views — Phase 25
 
 ## Current Position
 
-Phase: 24 of 25
-Plan: 1 of 1 in Phase 24 (complete)
-Status: Phase 24 complete (UserView execution display formatter)
-Last activity: 2026-02-14 — Phase 24 complete (execution display)
+Phase: 25 of 25
+Plan: 1 of 2 in Phase 25 (complete)
+Status: Plan 25-01 complete (DebugView, AISelfView, ViewMode infrastructure)
+Last activity: 2026-02-14 — Plan 25-01 complete (view formatters + routing)
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 [██████] 66%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 [████████] 77%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 72 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 6 v5.0)
+- Total plans completed: 73 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 7 v5.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -41,12 +41,15 @@ Recent context for v5.0:
 - **Tool call translation wired into eval loop** -- translate_tool_calls() checked before extract_executable() on each iteration. Tool tags take precedence over `<run>` blocks. All tool calls executed independently, outputs combined with --- separator into single [Tool output] feedback. System prompt teaches AI all 5 tag formats with reference table and fewshot examples.
 - **ViewFormatter protocol** -- Strategy pattern via @runtime_checkable Protocol in channels.py. Channel._formatter field (default None) with _display() delegation. Enables pluggable display without modifying Channel identity. Zero new dependencies.
 - **UserView execution display** -- Concrete ViewFormatter in views.py. Buffers ai_exec, flushes grouped Rich Panel (Syntax + Rule + Text) on ai_exec_result. Fallback prefix display for all other py writes. Wired to py channel only. Zero new dependencies.
+- **DebugView + AISelfView** -- Two additional stateless ViewFormatters. DebugView: raw `[channel] key=value` metadata headers + indented content. AISelfView: AI-perspective tag mapping (ai-output, exec-code, exec-result, tool-call, tool-output). ViewMode enum + VIEW_CYCLE + VIEW_FORMATTERS routing infrastructure for shell wiring.
 
 ### Pending Todos
 
 - Update `tests/traces/json_structured_fill_reference.py` -- drifted from real backend
 - Bump Python requirement to 3.14 stable
 - AI streaming/progressive display for NL responses
+- Session store: conversation indexing agent — partitions large contexts by topic with short summaries + tags, organized as a B-tree (recursive if needed). Prior session info no longer auto-included; replaced by a labeled REMEMBER object showing recent summaries with tags and partition references.
+- AI agent doesn't see user's REPL I/O (typed commands, stdout) -- needs feedback channel from eval loop to AI context
 
 ### Blockers/Concerns
 
@@ -55,6 +58,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 24-01-PLAN.md (execution display)
+Stopped at: Completed 25-01-PLAN.md (DebugView, AISelfView, ViewMode infrastructure)
 Branch: main
 Resume file: None
