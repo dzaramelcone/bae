@@ -1,543 +1,363 @@
-# Feature Landscape: Cortex REPL for Bae v4.0
+# Feature Landscape: Cortex v5.0 Stream Views
 
-**Domain:** Augmented async Python REPL with AI agent integration, channel-based I/O, reflective namespace
-**Researched:** 2026-02-13
-**Confidence:** HIGH for REPL mechanics and namespace introspection (well-established Python patterns); MEDIUM for channel I/O multiplexing (novel design, Docker analogy verified); MEDIUM for AI agent object (emerging patterns, no standard yet)
+**Domain:** Multi-view stream framework, AI prompt hardening, tool call interception, execution display framing
+**Researched:** 2026-02-14
+**Overall confidence:** HIGH for execution display and prompt hardening (well-understood patterns, existing codebase primitives); MEDIUM for multi-view framework (novel design over existing channels); HIGH for tool call interception (regex on known XML format)
 
-## Ecosystem Survey: How Augmented REPLs Work
+---
 
-### Custom Python REPLs on prompt_toolkit
+## Existing Foundation (Already Built)
 
-prompt_toolkit is the standard foundation for building custom Python REPLs. ptpython is the canonical example -- a full Python REPL built entirely on prompt_toolkit with syntax highlighting, multiline editing, and popup tab completion. Building a basic Python REPL on prompt_toolkit takes under an hour; most features come free from the framework.
+These are the v4.0 primitives that v5.0 builds on. Understanding them is critical because every v5.0 feature is a transformation layer over existing code, not a greenfield build.
 
-**Async REPL pattern (verified via ptpython source):**
-```python
-async def interactive_shell():
-    await embed(
-        globals=globals(),
-        return_asyncio_coroutine=True,
-        patch_stdout=True,
-    )
-```
-
-Key capabilities:
-- `return_asyncio_coroutine=True` -- REPL runs as a coroutine, enabling top-level `await`
-- `patch_stdout=True` -- background coroutines can safely print above the prompt
-- `globals=globals()` -- custom namespace injection for the REPL session
-- Dynamic prompt text via callables (re-evaluated each render cycle)
-- Bottom toolbar for mode indicators, status, live info
-- Custom keybindings via `KeyBindings` registry
-- Full-screen layouts via `HSplit`/`VSplit`/`Window`/`BufferControl`
-
-**What prompt_toolkit does NOT do:** Mode switching between NL/Py/Graph, channel multiplexing, AI integration. These are cortex's differentiators.
-
-**Confidence:** HIGH (ptpython source, official docs at python-prompt-toolkit.readthedocs.io)
-
-### Mode Switching in Existing Shells
-
-**xonsh** is the closest prior art for multi-mode shells. It blends Python mode and subprocess mode using implicit heuristic detection -- if input looks like Python, it runs as Python; otherwise, it dispatches as a shell command. This works but creates ambiguity at mode boundaries.
-
-**IPython** uses magic commands (% prefix for line magics, %% for cell magics) to escape from Python into special behaviors. The prefix-character approach is proven and unambiguous.
-
-**Aider** (AI pair programming CLI) uses explicit mode switching -- `/code`, `/architect`, `/ask`, `/help` slash commands change the behavior of subsequent input. Claude Code operates as a REPL-style agent with a bash tool and file editing tool.
-
-**Open Interpreter** uses natural language as the primary input mode, with the AI generating and executing code. No explicit mode switching -- the AI figures out what to do.
-
-**Key insight for cortex:** Explicit mode switching with prefix characters is cleaner than heuristic detection. xonsh's implicit detection creates confusion at boundaries. IPython's `%` prefix and Aider's `/` slash commands are battle-tested patterns. For cortex, a single-character prefix per mode (like `>` for NL, no prefix for Py, `!` for graph) gives unambiguous dispatch without the complexity of auto-detection.
-
-**Confidence:** HIGH for xonsh/IPython patterns (official docs); MEDIUM for Aider/Open Interpreter (WebSearch + GitHub verified)
-
-### Channel-Based I/O Multiplexing
-
-No existing Python REPL implements channel-based I/O. The design is novel, drawing from:
-
-**Docker Compose** uses labeled, color-coded output streams for multi-container logs. Each container's output is prefixed with its name, and colors distinguish containers visually. The Docker Engine multiplexes stdout and stderr using a binary protocol (stdcopy) that tags each frame with its stream origin.
-
-**tmux / pymux** (prompt_toolkit-based terminal multiplexer) multiplexes terminal sessions with labeled panes. pymux demonstrates that prompt_toolkit's layout system can handle multiple simultaneous output areas.
-
-**Go channels / Trio memory channels** provide the concurrency primitive. Python's `asyncio.Queue` is the direct analog -- single-consumer by default. For fan-out (one message to multiple consumers), you need a subscriber list with per-subscriber queues.
-
-**Key insight for cortex:** The channel abstraction is a labeled `asyncio.Queue` with a display prefix. Each channel is a named stream (`[ai]`, `[py]`, `[graph]`, `[otel]`). The REPL renders all channels in the output area with their label prefix. Muting a channel removes it from render without stopping the producer. This is simpler than a full pub/sub system -- it's just labeled output lines with filter predicates.
-
-**Confidence:** MEDIUM (novel design; Docker and asyncio.Queue patterns are well-understood, but the combination for REPL output is untested)
-
-### Reflective Python Namespaces
-
-Python's introspection is comprehensive and well-documented:
-
-- `dir(obj)` -- list attributes and methods
-- `vars(obj)` / `obj.__dict__` -- namespace as dict
-- `type(obj)`, `isinstance()`, `issubclass()` -- type checking
-- `inspect.getmembers(obj, predicate)` -- filtered member listing
-- `inspect.getsource(obj)` -- source code retrieval
-- `inspect.signature(obj)` -- callable signatures
-- `__getattr__` / `__dir__` -- proxy objects with custom introspection and tab completion
-
-For REPL integration, the key pattern is `__dir__` customization. Tab completion in prompt_toolkit and ptpython calls `dir()` on namespace objects. If the AI agent or namespace proxy implements `__dir__`, it appears in tab completion naturally.
-
-**Lazy loading via `__getattr__`:** PEP 562 (Python 3.7+) established the pattern of module-level `__getattr__` for lazy imports. The same technique works for namespace objects -- attributes resolve on first access, not at import time.
-
-**Rich object display:** IPython defines `_repr_html_`, `_repr_pretty_`, `_repr_markdown_` protocols for custom display. The Rich library provides `__rich_repr__` and `__rich_console__` for terminal formatting. Since cortex uses prompt_toolkit (not IPython), the display protocol will be `__cortex_repr__` or similar -- a method that returns prompt_toolkit `FormattedText`.
-
-**Confidence:** HIGH (Python stdlib docs, inspect module docs, PEP 562)
-
-### AI Agent as REPL Object
-
-No standard pattern exists for "AI as a first-class object in a Python namespace." The closest precedents:
-
-**LangChain's agent.invoke()** -- agent is a callable Python object, but not integrated into a REPL namespace.
-
-**Open Interpreter's `interpreter` object** -- exposed as a Python package with a chat interface, but lives in its own process, not in a shared namespace.
-
-**Claude Code's architecture** -- a REPL-style interface where the AI has two tools (bash, file edit). The AI is the loop controller, not an object in a namespace.
-
-**Key insight for cortex:** The AI agent is a Python object that lives in the REPL namespace alongside user variables, graph nodes, and resolved deps. It is callable (`ai("explain this graph")`) and has methods (`ai.fill(MyNode)`, `ai.choose(A | B)`) that map directly to bae's LM protocol. It participates in tab completion via `__dir__`. Its output goes to the `[ai]` channel. This is genuinely novel -- no existing tool exposes AI as a composable Python object in a shared, interactive namespace.
-
-**Confidence:** MEDIUM (no precedent; design is sound but untested)
-
-### OpenTelemetry for Interactive Sessions
-
-OTel semantic conventions for GenAI are in Development status (not stable). Key span types:
-
-- `invoke_agent` -- root span for agent invocation
-- `gen_ai.operation.name` -- operation type attribute
-- `gen_ai.agent.name` -- agent identifier
-- `gen_ai.usage.input_tokens` / `output_tokens` -- token tracking
-- `gen_ai.request.model` -- model identifier
-
-For REPL context, the span hierarchy would be:
-```
-cortex.session (root)
-  cortex.command (per user input)
-    gen_ai.invoke_agent (if AI involved)
-      gen_ai.fill / gen_ai.choose_type (LM calls)
-    bae.graph.run (if graph execution)
-      bae.node.resolve (per node)
-```
-
-Python's OTel SDK uses `contextvars` for span propagation, which works natively with asyncio. No special handling needed for async REPL -- spans propagate through `await` chains automatically.
-
-**Confidence:** MEDIUM for GenAI semantic conventions (Development status, may change); HIGH for core OTel span mechanics (stable, well-documented)
+| Component | File | What It Does | v5.0 Hook Point |
+|-----------|------|-------------|-----------------|
+| `Channel` | `channels.py` | Named output stream with color, visibility, buffer, store integration | Multi-view adds formatter dispatch before `_display()` |
+| `ChannelRouter` | `channels.py` | Registry of channels, `write()` dispatches to named channel | View registry attaches to router, not individual channels |
+| `AI.__call__` | `ai.py` | Eval loop: send -> extract code -> execute -> feed back -> loop | Tool call interception inserts between send and extract |
+| `AI._send` | `ai.py` | Claude CLI subprocess with `--tools ""` and `--strict-mcp-config` | Prompt hardening modifies system prompt loaded here |
+| `ai_prompt.md` | `repl/ai_prompt.md` | System prompt for AI agent | Fewshot rejection example added here |
+| `render_markdown` | `channels.py` | Rich Markdown -> ANSI string for `[ai]` channel | Execution display uses Rich Panel + Syntax instead |
+| `SessionStore.record` | `store.py` | Persists all I/O entries to SQLite | Store view reads these records for cross-AI consumption |
 
 ---
 
 ## Table Stakes
 
-Features that define what "an augmented REPL" must do. Missing any of these and the product feels broken.
+Features that address known v4.0 tech debt. Without these, the REPL has visible defects.
 
 | Feature | Why Expected | Complexity | Depends On | Notes |
 |---------|--------------|------------|------------|-------|
-| **Async Python execution with top-level await** | Every modern Python REPL (ptpython, IPython, Python 3.13+ REPL) supports this. Users type `await graph.arun(node)` and it works. Without this, the REPL can't interact with bae's async API. | Low | prompt_toolkit `embed()` with `return_asyncio_coroutine=True` | ptpython solves this already. Cortex inherits it. |
-| **Syntax highlighting and multiline editing** | ptpython, IPython, and Python 3.13+ REPL all have this. A REPL without syntax highlighting feels broken in 2026. | Low | prompt_toolkit (free) | Comes free from prompt_toolkit/Pygments. Zero effort. |
-| **Tab completion on namespace objects** | Every REPL does this. Users expect `ai.<TAB>` to show methods, `graph.<TAB>` to show attributes. | Low | prompt_toolkit completer + `__dir__` on objects | Standard prompt_toolkit pattern. Needs `__dir__` on custom objects. |
-| **Shared mutable namespace** | The REPL namespace must be a single Python dict that all modes (NL, Py, Graph) read and write. Variables set in Py mode are visible in NL mode. Graph results land in the namespace. | Low | `globals()` dict passed to REPL | ptpython async embed example demonstrates this exactly. |
-| **History and persistence** | Command history across sessions. Up-arrow recalls previous inputs. | Low | prompt_toolkit `FileHistory` | One line of config. |
-| **Error display with tracebacks** | When Python code fails, show a full traceback. When a graph fails, show the trace + error. Not just "error occurred." | Low | Python stdlib traceback + bae exception types | Bae already has typed exceptions (DepError, FillError, RecallError) with `.trace` attributes. |
-| **Graceful Ctrl-C / Ctrl-D** | Ctrl-C cancels current operation (not the whole REPL). Ctrl-D exits. Running LM calls must be cancellable. | Low-Med | asyncio task cancellation | asyncio.Task.cancel() propagates CancelledError. Needs try/except around eval loop. |
-| **Bae objects pre-loaded in namespace** | `Node`, `Graph`, `Dep`, `Recall`, `LM` etc. available without import. The REPL should feel like "bae is already imported." | Low | Populate namespace dict at startup | `namespace.update(bae.__dict__)` or selective import. |
-| **Mode indicator in prompt** | User must always know which mode they're in. The prompt prefix changes: `py>`, `nl>`, `bae>` or similar. | Low | prompt_toolkit dynamic prompt callable | Callable that returns current mode prefix. One function. |
+| **AI prompt hardening -- explicit no-tools constraint** | v4.0 UAT-2 test 2 FAILED: AI generates fake tool_use XML with fabricated file paths and invented results. Users see hallucinated tool calls instead of Python code. This is a visible defect, not a nice-to-have. | Low | `ai_prompt.md` | Add explicit "you have NO tools available" constraint to system prompt. The Claude CLI `--tools ""` flag disables tool execution but does not remove tool-calling patterns from the model's behavior -- the internal system prompt still says "In this environment you have access to a set of tools." The model trained on tool-use patterns hallucinates them. The fix is in OUR system prompt, not in CLI flags. |
+| **Fewshot rejection example in system prompt** | Telling the model "no tools" is necessary but insufficient. LLMs follow demonstrated patterns more reliably than instructions. A single fewshot showing: attempt tool call, get rejection, correct to Python code -- teaches the model the desired behavior. | Low | `ai_prompt.md`, no-tools constraint above | One example block in the system prompt. Pattern: User asks question, AI starts XML tool call, system says "no tools, use Python", AI writes Python fence. The fewshot makes the constraint concrete. |
+| **Tool call interception in eval loop** | Even with prompt hardening, the model may still occasionally emit tool-use XML (especially on first call before the fewshot sinks in). Without interception, the user sees raw XML garbage. With interception, the system catches it, feeds corrective feedback, and the model self-corrects. | Med | `ai.py` eval loop, regex for tool-use XML patterns | Regex-based detection inserted AFTER `_send()` returns, BEFORE `extract_code()`. When detected: (1) show user a brief "[ai] correcting tool call attempt" message, (2) feed rejection text back as the next prompt ("You attempted to use tools. You have no tools. Use Python code fences instead."), (3) continue eval loop. |
+| **Deduplicated execution display** | v4.0 UAT-2 test 5 flagged: when AI writes code that the eval loop executes, the code appears in the AI markdown response AND again as `[py]` channel output. User sees the same code 2-3x. This is cosmetic but makes the REPL feel broken. | Med | `ai.py`, `channels.py`, Rich Panel/Syntax | Replace the redundant `[py]` lines for AI-initiated code with framed Rich Panels. AI code block rendered as Panel with syntax highlight and title. Execution output in separate panel below. The AI markdown response still renders on `[ai]`, but eval loop output uses framed display instead of flat `[py]` lines. |
 
 ## Differentiators
 
-Features that make cortex special. No existing tool does these.
+Features that set cortex apart. Not expected by users, but transform the experience.
 
 | Feature | Value Proposition | Complexity | Depends On | Notes |
 |---------|-------------------|------------|------------|-------|
-| **Three-mode input: NL / Py / Graph** | Single REPL handles natural language ("what does this graph do?"), Python execution (`result = await graph.arun(node)`), and graph operations (`bae run ootd`). No context switching between tools. Users stay in one terminal. | Med | Mode dispatcher, prefix detection, prompt_toolkit input processing | **Core differentiator.** Mode detection via prefix character (explicit, not heuristic). Default mode is Py. NL mode sends input to AI. Graph mode wraps `bae` CLI commands. |
-| **Channel-based I/O with labeled streams** | All output is tagged with a channel name. `[ai]` for AI responses, `[py]` for Python output, `[graph]` for graph execution traces, `[otel]` for span events. Users can mute/unmute channels to reduce noise. | Med | asyncio.Queue per channel, channel registry, render layer | **Novel.** Docker Compose's labeled output adapted for REPL. Each channel has a name, color, and mute state. Output lines carry channel metadata. Render filters by mute state. |
-| **Channel surfing / muting** | `/mute otel` silences OTel span output. `/unmute otel` restores it. `/solo ai` shows only AI output. `/channels` lists all channels with status. | Low | Channel registry with boolean mute flags | Low complexity because it's just a filter on the render path. The channel abstraction does the heavy lifting. |
-| **AI as a first-class namespace object** | `ai` lives in the namespace. `ai("explain this graph")` triggers NL interaction. `ai.fill(MyNode, context)` calls bae's LM fill directly. `ai.model` shows current model. Tab-completable. | Med | AI object wrapping bae's LM protocol, `__dir__` for completion, `__call__` for chat | **Novel.** AI is not a separate tool -- it's a Python object you compose with. `result = ai.fill(RecommendOOTD, {"weather": "rainy"})` works like any other Python call. |
-| **Reflective namespace introspection** | `/ns` shows all namespace variables with types and summaries. `/ns graph` shows a specific object's structure. Objects added to namespace get automatic rich display. | Med | `inspect` module, custom `__repr__` on bae objects, formatted display | Builds on Python's introspection. Differentiator is the integration: bae `Node` classes show their fields and annotations, `Graph` objects show topology, `GraphResult` shows trace summary. |
-| **Graph-aware REPL context** | When a graph runs, its trace lands in the namespace. `_` holds the last result (like Python REPL). `_trace` holds the last graph trace. Node instances from the trace are directly inspectable. | Low-Med | Graph execution populates namespace variables | Small feature, large usability impact. After `result = await graph.arun(start)`, `result.trace[-1]` is the terminal node with all fields accessible. |
-| **OTel span instrumentation** | Every REPL command emits an OTel span. Graph executions emit nested spans per node. AI calls emit GenAI semantic convention spans. Spans go to the `[otel]` channel and optionally to a collector (Jaeger). | Med-High | opentelemetry-api, opentelemetry-sdk, OTel GenAI semantic conventions | Valuable for understanding what happened during a session. Not every user needs it, but the instrumentation foundation enables future observability features. |
-| **Ephemeral spawned interfaces (HitL)** | During graph execution, a node that needs human input spawns a focused input UI (new terminal tab, browser form, VS Code panel). After human responds, execution resumes. | High | Terminal spawning (Ghostty AppleScript on macOS), async checkpoint/resume pattern | **Highest complexity differentiator.** Ghostty's AppleScript API supports new window/tab/split and send text, but the programmatic API is limited (discussion #2353). Needs robust fallback (inline prompt in REPL). Defer full implementation to later phase; start with inline HitL. |
+| **Multi-view stream framework** | Same channel data, different formatting for different consumers. The user sees Rich Panels with color. The AI eval loop gets structured text feedback. Another AI (cross-session) gets store records. Debug mode shows raw channel writes. This is the conceptual leap from "channels as display" to "channels as data bus with pluggable views." | Med-High | `channels.py`, new `views.py` module | The Channel currently conflates data flow and display (`write()` calls `_display()` directly). The multi-view framework separates these: `write()` records data + notifies registered views. Each view is a callable that receives `(channel_name, content, metadata)` and decides how to render. The "user view" renders Rich panels. The "AI feedback view" renders structured text. The "store view" already exists (store.record). The "debug view" renders raw `[channel] content` lines. |
+| **View registry with debug toggle** | Users can switch between views at runtime. Debug mode shows raw channel data (what v4.0 showed). Rich mode shows framed panels. Raw mode shows unformatted text. Debug mode is invaluable for understanding what the AI sees vs what the user sees. | Low-Med | Multi-view framework above | Simple dict of `{name: ViewFormatter}` on the router. One active view at a time for the terminal. The store view always runs (persistence is not optional). |
+| **Framed code + output panels** | AI-initiated code blocks render in a Rich Panel with syntax highlighting and a title bar ("ai:1 code"). Execution output renders in a separate panel below ("output"). Visually groups code and its result. Looks professional. Replaces the flat `[py]` lines with structured visual blocks. | Med | Rich Panel, Rich Syntax, `channels.py` display path | `Panel(Syntax(code, "python", theme="ansi_dark"), title="ai:1 code", border_style="blue")` for code. `Panel(output_text, title="output", border_style="green")` for results. Both rendered through the Rich-to-ANSI-to-prompt_toolkit bridge already proven in v4.0. |
+| **AI self-view (structured feedback)** | When the eval loop feeds results back to the AI, it currently sends raw output text. With multi-view, the AI feedback view can structure this more usefully: include the code that was run, whether it succeeded or failed, the output, and what namespace mutations occurred. The AI gets better context for its next iteration. | Med | Multi-view framework, eval loop | Not just "Block 1 output: ..." but structured feedback like "[executed] store.search('query') [success] [output] 3 entries found [namespace] no changes". This helps the AI understand what happened without re-reading its own code. |
 
 ## Anti-Features
 
-Features to deliberately NOT build. These are tempting but wrong for cortex's scope.
+Features to explicitly NOT build for v5.0.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| **Extending IPython** | IPython's architecture assumes it owns the event loop, the namespace, and the display system. Fighting IPython's assumptions to add channels and modes is harder than building on prompt_toolkit directly. ptpython proves custom REPLs can match IPython's UX without its baggage. | Build on prompt_toolkit + ptpython's patterns. Cherry-pick ideas (magic commands, rich display) without the framework coupling. |
-| **Auto-detecting NL vs Python input** | xonsh's heuristic mode detection creates ambiguity. `print` -- is that a Python function call or a natural language request? `ast.parse()` can determine if input is valid Python, but many NL inputs are also valid Python identifiers. The heuristic will always have false positives. | Explicit mode prefix. Default to Python mode (the common case for a Python REPL). NL requires a prefix character or mode switch. Unambiguous. |
-| **Full TUI / full-screen application** | prompt_toolkit supports full-screen layouts (HSplit/VSplit/Window), but building a full TUI is massive scope. tmux-style panes, scrollable output regions, resizable splits -- each adds complexity. | Scrollback terminal output with labeled lines (like Docker Compose). One input area, one output stream. Simple and sufficient. Full TUI is a v5 feature if needed. |
-| **Persistent AI conversation memory** | Maintaining a full conversation history across REPL sessions requires storage, context window management, summarization. This is a product, not a feature. | AI context is the current REPL session. Namespace is the memory. When the session ends, the conversation ends. Users can save state explicitly (`import pickle; pickle.dump(namespace, f)`). |
-| **Plugin / extension system** | Extensibility architectures (hooks, registries, plugin discovery) are complex to design and maintain. Bae is a framework, not a platform. | Python is the extension system. Users import what they need and add it to the namespace. `exec(open('my_setup.py').read(), namespace)` is the plugin system. |
-| **Web-based REPL** | Jupyter already exists. Building a web frontend for cortex duplicates Jupyter's value while adding WebSocket complexity, frontend code, and browser compatibility issues. | Terminal-only. Users who want web can use Jupyter with bae imported. |
-| **Voice / multimodal input** | Tempting with modern LLM capabilities, but adds audio capture, speech-to-text, latency, and platform-specific dependencies. | Text input only. NL mode handles natural language as text. |
-| **Built-in graph visualization in terminal** | Rendering Mermaid diagrams in a terminal is either low-fidelity (ASCII art) or requires a separate viewer. The existing `bae graph show` opens mermaid.live in a browser. | Keep `bae graph show` for visualization. In the REPL, `graph.to_mermaid()` prints the Mermaid source. Users paste it into mermaid.live or use `bae graph show`. |
+| **Streaming display (token-by-token)** | Claude CLI with `--output-format text` returns the complete response. Streaming requires switching to the Anthropic API directly (with API key management, conversation state management, token counting). The current subprocess approach is zero-config. Streaming is a separate milestone. | Keep blocking subprocess call. The framed panel display will make the response feel more polished even without streaming. |
+| **AI bash dispatch** | Letting the AI execute bash commands opens a security surface. The AI currently only executes Python in the shared namespace (sandboxed by design -- it can only affect the REPL session). Adding bash would require permission prompting, command allowlisting, and process isolation. | Keep AI execution to Python only. Users can run bash themselves in BASH mode. The AI's system prompt should say "Python code fences only, no bash." |
+| **Configurable view per channel** | Tempting to let users set different views per channel (e.g., "rich for ai, raw for py"). But this adds combinatorial complexity to the view system and the UI for managing it. One active view for the terminal is sufficient. | Single active view for terminal display. The store view always persists. Debug view available via toggle. |
+| **Custom view plugins** | Extensible view system where users write Python classes that implement a View protocol and register them. YAGNI. The three built-in views (user/rich, debug/raw, AI/structured) cover all known use cases. | Hardcode the three views. If a new view is needed, add it to the codebase. Python is the extension system. |
+| **Undo/replay of AI corrections** | When tool call interception fires and the AI self-corrects, the user might want to see what the AI originally tried. But storing and displaying rejected attempts adds complexity with no clear value -- the user cares about the corrected result, not the failed attempt. | Show a brief "[ai] corrected tool call attempt" message. Log the full rejected output to the debug channel. Don't build an undo system. |
+| **Semantic parsing of tool-use XML** | Tempting to parse the hallucinated tool calls, extract the intended operation, and translate it to equivalent Python code automatically. But this creates a fragile translation layer between two different execution models. | Simple regex detect + reject + retry. Let the AI figure out the Python equivalent itself. The fewshot in the system prompt guides this. |
 
 ## Feature Dependencies
 
 ```
-prompt_toolkit REPL shell (foundation)
+AI prompt hardening (system prompt changes)           [no code deps, standalone]
     |
-    +---> Async Python execution (top-level await)
+    +---> Fewshot rejection example                   [extends system prompt]
+    |
+    +---> Tool call interception                      [depends on knowing what to reject]
+              |
+              +---> Visible correction message        [interception must exist first]
+              |
+              +---> Corrective feedback in eval loop  [interception triggers feedback]
+
+Multi-view stream framework                           [refactors Channel._display]
+    |
+    +---> View registry on ChannelRouter              [framework must exist first]
     |         |
-    |         +---> Shared mutable namespace
-    |         |         |
-    |         |         +---> Bae objects pre-loaded
-    |         |         |
-    |         |         +---> Graph-aware context (_, _trace)
-    |         |         |
-    |         |         +---> Reflective namespace introspection (/ns)
-    |         |         |
-    |         |         +---> AI agent object in namespace
-    |         |                   |
-    |         |                   +---> AI callable (__call__ for NL)
-    |         |                   |
-    |         |                   +---> AI methods (.fill, .choose_type)
-    |         |                   |
-    |         |                   +---> AI output -> [ai] channel
+    |         +---> Debug view toggle                 [registry must exist first]
+    |
+    +---> Rich Panel execution display                [view framework renders panels]
     |         |
-    |         +---> Mode dispatcher
-    |                   |
-    |                   +---> Py mode (default): exec() / eval()
-    |                   |
-    |                   +---> NL mode (prefix): dispatch to AI agent
-    |                   |
-    |                   +---> Graph mode (prefix): dispatch to bae CLI
+    |         +---> Framed code blocks                [Panel + Syntax]
+    |         |
+    |         +---> Framed output blocks              [Panel]
+    |         |
+    |         +---> Deduplication                     [view controls what renders]
     |
-    +---> Channel registry (foundation for I/O)
-              |
-              +---> Channel: [py] -- Python stdout/stderr capture
-              |
-              +---> Channel: [ai] -- AI responses
-              |
-              +---> Channel: [graph] -- Graph execution trace events
-              |
-              +---> Channel: [otel] -- OTel span events
-              |
-              +---> Mute/unmute/solo commands
-              |
-              +---> Render layer (label + color + filter)
-
-OTel instrumentation (orthogonal, can be added anytime)
-    |
-    +---> Session span (root)
-    |
-    +---> Command spans (per input)
-    |
-    +---> GenAI spans (per LM call)
-    |
-    +---> Node spans (per graph step)
-    |
-    +---> [otel] channel output
-
-Ephemeral spawned interfaces (highest complexity, defer)
-    |
-    +---> HitL checkpoint pattern (async wait for human input)
-    |
-    +---> Terminal spawning (Ghostty AppleScript, fallback to inline)
-    |
-    +---> Browser form spawning (future)
+    +---> AI self-view (structured feedback)           [view framework + eval loop]
 ```
 
-## Mode Switching: Expected Behavior
+**Critical ordering insight:** Prompt hardening and tool call interception are INDEPENDENT of the multi-view framework. They can (and should) ship first because they fix a visible defect. The multi-view framework is a refactor of the display layer that enables the execution display improvements. Building the view framework first, before the execution display, prevents having to rewrite display code twice.
 
-### Prefix-Based Dispatch
+## Detailed Feature Specifications
 
-| Input | Mode | What Happens |
-|-------|------|-------------|
-| `x = 42` | Py (default) | Python exec. `x` added to namespace. |
-| `result = await graph.arun(start)` | Py (default) | Async Python exec. Top-level await works. |
-| `> what does this graph do?` | NL | Stripped prefix, sent to `ai("what does this graph do?")`. Response appears on `[ai]` channel. AI can read namespace for context. |
-| `> explain _trace` | NL | AI inspects `_trace` from namespace, explains the last graph execution. |
-| `! run ootd --input '{"msg": "rainy day"}'` | Graph | Dispatched as `bae run ootd ...`. Output on `[graph]` channel. Result lands in `_` and `_trace`. |
-| `/mute otel` | Command | REPL meta-command. Mutes the `[otel]` channel. Not sent to any mode. |
-| `/ns` | Command | REPL meta-command. Shows namespace contents. |
+### 1. AI Prompt Hardening
 
-### Mode Persistence vs Per-Line
+**What the system prompt needs:**
 
-Two approaches, with a recommendation:
+The current `ai_prompt.md` says nothing about tools. The Claude CLI `--tools ""` flag disables tool execution but the model's internal system prompt still includes "In this environment you have access to a set of tools you can use..." followed by formatting instructions. When our system prompt (via `--system-prompt`) replaces the default, those tool instructions vanish -- but the model has been fine-tuned on tool-use patterns and will still produce them without explicit counterpressure.
 
-**Per-line prefix (recommended):** Each line declares its mode. Default is Py. `>` prefix for NL. `!` prefix for graph. `/` prefix for meta-commands. This is how IPython magics work -- each line is self-contained.
+**Required additions to `ai_prompt.md`:**
 
-**Sticky mode:** `/mode nl` switches to NL mode. All subsequent input is NL until `/mode py`. This is how Aider works. More convenient for extended NL conversations, but confusing when switching frequently.
+1. **Explicit constraint block** -- a "## Constraints" section stating: no tools available, no XML tool syntax, Python code fences only, file inspection via Python (pathlib/open), searching via store.search() in Python.
 
-**Recommendation:** Per-line prefix as primary, with sticky mode as optional (`/mode nl` to stay in NL until `/mode py`). Default is Py mode. This gives unambiguous single-line dispatch with an escape hatch for extended conversations.
+2. **Fewshot rejection example** -- a "## Example" section demonstrating the correct behavior. User asks a question that might tempt tool use (e.g., "what files are in this directory?"). The correct response is a Python code fence with `os.listdir('.')`. The example explicitly marks the XML tool-call pattern as WRONG and shows it would be rejected. This is the single most effective prompt engineering technique for constraining behavior -- demonstrated examples outweigh instructions.
 
-## Channel I/O: Expected Behavior
+**Why fewshot over instruction-only:**
 
-### Channel Lifecycle
+Research from LangChain and prompt engineering literature confirms that few-shot prompting greatly boosts model performance on tool-calling tasks. The inverse applies equally -- fewshot examples of rejection patterns train the model to avoid those patterns. The OWASP Prompt Injection Prevention cheat sheet recommends repeating critical rules at multiple points in the system prompt, especially near the end. The constraint block at the top + fewshot example in the middle + the existing "1 fence per turn max" rule near the end creates three reinforcement points.
 
-1. Channels are registered at REPL startup: `py`, `ai`, `graph`, `otel`, `sys`
-2. Each channel has: name, color, mute state (bool), asyncio.Queue
-3. Background render task reads from all unmuted channel queues, prints with `[name]` prefix in channel color
-4. `patch_stdout=True` ensures channel output appears above the prompt line
+**Confidence:** HIGH -- well-established prompt engineering technique, specific to known failure mode.
 
-### Channel Surfing Commands
+### 2. Tool Call Interception
 
-| Command | Effect |
-|---------|--------|
-| `/channels` | List all channels with mute status |
-| `/mute <name>` | Silence a channel (output still queued, just not rendered) |
-| `/unmute <name>` | Restore a channel to rendering |
-| `/solo <name>` | Mute all channels except this one |
-| `/unsolo` | Restore all channels to previous mute state |
+**What to detect:**
 
-### Output Format
+Claude CLI's tool-use output follows a specific XML format. Based on the Claude API documentation and observed behavior, the model outputs tool calls as structured content blocks. When running via `--output-format text`, the text output may contain XML-like tool-call patterns. The observed hallucinated patterns from v4.0 UAT-2 include:
 
-```
-[py]    x = 42
-[ai]    The graph has 3 nodes: IsTheUserGettingDressed -> AnticipateUsersDay -> RecommendOOTD
-[graph] Step 1: IsTheUserGettingDressed (resolved 2 deps)
-[graph] Step 2: AnticipateUsersDay (resolved 1 dep, 1 recall)
-[graph] Step 3: RecommendOOTD (terminal)
-[otel]  span: bae.graph.run duration=3.2s nodes=3
-```
+- `<function_calls>` / `</function_calls>` wrapper tags
+- `<invoke name="ToolName">` blocks
+- `<parameter name="param">value</parameter>` inner tags
+- Occasionally `<tool_use>` / `<antml_invoke>` variant tags
 
-### Channel as Python Object
-
-Channels should also be accessible from the namespace:
-```python
-ch = channels["ai"]      # get channel object
-ch.muted = True           # programmatic mute
-ch.write("custom msg")    # write to channel from code
-```
-
-## Namespace Introspection: Expected Behavior
-
-### What /ns Shows
-
-```
-py> /ns
-Namespace (12 objects):
-
-  Bae Types:
-    Node          class    Base class for graph nodes
-    Graph         class    Agent graph from type hints
-    Dep           class    Field annotation for dep injection
-    Recall        class    Field annotation for trace recall
-
-  Session:
-    ai            Agent    AI agent (claude-sonnet-4)
-    graph         Graph    3 nodes, 1 terminal
-    result        Result   GraphResult with 3-node trace
-    _             Node     RecommendOOTD (terminal)
-    _trace        list     [IsTheUser..., Anticipate..., Recommend...]
-
-  User:
-    x             int      42
-    my_func       func     my_func(a: int, b: str) -> bool
-```
-
-### What /ns <object> Shows
-
-```
-py> /ns graph
-Graph: 3 nodes, 1 terminal
-
-  Start: IsTheUserGettingDressed
-    Fields: user_message (str, plain), is_dressed (bool, plain)
-    Returns: AnticipateUsersDay
-
-  AnticipateUsersDay
-    Fields: weather (Weather, Dep), dressed_status (str, Recall), ...
-    Returns: RecommendOOTD
-
-  RecommendOOTD (terminal)
-    Fields: top (str, plain), bottom (str, plain), footwear (str, plain)
-    Returns: None
-```
-
-### Implementation
-
-Namespace introspection uses:
-- `type(obj).__name__` for type names
-- `inspect.signature(obj)` for callable signatures
-- bae's `classify_fields(node_cls)` for field annotation info (Dep/Recall/plain)
-- `Graph.nodes`, `Graph.edges`, `Graph.terminal_nodes` for topology
-- Custom `__cortex_repr__` protocol on bae objects for rich display
-
-## AI Agent Object: Expected Behavior
-
-### The `ai` Object
+**Regex patterns for detection:**
 
 ```python
-# Natural language interaction (same as NL mode)
-ai("what does this graph do?")
-# -> Reads namespace, generates response on [ai] channel
-
-# Direct LM protocol access (wraps bae's LM)
-node = await ai.fill(RecommendOOTD, {"weather": "rainy"})
-# -> Calls lm.fill() with the given context
-
-chosen = await ai.choose_type([OptionA, OptionB], context)
-# -> Calls lm.choose_type()
-
-# Configuration
-ai.model                    # "claude-sonnet-4-20250514"
-ai.backend                  # ClaudeCLIBackend instance
-ai.temperature = 0.7        # Adjust generation params
-
-# Introspection
-dir(ai)                     # ['fill', 'choose_type', 'model', 'backend', ...]
+TOOL_CALL_RE = re.compile(
+    r'<(?:function_calls|tool_use|antml_invoke|invoke)\b',
+    re.IGNORECASE,
+)
 ```
 
-### AI Context Assembly
+This catches the opening tag of any tool-call pattern. No need to parse the full XML structure -- if the model is emitting ANY of these tags, it has gone off-script and needs correction.
 
-When `ai("explain _trace")` is called, the agent needs context. The context assembly protocol:
-
-1. Serialize the current namespace to a summary (not full dump -- too large)
-2. Include specifically referenced variables (`_trace` was mentioned)
-3. Include the REPL command history (last N commands)
-4. Include bae graph topology if a graph is in namespace
-5. Send assembled context + user message to LM
-
-This is NOT a full RAG pipeline. It's a focused context window assembly that leverages the namespace as structured state.
-
-## OTel Instrumentation: Expected Behavior
-
-### Span Hierarchy
+**Interception flow:**
 
 ```
-cortex.session                           # root span, entire REPL session
-  cortex.command [input="x = 42"]        # per-input span
-  cortex.command [input="> explain"]     # NL command
-    gen_ai.invoke_agent                  # AI invocation
-      gen_ai.fill [model=claude-sonnet]  # LM call
-  cortex.command [input="! run ootd"]    # graph command
-    bae.graph.run [graph=ootd]           # graph execution
-      bae.node.resolve [node=IsThe...]   # per-node
-      bae.node.resolve [node=Antic...]
-      bae.node.resolve [node=Recom...]
+AI._send() returns response text
+    |
+    v
+Check TOOL_CALL_RE.search(response)
+    |
+    +-- No match: proceed to extract_code() as normal
+    |
+    +-- Match found:
+         1. router.write("debug", full_response)      # log for debugging
+         2. router.write("ai", "[correcting tool call attempt]", metadata={"type": "correction"})
+         3. Feed rejection prompt back to AI:
+            "You just attempted to use tools (XML function_calls/invoke).
+             You have NO tools. Rewrite your response using Python code fences only."
+         4. response = await self._send(rejection_prompt)
+         5. Continue eval loop with corrected response
 ```
 
-### Attributes Following GenAI Semantic Conventions
+**Key design decisions:**
 
-| Attribute | Value Example | Convention |
-|-----------|---------------|------------|
-| `gen_ai.operation.name` | `invoke_agent`, `fill`, `choose_type` | OTel GenAI semconv |
-| `gen_ai.agent.name` | `cortex.ai` | OTel GenAI semconv |
-| `gen_ai.request.model` | `claude-sonnet-4-20250514` | OTel GenAI semconv |
-| `gen_ai.usage.input_tokens` | `1234` | OTel GenAI semconv |
-| `gen_ai.usage.output_tokens` | `567` | OTel GenAI semconv |
-| `cortex.mode` | `py`, `nl`, `graph` | Custom |
-| `cortex.channel` | `ai`, `py`, `graph` | Custom |
-| `bae.node.type` | `RecommendOOTD` | Custom |
-| `bae.graph.start` | `IsTheUserGettingDressed` | Custom |
+- Interception counts against `max_eval_iters` to prevent infinite correction loops
+- The full rejected response is logged to the debug channel (not shown to user)
+- The user sees only a brief correction notice, not the raw XML
+- The rejection prompt is fed as a `--resume` continuation, so the AI has full context of what it tried and why it was rejected
 
-### Integration Points
+**Confidence:** HIGH -- regex on known XML patterns, straightforward control flow insertion.
 
-OTel spans are emitted via decorators or context managers on:
-- REPL command dispatch (per input)
-- LM backend calls (fill, choose_type) -- bae's existing LM protocol
-- Graph execution loop steps (bae's graph.arun)
-- Dep resolution (bae's resolver)
+### 3. Multi-View Stream Framework
 
-The `[otel]` channel receives human-readable span summaries. A Jaeger exporter sends structured trace data for visualization.
+**Architecture:**
+
+The current Channel class conflates data recording and display. `Channel.write()` does three things: (1) records to store, (2) appends to buffer, (3) calls `_display()`. The multi-view framework separates concern (3) into pluggable formatters.
+
+**View protocol:**
+
+```python
+class View(Protocol):
+    """A formatter that consumes channel data."""
+
+    def render(self, channel: str, content: str, metadata: dict | None) -> None:
+        """Format and display content from a channel write."""
+        ...
+```
+
+**Built-in views:**
+
+| View | What It Renders | When Active |
+|------|----------------|-------------|
+| `UserView` | Rich Panels for AI code/output, Rich Markdown for AI text, color-coded `[channel]` prefix for everything else | Default terminal view |
+| `DebugView` | Raw `[channel] content` lines for everything, no Rich formatting | Toggled via debug command |
+| `AIFeedbackView` | Structured text for eval loop feedback (not rendered to terminal) | Always active, consumed programmatically by `AI.__call__` |
+
+**How Channel.write() changes:**
+
+```python
+# Before (v4.0):
+def write(self, content, **kwargs):
+    self.store.record(...)
+    self._buffer.append(content)
+    if self.visible:
+        self._display(content)
+
+# After (v5.0):
+def write(self, content, **kwargs):
+    self.store.record(...)
+    self._buffer.append(content)
+    # Notify all registered views
+    for view in self._router.active_views():
+        view.render(self.name, content, kwargs.get("metadata"))
+```
+
+**The router owns the view registry, not individual channels.** This is important because views span channels -- the UserView needs to know about writes to both "ai" and "py" channels to coordinate framed display.
+
+**Confidence:** MEDIUM -- novel design, but the primitives (Channel, Router, Rich rendering) are all proven. The risk is in the refactor, not the concept.
+
+### 4. Execution Display (Framed Panels)
+
+**What changes for the user:**
+
+v4.0 display when AI executes code:
+```
+[ai] Here's what's in your namespace:
+[ai]
+[ai] ```python
+[ai] ns()
+[ai] ```
+[py] ns()                          <-- redundant, same code shown again
+[py] graph  Graph  Graph(start=...)
+[py] ai     AI     ai:1 -- ...
+[ai] You have a graph with 3 nodes and an AI session active.
+```
+
+v5.0 display with framed panels:
+```
+[ai] Here's what's in your namespace:
+
++-- ai:1 code ----------------------------------------+
+| ns()                                                 |
++------------------------------------------------------+
++-- output --------------------------------------------+
+| graph  Graph  Graph(start=...)                       |
+| ai     AI     ai:1 -- ...                           |
++------------------------------------------------------+
+
+[ai] You have a graph with 3 nodes and an AI session active.
+```
+
+**Implementation using Rich:**
+
+```python
+from rich.panel import Panel
+from rich.syntax import Syntax
+
+def render_code_panel(code: str, label: str) -> str:
+    """Render code in a framed panel with syntax highlighting."""
+    syntax = Syntax(code, "python", theme="ansi_dark", padding=0)
+    panel = Panel(syntax, title=f"{label} code", border_style="blue", expand=True)
+    buf = StringIO()
+    console = Console(file=buf, width=terminal_width(), force_terminal=True)
+    console.print(panel)
+    return buf.getvalue()
+
+def render_output_panel(output: str, label: str = "output") -> str:
+    """Render execution output in a framed panel."""
+    panel = Panel(output.rstrip(), title=label, border_style="green", expand=True)
+    buf = StringIO()
+    console = Console(file=buf, width=terminal_width(), force_terminal=True)
+    console.print(panel)
+    return buf.getvalue()
+```
+
+**Where this hooks into the eval loop:**
+
+In `AI.__call__`, the current code does:
+```python
+self._router.write("py", code, mode="PY", metadata={"type": "ai_exec"})
+self._router.write("py", output, mode="PY", metadata={"type": "ai_exec_result"})
+```
+
+With framed display, the metadata `type` field drives the UserView's rendering decision:
+- `type: "ai_exec"` -> render as code panel with syntax highlighting
+- `type: "ai_exec_result"` -> render as output panel
+- Other `[py]` writes (user-initiated) -> render as normal `[py]` prefix lines
+
+This means the view framework uses metadata to decide rendering, NOT the channel name. The channel is still "py" for both AI-executed and user-executed code. The difference is in the metadata.
+
+**Deduplication strategy:**
+
+The AI markdown response (on `[ai]` channel) includes the code block in its text. The eval loop also writes the same code to `[py]` channel. The deduplication approach: the UserView renders `[ai]` markdown as before (including the code block in the markdown), but renders `type: "ai_exec"` writes as framed panels instead of flat `[py]` lines. The user still sees the code in the AI response markdown AND in the panel, but the panel provides a visually distinct execution frame that makes it feel intentional rather than redundant.
+
+Alternative: strip code blocks from the AI markdown before rendering on `[ai]`, showing ONLY the framed panels. This is cleaner but requires modifying the AI response text before display, which adds complexity. Start with the dual-display approach and iterate.
+
+**Confidence:** HIGH for Rich Panel/Syntax usage (documented API, proven in v4.0 bridge). MEDIUM for deduplication strategy (needs UX iteration).
 
 ## MVP Recommendation
 
-Build in this order, where each phase is independently useful:
+Build in this order:
 
-### Phase 1: REPL Shell + Namespace
+### Phase 1: Prompt Hardening + Tool Call Interception
+
 **Prioritize:**
-1. prompt_toolkit async REPL with top-level await
-2. Shared namespace with bae objects pre-loaded
-3. Mode dispatcher (Py default, prefix-based NL and graph)
-4. Mode indicator in prompt
-5. History persistence
+1. Add constraints section to `ai_prompt.md`
+2. Add fewshot rejection example to `ai_prompt.md`
+3. Add `TOOL_CALL_RE` regex to `ai.py`
+4. Add interception check in `AI.__call__` after `_send()`, before `extract_code()`
+5. Correction message on `[ai]` channel, rejection prompt fed back to AI
 
-**Why first:** Everything else builds on having a working REPL with a namespace. This is the foundation.
+**Why first:** Fixes the most visible defect (hallucinated tool calls). Low complexity. No refactoring needed. Immediately testable -- run the REPL, ask the AI to do something, verify it uses Python not XML.
 
-### Phase 2: Channel I/O
+**Defer from this phase:** Multi-view framework, framed panels. Those are display improvements, not correctness fixes.
+
+### Phase 2: Multi-View Framework
+
 **Prioritize:**
-1. Channel registry and labeled output
-2. Python stdout/stderr capture to `[py]` channel
-3. Mute/unmute/solo commands
-4. Render layer with color-coded prefixes
+1. Extract View protocol (callable or Protocol class)
+2. Build UserView (current display behavior, extracted from Channel._display)
+3. Build DebugView (raw [channel] content lines)
+4. View registry on ChannelRouter
+5. Refactor Channel.write() to notify views instead of calling _display() directly
+6. Debug toggle command or keybinding
 
-**Why second:** Without channels, all output is interleaved and noisy. Channels are the I/O primitive that every subsequent feature writes to.
+**Why second:** This is the structural refactor that enables phase 3. Building it before the execution display means the panel rendering hooks into the view system cleanly instead of being bolted onto the existing Channel._display.
 
-### Phase 3: AI Agent Object
+### Phase 3: Framed Execution Display
+
 **Prioritize:**
-1. `ai` object in namespace with `__call__` for NL
-2. `ai.fill()` and `ai.choose_type()` wrapping bae's LM
-3. AI output routed to `[ai]` channel
-4. Context assembly from namespace
+1. `render_code_panel()` and `render_output_panel()` using Rich Panel + Syntax
+2. UserView routes `type: "ai_exec"` metadata to code panels
+3. UserView routes `type: "ai_exec_result"` metadata to output panels
+4. AI self-view produces structured feedback text for eval loop
+5. Verify deduplication -- user sees framed panels, not redundant `[py]` lines
 
-**Why third:** The AI agent depends on both the namespace (phase 1) and channels (phase 2). Building it third means it can leverage both.
+**Why third:** Depends on the view framework from phase 2. The framed display is the visible payoff of the multi-view refactor.
 
-### Phase 4: Namespace Introspection
-**Prioritize:**
-1. `/ns` command showing namespace contents
-2. `/ns <object>` showing object details
-3. Bae-aware display (Graph topology, Node fields, GraphResult trace)
-
-**Why fourth:** Nice-to-have polish. The REPL is fully functional without it, but introspection makes it discoverable and learnable.
-
-### Phase 5: OTel Instrumentation
-**Prioritize:**
-1. Span decorators on REPL command dispatch
-2. Span decorators on LM calls (existing bae backends)
-3. `[otel]` channel for human-readable span output
-4. Optional Jaeger exporter
-
-**Why fifth:** Observability is valuable but not load-bearing. It can be added without changing any existing code (decorators/context managers).
-
-**Defer:**
-- Ephemeral spawned interfaces (HitL) -- too complex for initial build, Ghostty API still evolving
-- Sticky mode switching -- per-line prefix is sufficient for v4.0
-- Full TUI layout -- scrollback terminal output is sufficient
-
-## Key Insights From Research
-
-### 1. prompt_toolkit is the Right Foundation
-
-prompt_toolkit + ptpython patterns give you async REPL, syntax highlighting, multiline editing, tab completion, dynamic prompts, and bottom toolbars for free. Building on IPython would mean fighting its event loop ownership and display system. Building from stdlib `code.InteractiveConsole` would mean reimplementing everything prompt_toolkit gives for free.
-
-### 2. Explicit Mode Switching Beats Heuristic Detection
-
-xonsh proves that implicit mode detection creates ambiguity. IPython's `%` prefix and Aider's `/` slash commands prove that explicit prefix characters are intuitive and unambiguous. For cortex, Python should be the default mode (it's a Python REPL), with NL and graph as explicitly prefixed alternatives.
-
-### 3. Channels are Labels on asyncio.Queues
-
-The channel abstraction is simpler than it sounds. It's a dict of `{name: asyncio.Queue}` with a render loop that reads from unmuted queues and prints with colored prefixes. No pub/sub framework, no message broker. Just labeled queues with a filter.
-
-### 4. AI-as-Object is the Real Innovation
-
-Every existing AI coding tool treats the AI as "the system" -- it controls the loop, you give it instructions. Cortex inverts this: the AI is an object in YOUR namespace. You call it like a function. You compose it with Python code. You pass it bae types and get bae types back. This is the difference between "AI-first tool" and "Python-first tool with AI."
-
-### 5. OTel GenAI Conventions Are Young but Directionally Correct
-
-The semantic conventions for GenAI agent spans are in Development status. They may change. But the span hierarchy pattern (agent -> tool -> LM call) and key attributes (model, tokens, operation name) are stable enough to build against. Using them now means cortex's telemetry is compatible with Datadog, Jaeger, and other OTel consumers.
-
-### 6. Ghostty's Programmatic API is Not Ready for HitL
-
-Ghostty supports splits, tabs, and AppleScript on macOS, but the full programmatic scripting API is still under discussion (GitHub discussion #2353). Building HitL around Ghostty-specific APIs would be fragile. Start with inline prompts in the REPL (works everywhere), and add terminal spawning as a progressive enhancement.
+**Defer from all phases:**
+- Streaming display (separate milestone)
+- AI bash dispatch (security scope)
+- Custom view plugins (YAGNI)
 
 ## Sources
 
 **Official Documentation (HIGH confidence):**
-- [prompt_toolkit docs](https://python-prompt-toolkit.readthedocs.io/) -- REPL building, full-screen apps, async support
-- [ptpython async embed example](https://github.com/prompt-toolkit/ptpython/blob/main/examples/asyncio-python-embed.py) -- Async REPL with custom namespace
-- [Python `inspect` module](https://docs.python.org/3/library/inspect.html) -- Runtime introspection
-- [Python `code` module](https://docs.python.org/3/library/code.html) -- InteractiveConsole namespace management
-- [Python `ast` module](https://docs.python.org/3/library/ast.html) -- Code vs non-code detection
-- [asyncio.Queue](https://docs.python.org/3/library/asyncio-queue.html) -- Channel primitive
-- [asyncio.TaskGroup](https://docs.python.org/3/library/asyncio-task.html) -- Structured concurrency (Python 3.11+)
-- [OTel GenAI agent spans](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-agent-spans/) -- Semantic conventions for agent tracing
-- [OTel GenAI spans](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/) -- Semantic conventions for LM calls
-- [OTel AI Agent Observability blog](https://opentelemetry.io/blog/2025/ai-agent-observability/) -- Evolving standards
+- [Rich Panel docs](https://rich.readthedocs.io/en/stable/panel.html) -- Panel API, border styles, titles
+- [Rich Syntax docs](https://rich.readthedocs.io/en/stable/syntax.html) -- Syntax highlighting, themes, line numbers
+- [Rich Panel reference](https://rich.readthedocs.io/en/stable/reference/panel.html) -- Full API reference
+- [Claude CLI reference](https://code.claude.com/docs/en/cli-reference) -- `--tools ""` flag, `--system-prompt`, `--output-format`
+- [Claude tool use implementation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use) -- Tool call XML structure, content block format
 
-**Framework References (MEDIUM confidence):**
-- [xonsh shell](https://xon.sh/) -- Multi-mode shell (Python + subprocess)
-- [Aider](https://aider.chat/docs/) -- Chat mode switching pattern
-- [Open Interpreter](https://github.com/openinterpreter/open-interpreter) -- AI-as-REPL pattern
-- [Rich library live display](https://rich.readthedocs.io/en/latest/live.html) -- Async terminal updates
-- [Docker container logs](https://docs.docker.com/reference/cli/docker/container/logs/) -- Multiplexed stream protocol
-- [Docker SDK multiplex docs](https://docker-py.readthedocs.io/en/stable/user_guides/multiplex.html) -- Labeled output streams
-- [IPython rich display](https://ipython.readthedocs.io/en/stable/config/integrating.html) -- Custom object representation
-- [Ghostty scripting discussion](https://github.com/ghostty-org/ghostty/discussions/2353) -- API status
+**Research and Best Practices (MEDIUM confidence):**
+- [LangChain few-shot prompting for tool calling](https://blog.langchain.com/few-shot-prompting-to-improve-tool-calling-performance/) -- Fewshot technique validation
+- [OWASP LLM Prompt Injection Prevention](https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html) -- System prompt hardening patterns
+- [Prompt Engineering Guide: Few-Shot](https://www.promptingguide.ai/techniques/fewshot) -- Fewshot prompting fundamentals
 
-**Architecture References (MEDIUM confidence):**
-- [Claude Code vs Cursor comparison](https://www.qodo.ai/blog/claude-code-vs-cursor/) -- AI agent REPL architectures
-- [Unbundled coding AI stack](https://arnav.tech/beyond-copilot-cursor-and-claude-code-the-unbundled-coding-ai-tools-stack) -- AI tool architecture patterns
-- [PEP 762 - REPL-acing the default REPL](https://peps.python.org/pep-0762/) -- Python 3.13+ REPL improvements
+**Codebase References (HIGH confidence):**
+- `bae/repl/ai.py` -- AI class, eval loop, _send(), extract_code()
+- `bae/repl/channels.py` -- Channel, ChannelRouter, render_markdown()
+- `bae/repl/ai_prompt.md` -- Current system prompt
+- `bae/repl/shell.py` -- CortexShell, dispatch, mode handling
+- `.planning/phases/20-ai-eval-loop/20-UAT-2.md` -- v4.0 defect documentation (tests 2 and 5)
+
+**Design Pattern References (MEDIUM confidence):**
+- [Observer pattern](https://en.wikipedia.org/wiki/Observer_pattern) -- Foundation for multi-view notification
+- [Rich + prompt_toolkit ANSI bridge](https://github.com/Textualize/rich/discussions/2648) -- Proven rendering bridge pattern
 
 ---
 
-*Research conducted: 2026-02-13*
-*Focus: Feature landscape for cortex REPL — bae v4.0 milestone*
+*Research conducted: 2026-02-14*
+*Focus: Feature landscape for cortex v5.0 Stream Views milestone*

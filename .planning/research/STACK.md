@@ -1,533 +1,318 @@
-# Technology Stack: v4.0 Cortex REPL
+# Technology Stack: v5.0 Stream Views, Prompt Hardening, Tool Interception
 
-**Project:** Bae - Type-driven agent graphs with DSPy optimization
-**Researched:** 2026-02-13
-**Focus:** Stack additions for the cortex augmented async Python REPL -- prompt_toolkit REPL shell, OTel spans for context, channel-based I/O, reflective namespace introspection
-**Overall confidence:** HIGH for prompt_toolkit and OTel; HIGH for stdlib channels (no external lib needed); HIGH for introspection (Python 3.14 stdlib)
-
----
-
-## Executive Summary
-
-Cortex needs **2 new runtime dependencies** (prompt_toolkit, opentelemetry-sdk) and **1 new dev dependency** (pygments). Everything else is Python 3.14 stdlib or already a transitive dependency of pydantic-ai.
-
-The key architectural insight: **do not add a channel library**. Python 3.14's `asyncio.Queue` gained `.shutdown()` in 3.13, which is the one feature aiochannel had over bare queues. Labeled channels are a thin wrapper (dict of str to Queue) -- 20 lines, not a dependency. Similarly, **do not add typing-inspect or typing-inspection** -- Python 3.14's `annotationlib` module (PEP 649/749) plus the existing `inspect.get_annotations()` and `typing.get_type_hints()` provide everything the reflective namespace needs.
-
-`opentelemetry-api` is already a transitive dependency via `pydantic-ai-slim>=1.28.0`. We need `opentelemetry-sdk` explicitly for `TracerProvider`, `SimpleSpanProcessor`, and `InMemorySpanExporter` -- the machinery that creates, processes, and stores spans. The API alone only provides the interface stubs.
-
-prompt_toolkit 3.0.52 is native asyncio (since 3.0). `PromptSession.prompt_async()` integrates directly into the existing event loop. `patch_stdout()` prevents concurrent output (graph execution, AI responses) from corrupting the prompt. `Application.create_background_task()` manages coroutines tied to the application lifecycle. This is the foundation for the three-mode REPL (NL/Py/Graph).
+**Project:** Bae v5.0 -- Multi-view stream framework, AI prompt hardening, tool call interception, execution display framing
+**Researched:** 2026-02-14
+**Overall confidence:** HIGH
 
 ---
 
-## Recommended Stack Changes
+## Verdict: No New Dependencies
 
-### Add (runtime)
+Every capability needed for v5.0 is already available in the existing stack. The work is architecture and prompt engineering, not procurement.
 
-| Package | Version | Purpose | Why This, Why Now |
-|---------|---------|---------|-------------------|
-| `prompt_toolkit` | >=3.0.50 | Async REPL shell with custom key bindings, lexer, completer | Native asyncio since 3.0. `PromptSession.prompt_async()` runs inside the existing event loop without blocking. `patch_stdout()` handles concurrent output from graph execution. Custom `Lexer` + `KeyBindings` enable mode switching (NL/Py/Graph). Only dep is `wcwidth`. Decision was made NOT to use IPython -- prompt_toolkit is what IPython itself is built on, minus the 50MB of unneeded weight. |
-| `opentelemetry-sdk` | >=1.39 | Span creation, processing, in-memory storage | `opentelemetry-api` is already a transitive dep of `pydantic-ai-slim`. But the API is just interfaces -- `TracerProvider`, `SimpleSpanProcessor`, `InMemorySpanExporter` live in the SDK. Cortex needs spans as **first-class context objects** (not just telemetry export), so we need programmatic access to span data via `InMemorySpanExporter.get_finished_spans()`. Transitive deps: `opentelemetry-api`, `opentelemetry-semantic-conventions`, `typing-extensions` -- all already present. |
-
-### Add (dev only)
-
-| Package | Version | Purpose | Why |
-|---------|---------|---------|-----|
-| `pygments` | >=2.19 | Python syntax highlighting in REPL | prompt_toolkit's `PygmentsLexer` wraps any Pygments lexer. We need `PythonLexer` for Py mode syntax highlighting. Already a transitive dep of `rich` (which is transitive via `typer`), but making it explicit in dev deps ensures the import works. Zero additional download. |
-
-### Keep (leverage differently for v4)
-
-| Package | Current | v4 Role |
-|---------|---------|---------|
-| `pydantic>=2.0` | 2.12.5 | Namespace objects as Pydantic models; `model_dump()` for span attributes; `model_json_schema()` for AI context |
-| `pydantic-ai>=0.1` | 1.54.0 | AI agent object in namespace; `Agent.instrument_all()` auto-instruments LLM calls with OTel spans that cortex can capture |
-| `typer>=0.12` | 0.21.1 | `bae cortex` CLI entry point launches the REPL |
-| `asyncio` (stdlib) | 3.14 | `asyncio.Queue` with `.shutdown()` for channels; `asyncio.create_task()` for background graph execution; `contextvars` for span propagation across tasks |
-
-### Do NOT Add
-
-| Temptation | Why Not | What Instead |
-|------------|---------|--------------|
-| **IPython / ipykernel** | 50MB+ install. Custom kernel protocol is complex. We need a thin REPL with mode switching, not a notebook kernel. IPython's own REPL is built on prompt_toolkit -- we go one layer deeper for control. | prompt_toolkit `PromptSession` with custom lexer, completer, key bindings. |
-| **aiochannel** | Only advantage over `asyncio.Queue` was closable channels. Python 3.13+ added `Queue.shutdown()` which does exactly this. `QueueShutDown` exception on get/put after shutdown. aiochannel is 69 commits, 41 stars -- not worth the dep for something stdlib now covers. | `asyncio.Queue` with `.shutdown()`. Labeled channels = `dict[str, asyncio.Queue]`. |
-| **trio / anyio** | Bae is asyncio-native throughout (resolver uses `asyncio.gather`, graph uses `asyncio.create_subprocess_exec`). Adding an async compatibility layer adds complexity for zero gain. | Pure asyncio. |
-| **typing-inspect / typing-inspection** | Python 3.14's `annotationlib` module (PEP 649/749) provides `get_annotations()` with `Format.VALUE`, `Format.FORWARDREF`, `Format.STRING`. Bae already uses `typing.get_type_hints()` everywhere. No gap to fill. | `annotationlib.get_annotations()` + `typing.get_type_hints()` + `inspect` module. |
-| **rich** (for REPL output) | prompt_toolkit has its own rendering pipeline (`FormattedText`, `print_formatted_text`, ANSI support). Mixing Rich's console with prompt_toolkit's terminal management causes cursor conflicts. Rich is fine for CLI commands (`bae eval`) but not inside the interactive REPL. | prompt_toolkit's `print_formatted_text()` with ANSI or HTML formatting. |
-| **logfire** | Pydantic's OTel backend. Adds cloud dependency. Cortex needs local in-process span capture, not external telemetry export. | `opentelemetry-sdk` with `InMemorySpanExporter` for local span access. Optional OTLP export for users who want it. |
-| **opentelemetry-instrumentation-asyncio** | Auto-instruments asyncio primitives. Overkill -- cortex needs explicit, domain-meaningful spans ("graph_run", "node_fill", "nl_query"), not automatic instrumentation of every `gather()` and `create_task()`. | Manual `tracer.start_as_current_span()` at domain boundaries. |
+| Feature | Provided By | Already Installed | Verified |
+|---------|-------------|-------------------|----------|
+| Multi-view stream framework | `rich.panel.Panel`, `rich.syntax.Syntax`, `rich.console.Group` | Yes (rich 14.3.2) | Tested locally |
+| Execution display framing | `rich.panel.Panel` + `rich.syntax.Syntax` | Yes | ANSI pipeline tested, 1133 chars output |
+| View formatter protocol | `typing.Protocol` or `abc.ABC` | Yes (stdlib) | Import verified |
+| Tool call XML detection | `re` module | Yes (stdlib) | Pattern tested against false positives |
+| AI prompt hardening | System prompt text file (ai_prompt.md) | N/A (text, not a library) | Anthropic docs confirm technique |
+| Fewshot tool rejection | `<example>` tags in system prompt | N/A (text) | Anthropic multishot docs confirm |
+| Debug view toggle | Existing `ChannelRouter` visibility + new view layer | Yes | In production (channels.py) |
 
 ---
 
-## Deep Dive: prompt_toolkit for Async REPL
-
-### Version: 3.0.52 (Aug 27, 2025)
-
-**Confidence: HIGH** -- verified on [PyPI](https://pypi.org/project/prompt-toolkit/), [official docs](https://python-prompt-toolkit.readthedocs.io/en/stable/), and [GitHub](https://github.com/prompt-toolkit/python-prompt-toolkit)
-
-**Requires-Python:** >=3.8 (verified via pip metadata)
-**Dependencies:** `wcwidth` only
-
-### Core Integration: PromptSession + asyncio
-
-prompt_toolkit 3.0 uses asyncio natively. The key pattern for cortex:
-
-```python
-from prompt_toolkit import PromptSession
-from prompt_toolkit.patch_stdout import patch_stdout
-
-async def cortex_loop():
-    session = PromptSession("cortex> ")
-
-    with patch_stdout():
-        while True:
-            try:
-                text = await session.prompt_async()
-                # dispatch to NL / Py / Graph mode handler
-            except KeyboardInterrupt:
-                continue
-            except EOFError:
-                break
-```
-
-**Critical detail:** `prompt_async()` yields control to the event loop while waiting for input. Background tasks (graph execution, AI inference) continue running. `patch_stdout()` ensures their output appears above the prompt line without corruption.
-
-### Key APIs for Cortex
-
-| API | Purpose in Cortex | Import Path |
-|-----|-------------------|-------------|
-| `PromptSession` | Persistent REPL session with history | `prompt_toolkit.PromptSession` |
-| `prompt_async()` | Non-blocking input in asyncio loop | method on `PromptSession` |
-| `patch_stdout()` | Concurrent output management | `prompt_toolkit.patch_stdout` |
-| `KeyBindings` | Mode switching (Ctrl+N for NL, Ctrl+P for Py, etc.) | `prompt_toolkit.key_binding.KeyBindings` |
-| `PygmentsLexer` | Python syntax highlighting in Py mode | `prompt_toolkit.lexers.PygmentsLexer` |
-| `Completer` (ABC) | Custom completion per mode | `prompt_toolkit.completion.Completer` |
-| `InMemoryHistory` / `FileHistory` | Session persistence | `prompt_toolkit.history` |
-| `Application.create_background_task()` | Managed background coroutines | method on the underlying `Application` |
-| `print_formatted_text()` | Styled output without Rich conflict | `prompt_toolkit.formatted_text` |
-
-### Mode-Switching Architecture
-
-prompt_toolkit supports conditional key bindings via `Filter`:
-
-```python
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.filters import Condition
-
-mode = "nl"  # or "py" or "graph"
-
-bindings = KeyBindings()
-
-@Condition
-def is_nl_mode():
-    return mode == "nl"
-
-@bindings.add("c-p", filter=is_nl_mode)
-def switch_to_py(event):
-    nonlocal mode
-    mode = "py"
-    # swap lexer, completer, prompt string
-```
-
-The lexer, completer, and prompt string can all be dynamic callables on `PromptSession`, evaluated fresh each prompt cycle.
-
-### Background Task Lifecycle
-
-```python
-# prompt_toolkit manages background tasks tied to the application
-app = session.app
-task = app.create_background_task(run_graph(graph, start_node, lm))
-# Task is cancelled when the application exits
-```
-
-This integrates with cortex's channel-based I/O: graph execution writes to output channels, the REPL loop reads from them.
-
----
-
-## Deep Dive: OpenTelemetry SDK for Spans
-
-### Version: 1.39.1 (API and SDK aligned)
-
-**Confidence: HIGH** -- verified via [pip metadata](https://pypi.org/project/opentelemetry-sdk/), [official instrumentation docs](https://opentelemetry.io/docs/languages/python/instrumentation/), and [SDK source](https://github.com/open-telemetry/opentelemetry-python)
-
-**Requires-Python:** >=3.9
-**Dependencies:** `opentelemetry-api`, `opentelemetry-semantic-conventions`, `typing-extensions` -- all already transitive deps of pydantic-ai
-
-### Why Spans as Context Objects
-
-Cortex uses OTel spans not primarily for telemetry export but as **structured context objects**. Each REPL interaction, graph run, node execution, and AI call gets a span. These spans form a tree that the reflective namespace can query:
-
-```python
-# In the cortex namespace, spans are accessible as context
-ctx.spans          # all spans from current session
-ctx.last_run       # spans from last graph execution
-ctx.last_run.nodes # child spans for each node
-```
-
-### Setup Pattern for Cortex
-
-```python
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import (
-    SimpleSpanProcessor,
-    InMemorySpanExporter,
-)
-
-# In-memory exporter for programmatic access
-memory_exporter = InMemorySpanExporter()
-
-provider = TracerProvider()
-provider.add_span_processor(SimpleSpanProcessor(memory_exporter))
-trace.set_tracer_provider(provider)
-
-tracer = trace.get_tracer("bae.cortex")
-```
-
-**SimpleSpanProcessor** (not Batch) because cortex needs immediate access to finished spans. BatchSpanProcessor buffers with a 5-second default delay -- useless for interactive REPL feedback.
-
-### Span Creation at Domain Boundaries
-
-```python
-# Graph execution span
-with tracer.start_as_current_span("graph_run") as span:
-    span.set_attribute("graph.start_node", start_node.__class__.__name__)
-    result = await graph.arun(start_node, lm=lm)
-
-# Node execution span (inside graph.arun)
-with tracer.start_as_current_span("node_execute") as span:
-    span.set_attribute("node.type", node_cls.__name__)
-    span.set_attribute("node.routing", strategy[0])
-
-# AI query span (NL mode)
-with tracer.start_as_current_span("nl_query") as span:
-    span.set_attribute("query.text", user_input)
-    response = await agent.run(user_input)
-```
-
-### Async Context Propagation
-
-OTel uses `contextvars` under the hood. In Python 3.14:
-- `await` preserves contextvars (span context follows coroutine chains)
-- `asyncio.create_task()` copies contextvars (child tasks inherit parent span)
-
-This means spans nest correctly across `asyncio.gather()` calls in the resolver. No manual context threading needed.
-
-### InMemorySpanExporter API
-
-```python
-# Get all finished spans as immutable tuple
-spans = memory_exporter.get_finished_spans()
-
-# Each span is a ReadableSpan with:
-# .name           -> str ("graph_run", "node_execute", etc.)
-# .context        -> SpanContext (trace_id, span_id)
-# .parent         -> SpanContext | None (for nesting)
-# .attributes     -> dict (custom key-value pairs)
-# .events         -> list (timestamped log entries)
-# .status         -> Status (OK, ERROR, UNSET)
-# .start_time     -> int (nanosecond timestamp)
-# .end_time       -> int (nanosecond timestamp)
-
-# Clear between sessions
-memory_exporter.clear()
-```
-
-### Integration with pydantic-ai
-
-pydantic-ai already supports OTel via `Agent.instrument_all()`:
-
-```python
-from pydantic_ai import Agent
-
-Agent.instrument_all()
-# Now all agent.run() calls emit OTel spans automatically
-# These appear as children of whatever span is active in cortex
-```
-
-This means LLM calls inside graph execution automatically nest under the graph_run span. Cortex gets visibility into token counts, model names, and latencies for free.
-
----
-
-## Deep Dive: Channel-Based I/O (stdlib only)
-
-### No External Library Needed
-
-**Confidence: HIGH** -- verified Python 3.14 `asyncio.Queue.shutdown()` exists via runtime check
-
-Python 3.13 added `Queue.shutdown(immediate=False)` and `QueueShutDown` exception. This is the missing feature that previously justified aiochannel. On Python 3.14, `asyncio.Queue` is a complete channel primitive.
-
-### Labeled Channels Pattern
-
-Cortex needs labeled I/O streams (stdout, stderr, ai_response, graph_trace, etc.). This is a thin wrapper:
-
-```python
-import asyncio
-
-class ChannelBus:
-    """Labeled async channels for multiplexed I/O."""
-
-    def __init__(self):
-        self._channels: dict[str, asyncio.Queue] = {}
-
-    def channel(self, label: str) -> asyncio.Queue:
-        if label not in self._channels:
-            self._channels[label] = asyncio.Queue()
-        return self._channels[label]
-
-    async def put(self, label: str, item: object) -> None:
-        await self.channel(label).put(item)
-
-    async def get(self, label: str) -> object:
-        return await self.channel(label).get()
-
-    def shutdown(self, label: str | None = None) -> None:
-        if label:
-            self._channels[label].shutdown()
-        else:
-            for q in self._channels.values():
-                q.shutdown()
-```
-
-This is ~20 lines. It does not warrant a dependency.
-
-### Channel Consumers in the REPL
-
-```python
-async def render_output(bus: ChannelBus):
-    """Background task: read from output channels, render to terminal."""
-    while True:
-        try:
-            msg = await bus.get("display")
-            print_formatted_text(msg)  # prompt_toolkit's output
-        except asyncio.QueueShutDown:
-            break
-```
-
----
-
-## Deep Dive: Reflective Namespace (stdlib only)
-
-### No External Library Needed
-
-**Confidence: HIGH** -- verified `annotationlib`, `inspect.get_annotations`, `typing.get_type_hints` all available on Python 3.14
-
-### Python 3.14 Introspection Stack
-
-| Tool | Purpose | Source |
-|------|---------|--------|
-| `typing.get_type_hints()` | Resolve type annotations (already used throughout bae) | `typing` stdlib |
-| `annotationlib.get_annotations()` | Access annotations with deferred evaluation (PEP 649) | `annotationlib` stdlib (new in 3.14) |
-| `annotationlib.Format.FORWARDREF` | Safely inspect unresolved forward refs | `annotationlib` stdlib |
-| `inspect.signature()` | Function/method signatures | `inspect` stdlib |
-| `inspect.getmembers()` | List object attributes by predicate | `inspect` stdlib |
-| `inspect.iscoroutinefunction()` | Detect async callables (already used in resolver.py) | `inspect` stdlib |
-| `type.__mro__` | Walk class hierarchy | builtin |
-| `vars()` / `dir()` | Enumerate namespace contents | builtin |
-
-### Reflective Namespace Design
-
-The cortex namespace exposes bae objects with introspection:
-
-```python
-# In cortex, the user's namespace is a dict that auto-introspects
-ns = CortexNamespace()
-ns["graph"] = Graph(start=AnalyzeRequest)
-
-# The namespace knows what graph is:
-ns.describe("graph")
-# -> Graph with 5 nodes: AnalyzeRequest -> Clarify | Process -> Review -> Done
-# -> Start: AnalyzeRequest (3 plain fields, 1 dep field)
-
-# Under the hood, this uses:
-# - type(obj) for class detection
-# - typing.get_type_hints() for field types
-# - annotationlib.get_annotations(cls, format=Format.STRING) for display
-# - inspect.signature() for callable signatures
-# - graph._nodes for topology
-```
-
-### annotationlib for Display
-
-The new `Format.STRING` mode is useful for the REPL -- it converts annotations back to source-like strings:
-
-```python
-import annotationlib
-
-class MyNode(Node):
-    query: str
-    context: Annotated[Context, Dep(fetch_context)]
-    history: Annotated[list[Message], Recall()]
-
-# Get displayable annotations
-anns = annotationlib.get_annotations(MyNode, format=annotationlib.Format.STRING)
-# {'query': 'str', 'context': 'Annotated[Context, Dep(fetch_context)]', 'history': 'Annotated[list[Message], Recall()]'}
-```
-
-This gives the reflective namespace clean string representations without eval or repr hacks.
-
----
-
-## Updated `pyproject.toml` Changes
+## Existing Stack (Unchanged for v5.0)
+
+### Core -- No Version Bumps Needed
+
+| Technology | Installed | Purpose | Status |
+|------------|-----------|---------|--------|
+| Python | 3.14+ | Runtime | Unchanged |
+| Rich | 14.3.2 | Terminal rendering | Already has Panel, Syntax, Group, Rule, Text |
+| prompt_toolkit | 3.0.52 | REPL input + ANSI display | Already integrated with Rich via ANSI pipeline |
+| Pygments | 2.19.2 | Syntax highlighting (used by Rich.Syntax internally) | Unchanged |
+| re (stdlib) | 3.14 | Regex for tool call detection | Unchanged |
+
+### pyproject.toml -- No Changes
 
 ```toml
-[project]
-name = "bae"
-version = "0.4.0"
-requires-python = ">=3.14"
+# Current dependencies -- UNCHANGED for v5.0
 dependencies = [
     "pydantic>=2.0",
     "pydantic-ai>=0.1",
     "dspy>=2.0",
     "typer>=0.12",
-    # v4.0: cortex REPL
     "prompt-toolkit>=3.0.50",
-    "opentelemetry-sdk>=1.39",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
-    "ruff>=0.8",
     "pygments>=2.19",
+    "rich>=14.3",
 ]
 ```
 
-**Why prompt-toolkit >=3.0.50:** The 3.0.x line is the stable async-native branch. 3.0.50+ includes Python 3.13/3.14 compatibility fixes. Floor at 3.0.50 rather than 3.0.52 to allow minor flexibility.
-
-**Why opentelemetry-sdk >=1.39:** Matches the opentelemetry-api version already pulled in by pydantic-ai. The API and SDK versions are released in lockstep. >=1.39 ensures `InMemorySpanExporter.force_flush()` and other recent fixes.
-
-**Why pygments in dev only:** Only needed for `PygmentsLexer(PythonLexer)` in the REPL's Py mode. Already a transitive dep of rich/typer in most environments, but explicit in dev ensures tests can verify syntax highlighting without relying on transitive resolution.
-
-**What did NOT change:** `dspy>=2.0`, `pydantic>=2.0`, `pydantic-ai>=0.1`, `typer>=0.12` floors stay the same. No reason to bump them for cortex features.
-
 ---
 
-## Dependency Weight Analysis
+## Rich Components for v5.0 Features
 
-| Package | Install Size | Transitive Deps | Already Installed? |
-|---------|-------------|------------------|--------------------|
-| `prompt-toolkit` | ~1.5 MB | `wcwidth` (~50 KB) | No -- new |
-| `opentelemetry-sdk` | ~400 KB | `opentelemetry-api` (already), `opentelemetry-semantic-conventions` (already), `typing-extensions` (already) | API yes, SDK no |
-| `pygments` (dev) | ~8 MB | None | Yes (transitive via rich) |
-| **Total new weight** | **~2 MB** | **1 new transitive dep (wcwidth)** | |
+### Integration Path: Rich to prompt_toolkit (Already Proven)
 
-Minimal footprint. Two new runtime deps, one new transitive dep (`wcwidth`).
-
----
-
-## Integration Points with Existing Bae Architecture
-
-### asyncio Event Loop
-
-Bae's existing async architecture (`Graph.arun()`, `resolve_fields()`, `asyncio.gather()` in resolver) runs inside an event loop. Cortex's prompt_toolkit REPL **also** runs inside an event loop via `prompt_async()`. These must share the same loop.
-
-**Pattern:** Cortex owns the event loop. Graph execution is dispatched as a background task within the same loop:
+The codebase already has this exact pattern in `channels.py`:
 
 ```python
-async def cortex_main():
-    session = PromptSession()
-    with patch_stdout():
-        while True:
-            text = await session.prompt_async()
-            if is_graph_command(text):
-                # Run graph in the same event loop, not blocking the prompt
-                task = asyncio.create_task(graph.arun(start_node, lm=lm))
-                # Results flow back via channels
+# channels.py line 30-40 -- EXISTING production code
+def render_markdown(text: str, width: int | None = None) -> str:
+    buf = StringIO()
+    console = Console(file=buf, width=width, force_terminal=True)
+    console.print(Markdown(text))
+    return buf.getvalue()
 ```
 
-### LM Protocol
+v5.0 generalizes this to render any Rich renderable:
 
-The existing `LM` protocol (`make`, `decide`, `choose_type`, `fill`) is already async. It works unchanged inside cortex -- the LM calls happen inside `graph.arun()` which is an asyncio task.
-
-For the AI agent object in the cortex namespace, pydantic-ai's `Agent` is also async-native. Its `.run()` method is a coroutine that fits naturally.
-
-### OTel Span Nesting
-
-Span hierarchy for a cortex session:
-
-```
-cortex_session                        # root span
-  repl_turn (turn=1)                  # one prompt-response cycle
-    nl_query                          # NL mode: AI interprets user intent
-  repl_turn (turn=2)
-    graph_run                         # Graph mode: execute a graph
-      node_execute (AnalyzeRequest)   # per-node spans
-        dep_resolve (fetch_context)   # dep resolution
-        lm_fill                       # LLM call (auto-instrumented by pydantic-ai)
-      node_execute (Process)
-        lm_fill
-      node_execute (Done)
-  repl_turn (turn=3)
-    py_exec                           # Py mode: exec() user code
+```python
+def render_rich(renderable, width: int | None = None) -> str:
+    """Render any Rich object to ANSI string for prompt_toolkit display."""
+    if width is None:
+        try:
+            width = os.get_terminal_size().columns
+        except OSError:
+            width = 80
+    buf = StringIO()
+    console = Console(file=buf, width=width, force_terminal=True)
+    console.print(renderable)
+    return buf.getvalue()
 ```
 
-The `InMemorySpanExporter` captures all of these. The reflective namespace can query them.
+**Confidence: HIGH** -- This is the same pattern already shipping in production, just applied to Panel/Syntax instead of Markdown.
+
+### Panel + Syntax for Execution Display
+
+Tested against installed Rich 14.3.2:
+
+```python
+from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.console import Group
+from rich.text import Text
+
+# Code block framing
+code_panel = Panel(
+    Syntax(code, "python", theme="monokai"),
+    title="[bold green]Code",
+    border_style="green",
+    padding=(0, 1),
+)
+
+# Output framing
+output_panel = Panel(
+    Text(output_text),
+    title="[bold blue]Output",
+    border_style="blue",
+    padding=(0, 1),
+)
+
+# Composed display
+framed = Group(code_panel, output_panel)
+```
+
+**Test results:**
+- Panel renders correctly with ANSI escape codes
+- Syntax highlighting works inside Panel (monokai theme)
+- Group composes multiple panels sequentially
+- Total ANSI output: 1133 chars for a two-panel group
+- Output passes through `print_formatted_text(ANSI(ansi_str))` correctly
+
+### Rich Components Reference
+
+| Component | Import | v5.0 Use | API Stability |
+|-----------|--------|----------|---------------|
+| `Panel` | `rich.panel` | Bordered frame with title for code/output sections | Stable since Rich 10+ |
+| `Syntax` | `rich.syntax` | Python syntax highlighting inside code panels | Stable, uses Pygments internally |
+| `Group` | `rich.console` | Compose code panel + output panel as single renderable | Stable since Rich 12+ |
+| `Text` | `rich.text` | Styled text for output sections | Stable core class |
+| `Rule` | `rich.rule` | Horizontal dividers between view sections | Stable since Rich 10+ |
+| `Console` | `rich.console` | Render to StringIO for ANSI capture | Core class, stable |
 
 ---
 
-## Version Compatibility Matrix
+## Tool Call XML Detection (stdlib re)
 
-| Component | Requires-Python | Latest | Bae Requires | Verified |
-|-----------|----------------|--------|-------------|----------|
-| Python | -- | 3.14.3 | >=3.14 | Runtime check |
-| `prompt-toolkit` | >=3.8 | 3.0.52 | >=3.0.50 | [PyPI](https://pypi.org/project/prompt-toolkit/) |
-| `opentelemetry-sdk` | >=3.9 | 1.39.1 | >=1.39 | [PyPI](https://pypi.org/project/opentelemetry-sdk/) |
-| `opentelemetry-api` | >=3.9 | 1.39.1 | (transitive via pydantic-ai) | pip metadata |
-| `pygments` | >=3.8 | 2.19.2 | >=2.19 (dev) | pip metadata |
-| `wcwidth` | >=3.0 | (latest) | (transitive via prompt-toolkit) | pip metadata |
-| `asyncio.Queue.shutdown` | >=3.13 | stdlib | >=3.14 (bae floor) | Runtime check: `True` |
-| `annotationlib` | >=3.14 | stdlib | >=3.14 (bae floor) | Runtime check: available |
+### Pattern Design
+
+Claude emits tool-call-shaped XML when it attempts to use tools despite being told not to. The patterns are well-documented from Claude Code system prompts and confirmed via the [langchain-aws issue #521](https://github.com/langchain-ai/langchain-aws/issues/521):
+
+```python
+import re
+
+# Detect tool-use XML in AI text responses
+TOOL_CALL_RE = re.compile(
+    r"<(?:function_calls|tool_use|invoke\s|antml:)",
+)
+```
+
+**Pattern coverage:**
+
+| Pattern | Matches | Example |
+|---------|---------|---------|
+| `function_calls` | Legacy Claude tool call wrapper | `<function_calls>` |
+| `tool_use` | Tool use block tag | `<tool_use>` |
+| `invoke\s` | Individual tool invocation (with attribute) | `<invoke name="Bash">` |
+| `antml:` | Anthropic-namespaced XML tags | `<invoke>`, `<function_calls>` |
+
+**False positive testing:**
+
+| Input | Match? | Correct? |
+|-------|--------|----------|
+| `"Here is some normal text"` | No | Yes |
+| `"Use the <code>print()</code> function"` | No | Yes |
+| `"Regular XML like <div>hello</div>"` | No | Yes |
+| `"The <invoke> element in XSLT"` | No | Yes (no trailing space, no attribute) |
+
+**Why not an XML parser:** We are matching known fixed prefixes from a closed set of patterns, not parsing arbitrary XML. The tool call tags are structurally distinct from any legitimate content in a Python REPL context. A regex is simpler, faster, and correct for this use case.
+
+**Confidence: MEDIUM** -- Patterns confirmed from current Claude behavior. Claude may emit new patterns in future model versions. Mitigation: the regex is trivially extensible by adding new alternations.
+
+---
+
+## AI Prompt Hardening (No Library)
+
+### Current State
+
+The system prompt lives at `bae/repl/ai_prompt.md` (plain markdown file, loaded by `_load_prompt()`). v5.0 extends this file with:
+
+1. **Explicit no-tools constraint** in the Rules section
+2. **Fewshot examples** showing tool call rejection
+
+### CLI-Level Tool Restriction (Already Active)
+
+The `AI._send()` method already passes restrictive flags:
+
+```python
+# ai.py line 133-140 -- EXISTING production code
+cmd = [
+    "claude",
+    "-p", prompt,
+    "--model", self._model,
+    "--output-format", "text",
+    "--tools", "",              # Disables all built-in tools
+    "--strict-mcp-config",      # Ignores all MCP configs
+    "--setting-sources", "",    # Ignores user/project/local settings
+]
+```
+
+**Confirmed via [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference):**
+- `--tools ""` -- "Use `""` to disable all" built-in tools
+- `--strict-mcp-config` -- "Only use MCP servers from `--mcp-config`, ignoring all other MCP configurations"
+- `--setting-sources ""` -- empty string disables all setting sources
+
+This is the **primary defense**. The AI prompt hardening and tool call interception are **secondary defenses** for when Claude generates tool-call-shaped XML in its text output despite tools being disabled at the API level.
+
+### Fewshot Prompt Engineering Pattern
+
+Anthropic's [multishot prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/multishot-prompting) confirms:
+- 3-5 diverse examples dramatically improve accuracy and consistency
+- Examples should be wrapped in `<example>` tags
+- Examples showing both correct behavior AND explicit rejection of incorrect behavior are most effective
+
+The prompt extension pattern:
+
+```markdown
+## Rules
+...
+- You have NO tools. You cannot use Bash, Read, Write, Edit, or any MCP tool.
+- If you want to run code, write a ```python``` fence. The REPL executes it.
+- NEVER emit XML tool-call tags. You are in text-only mode.
+
+## Examples
+
+<example>
+User: list the files in the current directory
+You:
+```python
+import os
+os.listdir(".")
+```
+</example>
+
+<example>
+User: read the contents of main.py
+You:
+```python
+with open("main.py") as f:
+    print(f.read())
+```
+</example>
+
+<example>
+User: run git status
+You:
+```python
+import subprocess
+result = subprocess.run(["git", "status"], capture_output=True, text=True)
+print(result.stdout)
+```
+</example>
+```
+
+**Key design principle:** Every fewshot shows the AI using Python code fences instead of tool calls. The AI learns by example that its execution path is always `write Python -> REPL executes -> see output`, never `call tool -> tool returns`.
+
+**Confidence: HIGH** -- Anthropic's official documentation confirms this technique. The specific examples are domain-appropriate for a Python REPL context.
+
+---
+
+## What NOT to Add
+
+| Temptation | Why Not | What Instead |
+|------------|---------|--------------|
+| `lxml` / `xml.etree` / `defusedxml` | Tool call detection is prefix matching against 4 known patterns, not XML parsing. Regex is correct and simpler. | `re.compile()` with 4 alternations |
+| `textual` (Rich TUI framework) | Full-screen TUI. Project uses scrollback terminal. Explicitly out of scope since v4.0 requirements. | Rich Panel/Syntax rendered to ANSI, displayed via prompt_toolkit |
+| `jinja2` / prompt templating library | System prompt is a single markdown file. String concatenation is sufficient. YAGNI. | Plain f-strings or string concatenation |
+| Any streaming library | Claude CLI subprocess returns complete responses via `--output-format text`. No token streaming to handle. | Complete response processing after subprocess returns |
+| `tiktoken` / token counting | Token budget management for prompt context is done by character truncation (existing `MAX_CONTEXT_CHARS = 2000`). Token counting adds complexity for marginal accuracy improvement. | Character-based truncation (already implemented) |
+| New Rich version | Rich 14.3.2 has everything needed. No features in newer versions are required. | Pin at `>=14.3` |
+
+---
+
+## Alternatives Considered
+
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Execution display | Rich Panel + Syntax | Raw ANSI escape codes | Panel gives borders, titles, padding for free. Hand-rolling ANSI is error-prone and unmaintainable. |
+| Execution display | Rich Panel + Syntax | Textual widgets | Textual is a full TUI framework. Overkill for rendering framed code blocks in scrollback output. |
+| Tool detection | `re` regex | XML parser (ElementTree) | Not parsing XML. Pattern matching 4 known prefixes. Regex is correct, simpler, and has zero failure modes from malformed XML. |
+| Tool detection | `re` regex | String `.startswith()` checks | Regex handles the patterns more concisely and allows future extension. Both are correct; regex is marginally more maintainable. |
+| Prompt hardening | Fewshot in system prompt | Fine-tuned model | Cannot fine-tune Claude. System prompt engineering is the only lever. |
+| Prompt hardening | `<example>` tags | Separate instruction file | Current pattern already loads from `ai_prompt.md`. Keeping everything in one file is simpler. |
+| View framework | Protocol-based formatters | Inheritance hierarchy | Protocol (structural typing) allows any object with the right method to be a formatter. No coupling to a base class. Matches existing Python conventions. |
 
 ---
 
 ## Confidence Assessment
 
-| Claim | Confidence | Verification |
-|-------|------------|--------------|
-| prompt_toolkit 3.0.52 is latest; `prompt_async()` is the async entry point | HIGH | [PyPI](https://pypi.org/project/prompt-toolkit/), [official docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/advanced_topics/asyncio.html) |
-| `patch_stdout()` prevents concurrent output corruption | HIGH | [Official asyncio example](https://github.com/prompt-toolkit/python-prompt-toolkit/blob/main/examples/prompts/asyncio-prompt.py), [docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/asking_for_input.html) |
-| `Application.create_background_task()` exists | HIGH | [API reference](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/reference.html) |
-| `KeyBindings` + `Condition` filter enables mode switching | HIGH | [Official docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/asking_for_input.html) |
-| OTel SDK 1.39.1 `InMemorySpanExporter.get_finished_spans()` returns `tuple[ReadableSpan, ...]` | HIGH | [SDK source](https://github.com/open-telemetry/opentelemetry-python/blob/main/opentelemetry-sdk/src/opentelemetry/sdk/trace/export/in_memory_span_exporter.py) |
-| `SimpleSpanProcessor` passes spans immediately (no batching delay) | HIGH | [SDK export docs](https://opentelemetry-python.readthedocs.io/en/latest/sdk/trace.export.html) |
-| `opentelemetry-api` is transitive dep of `pydantic-ai-slim` | HIGH | pip metadata: `pydantic-ai-slim` requires `opentelemetry-api>=1.28.0` |
-| `Agent.instrument_all()` auto-instruments LLM calls with OTel | HIGH | [pydantic-ai docs](https://ai.pydantic.dev/logfire/), [DeepWiki](https://deepwiki.com/pydantic/pydantic-ai/4.2-instrumentation-and-monitoring) |
-| `asyncio.Queue.shutdown()` available in Python 3.14 | HIGH | Runtime check on Python 3.14.3: `True` |
-| `annotationlib` module available in Python 3.14 | HIGH | Runtime check: `Format` enum has VALUE, VALUE_WITH_FAKE_GLOBALS, FORWARDREF, STRING |
-| `contextvars` propagation in asyncio (spans nest across tasks) | HIGH | [OTel async context example](https://github.com/open-telemetry/opentelemetry-python/blob/main/docs/examples/basic_context/async_context.py), [Python docs](https://docs.python.org/3/library/asyncio-task.html) |
-| Rich output conflicts with prompt_toolkit terminal management | MEDIUM | Architectural inference from both libraries managing terminal state. prompt_toolkit's `print_formatted_text` is the safe alternative inside a running Application. |
-| aiochannel is unnecessary given Queue.shutdown() | HIGH | [Python 3.13 Queue docs](https://docs.python.org/3.13/library/asyncio-queue.html), [aiochannel README](https://github.com/tudborg/aiochannel) -- feature parity now in stdlib |
+| Area | Confidence | Basis |
+|------|------------|-------|
+| Rich Panel/Syntax/Group API | HIGH | Tested against installed 14.3.2. All imports verified. ANSI pipeline tested end-to-end. |
+| Rich-to-prompt_toolkit pipeline | HIGH | Pattern already exists in production (`render_markdown` in channels.py). Same integration path for Panel/Syntax. |
+| Claude CLI `--tools ""` behavior | HIGH | Verified via [official CLI reference docs](https://code.claude.com/docs/en/cli-reference). Already in use in `ai.py`. |
+| Tool call XML patterns | MEDIUM | Confirmed from [langchain-aws#521](https://github.com/langchain-ai/langchain-aws/issues/521) and Claude Code system prompt analysis. Claude may emit new patterns in future versions. |
+| Fewshot prompt engineering | HIGH | Anthropic [official multishot docs](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/multishot-prompting) confirm technique. |
+| No new deps needed | HIGH | All imports verified against installed packages via Python runtime check. |
 
 ---
 
 ## Sources
 
-### Primary (HIGH confidence)
+### HIGH Confidence
+- Rich 14.3.2: tested locally against installed version (Panel, Syntax, Group, Console, Text, Rule all verified)
+- `bae/repl/channels.py` lines 30-40: existing `render_markdown()` Rich-to-ANSI pattern (production code)
+- `bae/repl/ai.py` lines 133-140: existing `--tools ""` CLI flag usage (production code)
+- [Claude Code CLI Reference](https://code.claude.com/docs/en/cli-reference): `--tools ""` disables all built-in tools
+- [Anthropic Multishot Prompting Guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/multishot-prompting): fewshot example patterns with `<example>` tags
 
-- [prompt_toolkit asyncio docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/advanced_topics/asyncio.html) -- `run_async()`, `prompt_async()`, event loop integration
-- [prompt_toolkit input docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/asking_for_input.html) -- PromptSession, lexer, completer, key bindings, history, patch_stdout
-- [prompt_toolkit API reference](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/reference.html) -- Application.create_background_task, cancel_and_wait_for_background_tasks
-- [prompt_toolkit REPL tutorial](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/tutorials/repl.html) -- Complete REPL example with PygmentsLexer, WordCompleter, style
-- [prompt_toolkit asyncio example](https://github.com/prompt-toolkit/python-prompt-toolkit/blob/main/examples/prompts/asyncio-prompt.py) -- PromptSession + patch_stdout + background task pattern
-- [OTel Python instrumentation guide](https://opentelemetry.io/docs/languages/python/instrumentation/) -- TracerProvider setup, span creation, attributes, events, status, nesting
-- [OTel InMemorySpanExporter source](https://github.com/open-telemetry/opentelemetry-python/blob/main/opentelemetry-sdk/src/opentelemetry/sdk/trace/export/in_memory_span_exporter.py) -- get_finished_spans, clear, shutdown, export
-- [OTel async context example](https://github.com/open-telemetry/opentelemetry-python/blob/main/docs/examples/basic_context/async_context.py) -- Span propagation across async boundaries
-- [Python 3.14 annotationlib docs](https://docs.python.org/3/library/annotationlib.html) -- Format enum, get_annotations(), ForwardRef, deferred evaluation
-- [Python 3.14 asyncio.Queue docs](https://docs.python.org/3/library/asyncio-queue.html) -- Queue.shutdown(), QueueShutDown exception
-- [pydantic-ai instrumentation docs](https://ai.pydantic.dev/logfire/) -- Agent.instrument_all(), InstrumentationSettings, OTel semantic conventions
-
-### Secondary (MEDIUM confidence)
-
-- [pydantic-ai OTel DeepWiki](https://deepwiki.com/pydantic/pydantic-ai/4.2-instrumentation-and-monitoring) -- Observability architecture, span names, event modes
-- [OTel SDK export docs](https://opentelemetry-python.readthedocs.io/en/latest/sdk/trace.export.html) -- SimpleSpanProcessor vs BatchSpanProcessor
-- [aiochannel GitHub](https://github.com/tudborg/aiochannel) -- Closable queue API, evaluated and decided against
-
-### Previous Research (this project)
-
-- v3.0 STACK.md (2026-02-08) -- DSPy eval/optimization, Rich, Copier, typer CLI (all still valid, not repeated here)
-- v2.0 STACK.md (2026-02-07) -- DAG resolution, Annotated metadata, field categorization
-- v1.0 codebase STACK.md (2026-02-04) -- Base stack analysis
+### MEDIUM Confidence
+- [langchain-aws #521](https://github.com/langchain-ai/langchain-aws/issues/521): Claude XML tool call format (`<function_calls>`, `<invoke>`, etc.)
+- Tool call regex false positive analysis: tested against 4 input cases, but untested against full corpus of possible AI outputs
 
 ---
 
-*Stack research for v4.0 cortex REPL: 2026-02-13*
+*Stack research for v5.0: 2026-02-14*
+*Verdict: Zero new dependencies. Build with what's installed.*

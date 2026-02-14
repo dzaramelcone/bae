@@ -1,781 +1,835 @@
-# Architecture: Cortex REPL Integration
+# Architecture: v5.0 Multi-View Stream Framework
 
-**Domain:** Augmented async Python REPL for bae agent graph framework
-**Researched:** 2026-02-13
-**Confidence:** HIGH (direct codebase analysis + verified prompt_toolkit/OTel docs)
+**Domain:** Multi-view display, tool call interception, execution framing for async REPL
+**Researched:** 2026-02-14
+**Confidence:** HIGH (direct codebase analysis + verified Rich Panel/Syntax API + existing rendering patterns)
 
-## Executive Summary
+## Existing Architecture (What v5.0 Extends)
 
-Cortex is an async REPL that runs on the same asyncio event loop as bae's graph execution. The core architectural insight is that bae already has the async foundation (v3.0): `Graph.arun()` is async, all LM backends are async, dep resolution uses `asyncio.gather()`. Cortex does not wrap or adapt bae -- it shares the event loop and exposes bae objects directly in its namespace.
-
-The integration is additive. No existing bae module needs modification. Cortex is a new `bae/repl/` package that imports from bae and runs alongside it. The only change to existing code is adding `bae/repl/` to `bae/__init__.py` exports and a new CLI entry point.
-
-## Existing Architecture (What Cortex Plugs Into)
-
-### Component Map (Current)
+### Current Display Pipeline
 
 ```
-bae/
-  node.py         -- Node base class (Pydantic BaseModel, async __call__)
-  graph.py        -- Graph (discovery, run/arun, validate, to_mermaid)
-  markers.py      -- Dep(fn), Recall()
-  resolver.py     -- classify_fields, resolve_fields (async, gather-based)
-  lm.py           -- LM Protocol, PydanticAIBackend, ClaudeCLIBackend
-  dspy_backend.py -- DSPyBackend (async)
-  optimized_lm.py -- OptimizedLM
-  result.py       -- GraphResult[T]
-  exceptions.py   -- BaeError hierarchy
-  cli.py          -- Typer app (graph show/export/mermaid + run)
-  compiler.py     -- DSPy compilation
-  optimizer.py    -- Trace-to-examples, optimize_node
-  __init__.py     -- Public API barrel
+AI.__call__()
+  |
+  +-- _send(prompt) --> Claude CLI subprocess --> raw text response
+  |
+  +-- router.write("ai", response, metadata={"type": "response", "label": "1"})
+  |     |
+  |     +-- Channel.write()
+  |           +-- store.record(...)
+  |           +-- _buffer.append(content)
+  |           +-- if visible: _display(content, metadata)
+  |                 |
+  |                 +-- [markdown=True]:  print label, then render_markdown() -> ANSI
+  |                 +-- [markdown=False]: line-by-line with color-coded prefix
+  |
+  +-- extract_code(response) --> list[str] of code blocks
+  |
+  +-- for code in blocks:
+  |     +-- async_exec(code, namespace) --> (result, captured)
+  |     +-- router.write("py", code, metadata={"type": "ai_exec"})
+  |     +-- router.write("py", output, metadata={"type": "ai_exec_result"})
+  |
+  +-- feedback = join(results) --> loop back to _send()
 ```
 
-### Async Foundation (v3.0 -- Shipped)
+### Current Component Map (Relevant to v5.0)
 
-| Component | Async Pattern | Cortex Relevance |
-|-----------|---------------|------------------|
-| `Graph.arun()` | `async def`, awaits LM + resolver | Can be awaited directly from REPL |
-| `Graph.run()` | `asyncio.run(self.arun(...))` | Cannot be called from within running loop |
-| `LM.fill()` | `async def` across all backends | Background LM calls while REPL waits |
-| `resolve_fields()` | `asyncio.gather()` per topo level | Parallel dep resolution visible in REPL |
-| `Node.__call__()` | `async def` | User can `await node(lm)` interactively |
-| CLI boundary | `asyncio.run()` in Typer commands | Cortex replaces this with its own loop |
+| Component | Location | Role in v5.0 |
+|-----------|----------|-------------|
+| `Channel._display()` | channels.py:76-99 | **Modified** -- dispatch to view formatters |
+| `Channel.write()` | channels.py:59-74 | **Unchanged** -- record + buffer + conditional display |
+| `ChannelRouter.write()` | channels.py:122-137 | **Unchanged** -- dispatch to channel |
+| `render_markdown()` | channels.py:30-40 | **Extended** -- one formatter among many |
+| `AI.__call__()` | ai.py:71-125 | **Modified** -- add tool call detection step |
+| `AI.extract_code()` | ai.py:199-202 | **Unchanged** -- used by tool call detector |
+| `ai_prompt.md` | ai_prompt.md | **Modified** -- prompt hardening |
+| `CortexShell.__init__()` | shell.py:209-255 | **Modified** -- add view mode state |
 
-### Key Integration Points
+### Key Constraint: prompt_toolkit + Rich Bridge
 
-| Existing | Cortex Uses It For | How |
-|----------|-------------------|-----|
-| `Graph(start=cls)` | Construct graphs interactively | Direct instantiation in namespace |
-| `Graph.arun()` | Run graphs from REPL | `await graph.arun(node, lm=lm)` |
-| `Node` subclasses | Inspect, instantiate, modify | Available in namespace |
-| `LM` backends | Configure and swap LM | Namespace variable `lm = ClaudeCLIBackend()` |
-| `GraphResult.trace` | Inspect execution history | Printed via channels |
-| `classify_fields()` | Introspect node structure | Tab completion for fields |
-| `Graph.to_mermaid()` | Visualize from REPL | `graph.to_mermaid()` call |
-| `BaeError` hierarchy | Rich error display | Channel-formatted tracebacks |
+The codebase already uses the Rich-to-prompt_toolkit bridge pattern. `render_markdown()` captures Rich output to StringIO with `force_terminal=True`, then `print_formatted_text(ANSI(...))` renders it. All new formatters MUST use this same bridge. No direct `Console.print()` to stdout -- everything goes through prompt_toolkit for `patch_stdout` compatibility.
 
-## Proposed Architecture (New Components)
+## v5.0 Component Architecture
 
-### New Module Structure
+### New and Modified Components
 
 ```
 bae/repl/
-  __init__.py     -- Public API: launch(), CortexShell
-  shell.py        -- CortexShell: prompt_toolkit PromptSession + mode dispatch
-  channels.py     -- ChannelBus: labeled async message routing
-  namespace.py    -- build_namespace(): reflective bae object exposure
-  ai.py           -- AiAgent: NL-to-action bridge (wraps LM backend)
-  context.py      -- CortexContext: session state shared across modes
-  spans.py        -- OTel span helpers for REPL + graph instrumentation
+  channels.py     MODIFIED  -- ViewFormatter protocol, _display dispatches to formatter
+  views.py        NEW       -- Concrete view formatters (user, debug, raw, ai-self)
+  ai.py           MODIFIED  -- tool call detection between _send() and extract_code()
+  ai_prompt.md    MODIFIED  -- hardened prompt with tool call conventions
+  shell.py        MODIFIED  -- view mode state, debug toggle keybinding
 ```
 
-### Modified Existing Modules
-
-| Module | Change | Why |
-|--------|--------|-----|
-| `bae/__init__.py` | Add repl exports | Package completeness |
-| `bae/cli.py` | Add `bae cortex` command | CLI entry point |
-
-No changes to node.py, graph.py, lm.py, resolver.py, or any core module.
-
-### Component Architecture
+### Component Diagram
 
 ```
-                    CLI Entry (bae/cli.py)
-                    ________________________
-                   |                        |
-                   |  bae cortex            |  <-- new command
-                   |  (replaces asyncio.run |
-                   |   with REPL event loop)|
-                   |________________________|
-                          |
-                          v
-                   CortexShell (bae/repl/shell.py)
-                   _________________________________
-                  |                                 |
-                  |  PromptSession.prompt_async()   |
-                  |  Mode dispatch (NL/Py/Bae)      |
-                  |  Key bindings for mode switch   |
-                  |  Completers per mode             |
-                  |_________________________________|
-                          |
-             _____________|______________
-            |             |              |
-            v             v              v
-     AiAgent         Python exec()   Graph.arun()
-     (ai.py)         (namespace.py)  (graph.py)
-     __________      ______________  _______________
-    |          |    |              ||               |
-    | NL->code |    | exec(code,   || await         |
-    | NL->graph|    |   namespace) || graph.arun()  |
-    | NL->help |    | async eval   ||               |
-    |__________|    |______________||_______________|
-            |             |              |
-            |_____________|______________|
-                          |
-                          v
-                   ChannelBus (bae/repl/channels.py)
-                   _________________________________
-                  |                                 |
-                  |  Labeled message routing         |
-                  |  "core.user.py.out:" -> stdout   |
-                  |  "eng.Define.ai:" -> styled      |
-                  |  Subscribers per channel pattern  |
-                  |_________________________________|
-                          |
-                          v
-                   CortexContext (bae/repl/context.py)
-                   _________________________________
-                  |                                 |
-                  |  Session state: namespace,      |
-                  |  history, active graph, lm,     |
-                  |  trace, OTel tracer             |
-                  |_________________________________|
+                        User Input
+                            |
+                            v
+                     AI.__call__()
+                            |
+                  +---------+---------+
+                  |                   |
+              _send()            [eval loop]
+                  |                   |
+                  v                   v
+          raw response        extract_code()
+                  |                   |
+                  v                   |
+         detect_tools()    <--- NEW   |
+          (classify response          |
+           content blocks)            |
+                  |                   |
+                  v                   v
+          router.write("ai", ...)   router.write("py", ...)
+                  |                   |
+                  v                   v
+           Channel.write()     Channel.write()
+                  |                   |
+                  v                   v
+           Channel._display()  Channel._display()
+                  |                   |
+                  v                   v
+        active_formatter.render()   active_formatter.render()
+           |         |                    |
+           v         v                    v
+      UserView   DebugView          UserView (panels)
+      (panels)   (raw + meta)       (framed exec)
 ```
 
 ## Component Detail
 
-### 1. CortexShell (shell.py)
+### 1. ViewFormatter Protocol (channels.py)
 
-The shell is the REPL loop owner. It creates the `PromptSession`, dispatches input to the correct mode handler, and manages the prompt_toolkit event loop integration.
+A ViewFormatter transforms channel content + metadata into terminal output. The Channel holds a reference to the active formatter and delegates `_display()` to it.
 
-**Event Loop Architecture:**
-
-prompt_toolkit 3.0 runs natively on asyncio. `PromptSession.prompt_async()` yields control to the event loop while waiting for user input. This means background tasks (graph execution, LM calls, AI agent processing) run concurrently with the prompt.
+**Why a protocol, not inheritance:** Formatters are swappable at runtime (debug toggle). A Channel does not change type -- its formatter changes. This is composition over inheritance.
 
 ```python
-class CortexShell:
-    """Async REPL with mode dispatch."""
+from typing import Protocol
 
-    def __init__(self, ctx: CortexContext):
-        self.ctx = ctx
-        self.session = PromptSession(
-            completer=self._mode_completer(),
-            key_bindings=self._mode_bindings(),
-        )
+class ViewFormatter(Protocol):
+    """Renders channel content to terminal."""
 
-    async def run(self) -> None:
-        """Main REPL loop -- runs until EOF."""
-        with patch_stdout():
-            while True:
-                text = await self.session.prompt_async(
-                    self._build_prompt(),
-                )
-                await self._dispatch(text)
-```
-
-**Mode Detection:**
-
-Three modes share one prompt. Mode is detected by input prefix, not modal switching. This avoids the complexity of vi-style modal prompts and keeps the UX discoverable.
-
-| Prefix | Mode | Handler |
-|--------|------|---------|
-| (none / bare text) | NL chat | `AiAgent.handle(text)` |
-| `>` or starts with Python syntax | Py exec | `exec(compile(text), namespace)` |
-| `!` or `bae ...` | Graph bae-run | `Graph.arun(...)` |
-
-Detection heuristic: if the line parses as valid Python (via `ast.parse`), treat as Py. If it starts with `!` or `bae `, treat as graph command. Otherwise, NL chat. The `>` prefix is an explicit Py escape when NL/Py is ambiguous.
-
-**Why prefix-based, not modal:**
-- No hidden state -- user always knows what mode they're in
-- Tab completion adapts to detected mode
-- History is shared but mode-tagged
-
-**Completers:**
-
-prompt_toolkit's `DynamicCompleter` wraps a callable that returns different completers based on context. The completer switches based on the first characters typed:
-
-- NL mode: no completion (free text)
-- Py mode: namespace-aware Python completer (variables, attributes, methods)
-- Bae mode: `NestedCompleter` for graph commands (`bae run`, `bae inspect`, etc.)
-
-### 2. ChannelBus (channels.py)
-
-Channels are the I/O multiplexing layer. All output from all modes flows through labeled channels. This replaces raw `print()` with structured, subscribable streams.
-
-**Design:**
-
-A channel is a labeled `asyncio.Queue`. The bus routes messages from producers (graph execution, AI agent, Python exec) to consumers (terminal display, log file, OTel events).
-
-```python
-@dataclass
-class Message:
-    """Labeled message on a channel."""
-    channel: str       # "eng.Define.ai:", "core.user.py.out:", etc.
-    content: str       # The actual text
-    timestamp: float   # monotonic time
-    span_id: str = ""  # OTel span correlation
-
-class ChannelBus:
-    """Pub/sub message bus over asyncio.Queue."""
-
-    def __init__(self):
-        self._subscribers: dict[str, list[asyncio.Queue]] = {}
-
-    async def emit(self, channel: str, content: str) -> None:
-        """Publish a message to a channel."""
-        msg = Message(channel=channel, content=content, timestamp=time.monotonic())
-        for queue in self._subscribers.get(channel, []):
-            await queue.put(msg)
-        # Wildcard subscribers
-        for pattern, queues in self._subscribers.items():
-            if pattern.endswith("*") and channel.startswith(pattern[:-1]):
-                for queue in queues:
-                    await queue.put(msg)
-
-    def subscribe(self, pattern: str) -> asyncio.Queue:
-        """Subscribe to channels matching pattern. Returns a Queue to read from."""
-        queue = asyncio.Queue()
-        self._subscribers.setdefault(pattern, []).append(queue)
-        return queue
-```
-
-**Channel Naming Convention:**
-
-```
-{layer}.{source}.{kind}:
-```
-
-| Channel | Producer | Content |
-|---------|----------|---------|
-| `core.user.input:` | Shell | Raw user input |
-| `core.user.py.out:` | Python exec | stdout from exec'd code |
-| `core.user.py.err:` | Python exec | stderr from exec'd code |
-| `eng.{NodeName}.fill:` | LM.fill() | Structured output from fill |
-| `eng.{NodeName}.choose:` | LM.choose_type() | Type choice |
-| `eng.graph.trace:` | Graph.arun() | Node transitions |
-| `eng.graph.result:` | Graph.arun() | Final GraphResult |
-| `ai.agent.thought:` | AiAgent | NL reasoning |
-| `ai.agent.action:` | AiAgent | Code/command generated |
-| `sys.otel.span:` | OTel | Span start/end events |
-
-**Why channels instead of direct print():**
-1. Background graph execution can emit while prompt is active (`patch_stdout` handles rendering)
-2. Subscribers can filter: show only errors, only AI output, only graph trace
-3. OTel can subscribe to all channels for event recording
-4. Future: persist channel history for session replay
-
-**Integration with prompt_toolkit output:**
-
-The terminal display subscriber uses `print_formatted_text()` from prompt_toolkit with `patch_stdout()` context. This ensures channel output renders above the active prompt without corrupting the input line.
-
-```python
-async def terminal_renderer(bus: ChannelBus) -> None:
-    """Render channel messages to terminal."""
-    queue = bus.subscribe("*")
-    while True:
-        msg = await queue.get()
-        styled = _style_for_channel(msg.channel, msg.content)
-        print_formatted_text(styled)
-```
-
-### 3. Namespace (namespace.py)
-
-The namespace is a dict that serves as both `globals` and `locals` for Python exec within the REPL. It exposes bae objects for interactive use.
-
-**Design Principle:** The namespace is not a wrapper or proxy. It is a plain dict seeded with real bae objects. Users interact with actual Node classes, Graph instances, and LM backends -- not REPL-specific abstractions.
-
-```python
-def build_namespace(ctx: CortexContext) -> dict:
-    """Build the REPL namespace with bae objects."""
-    ns = {}
-
-    # Core bae types
-    ns["Node"] = Node
-    ns["Graph"] = Graph
-    ns["GraphResult"] = GraphResult
-    ns["Dep"] = Dep
-    ns["Recall"] = Recall
-
-    # LM backends
-    ns["PydanticAIBackend"] = PydanticAIBackend
-    ns["ClaudeCLIBackend"] = ClaudeCLIBackend
-    ns["DSPyBackend"] = DSPyBackend
-
-    # Session state (mutable references)
-    ns["lm"] = ctx.lm          # Current LM backend
-    ns["graph"] = ctx.graph    # Current graph (if loaded)
-    ns["trace"] = ctx.trace    # Last execution trace
-    ns["result"] = ctx.result  # Last GraphResult
-    ns["ctx"] = ctx            # Full context for power users
-
-    # Convenience functions
-    ns["run"] = ctx.run_graph       # async: await run(node)
-    ns["inspect"] = ctx.inspect     # Show node/graph info
-    ns["channels"] = ctx.bus        # Channel bus access
-
-    # Standard library (convenience)
-    ns["asyncio"] = asyncio
-    ns["json"] = json
-
-    return ns
-```
-
-**Reflective Features:**
-
-The namespace enables reflection because bae objects are already introspectable:
-
-| Want to... | In the REPL |
-|------------|-------------|
-| See a graph's nodes | `graph.nodes` |
-| See a node's fields | `MyNode.model_fields` |
-| See a node's successors | `MyNode.successors()` |
-| Check if terminal | `MyNode.is_terminal()` |
-| See field annotations | `classify_fields(MyNode)` |
-| Visualize the graph | `graph.to_mermaid()` |
-| Run a graph | `result = await run(MyNode(field="value"))` |
-| Inspect last trace | `trace[-1].model_dump()` |
-| Change LM | `ctx.lm = ClaudeCLIBackend(model="...")` |
-
-No special "reflective namespace" machinery is needed. Pydantic models are already introspectable via `model_fields`, `model_json_schema()`, etc. Node topology is already introspectable via `successors()`, `is_terminal()`. Graph topology is already introspectable via `nodes`, `edges`, `to_mermaid()`.
-
-**Auto-import of user graphs:**
-
-When cortex launches with a module argument (`bae cortex examples.ootd`), all public names from that module are injected into the namespace. This means all Node subclasses, the graph instance, dep functions, and service models are immediately available.
-
-```python
-def inject_module(ns: dict, module_path: str) -> None:
-    """Import a module and inject its public names into namespace."""
-    module = importlib.import_module(module_path)
-    for name in dir(module):
-        if not name.startswith("_"):
-            ns[name] = getattr(module, name)
-```
-
-### 4. AiAgent (ai.py)
-
-The AI agent translates natural language into actions. It is a bae LM call -- not a separate system.
-
-**Architecture:** AiAgent wraps the current LM backend. NL input becomes a prompt. The LM's structured output produces either Python code to execute or a graph command to run. The agent is an object in the namespace, not a hidden system.
-
-```python
-class AiAgent:
-    """NL-to-action bridge using the session's LM."""
-
-    def __init__(self, ctx: CortexContext):
-        self.ctx = ctx
-
-    async def handle(self, text: str) -> None:
-        """Process NL input and emit results to channels."""
-        # Build prompt with namespace context
-        prompt = self._build_prompt(text, self.ctx.namespace)
-        # Use session's LM for the call
-        response = await self._call_lm(prompt)
-        # Emit to channel
-        await self.ctx.bus.emit("ai.agent.action:", response)
-```
-
-The AI agent is intentionally thin. It does not have its own graph or complex reasoning chain. It is a single LM call with context about the namespace (available variables, loaded graph, last trace). Complexity can grow later, but the v4.0 architecture should not over-engineer this.
-
-**Why not a separate LM instance:**
-- The whole point of cortex is that the AI is a Python object you can inspect and configure
-- `ctx.lm` is the single source of truth for which model to use
-- If users want a different model for the agent, they set `ctx.agent_lm`
-
-### 5. CortexContext (context.py)
-
-Session state container shared across all components. Not a god object -- a typed dataclass of references.
-
-```python
-@dataclass
-class CortexContext:
-    """Shared session state for cortex REPL."""
-    bus: ChannelBus
-    namespace: dict
-    lm: LM
-    graph: Graph | None = None
-    trace: list[Node] = field(default_factory=list)
-    result: GraphResult | None = None
-    tracer: Tracer | None = None  # OTel tracer
-
-    async def run_graph(self, start_node: Node, **kwargs) -> GraphResult:
-        """Convenience: run the current graph with the current LM."""
-        if self.graph is None:
-            raise RuntimeError("No graph loaded. Set ctx.graph first.")
-        result = await self.graph.arun(start_node, lm=self.lm, **kwargs)
-        self.trace = result.trace
-        self.result = result
-        await self.bus.emit("eng.graph.result:", str(result))
-        return result
-```
-
-### 6. OTel Spans (spans.py)
-
-OTel instrumentation for both REPL interactions and graph execution. Uses `opentelemetry-api` and `opentelemetry-sdk`.
-
-**Span Hierarchy:**
-
-```
-cortex.session                          # Root span: entire REPL session
-  |
-  +-- cortex.input                      # Each user input
-  |     |
-  |     +-- cortex.mode.py              # Python exec
-  |     +-- cortex.mode.nl              # NL chat
-  |     +-- cortex.mode.bae             # Graph command
-  |           |
-  |           +-- bae.graph.run         # Graph.arun() execution
-  |                 |
-  |                 +-- bae.node.{Name} # Each node step
-  |                 |     |
-  |                 |     +-- bae.resolve.{Name}  # Dep resolution
-  |                 |     +-- bae.lm.fill         # LM fill call
-  |                 |     +-- bae.lm.choose_type  # LM routing
-  |                 |
-  |                 +-- bae.node.{Name}
-  |                       ...
-  |
-  +-- cortex.input                      # Next user input
+    def render(
+        self,
+        channel_name: str,
+        color: str,
+        content: str,
+        *,
+        metadata: dict | None = None,
+    ) -> None:
+        """Format and display content."""
         ...
 ```
 
-**Implementation Approach:**
-
-OTel spans use Python's `contextvars` for propagation, which works correctly with asyncio (each task inherits the context of its parent). This means spans created in `Graph.arun()` automatically nest under the REPL input span without explicit context passing.
+**Integration point:** `Channel._display()` becomes a one-liner that delegates to the formatter.
 
 ```python
-from opentelemetry import trace
-
-tracer = trace.get_tracer("bae.cortex")
-
-async def traced_dispatch(shell, text: str) -> None:
-    """Dispatch user input with OTel span."""
-    with tracer.start_as_current_span("cortex.input") as span:
-        span.set_attribute("input.text", text[:200])
-        span.set_attribute("input.mode", detect_mode(text))
-        await shell._dispatch(text)
+# channels.py -- modified Channel._display()
+def _display(self, content: str, *, metadata: dict | None = None) -> None:
+    self._formatter.render(self.name, self.color, content, metadata=metadata)
 ```
 
-**Graph execution instrumentation:**
-
-Graph.arun() instrumentation is done via a wrapping pattern, not by modifying graph.py. A `TracedGraph` or a context manager wraps `arun()`:
+**Channel gains a `_formatter` field:**
 
 ```python
-async def traced_arun(graph, start_node, lm, **kwargs):
-    """Wrap Graph.arun() with OTel spans per node step."""
-    with tracer.start_as_current_span("bae.graph.run") as span:
-        span.set_attribute("graph.start", type(start_node).__name__)
-        # Delegate to real arun
-        result = await graph.arun(start_node, lm=lm, **kwargs)
-        span.set_attribute("graph.steps", len(result.trace))
-        return result
+@dataclass
+class Channel:
+    name: str
+    color: str
+    visible: bool = True
+    markdown: bool = False
+    store: SessionStore | None = None
+    _formatter: ViewFormatter | None = field(default=None, repr=False)
+    _buffer: list[str] = field(default_factory=list, repr=False)
 ```
 
-For per-node spans, a `TracedLM` wrapper (similar to the existing `TracingClaudeCLI` pattern in `run_ootd_traced.py`) wraps the LM and creates child spans for each `fill()` and `choose_type()` call.
+When `_formatter is None`, the current `_display()` logic runs as-is (backward compatible). When set, it delegates entirely. This means v5.0 formatters are opt-in per channel -- you can set a formatter on the `ai` and `py` channels while leaving `bash`, `graph`, and `debug` on their current display path.
 
-**Why wrapper, not modification:**
-- No changes to graph.py, lm.py, or node.py
-- OTel is opt-in: if `opentelemetry-sdk` is not installed, spans are no-ops
-- Follows the existing `TracingClaudeCLI` pattern already in the codebase
-- Keeps core execution path free of instrumentation overhead
+### 2. Concrete View Formatters (views.py -- NEW FILE)
 
-**Python 3.14 Compatibility:**
+Four formatters, one active at a time per channel. All use the Rich-to-prompt_toolkit bridge.
 
-opentelemetry-python has merged Python 3.14 support (PR #4798). prompt_toolkit 3.0.52 supports Python 3.6+ and works on 3.14. Both are compatible with bae's `requires-python = ">=3.14"`.
+#### UserView (default)
 
-## Data Flow
-
-### REPL Input to Graph Execution
-
-```
-User types: "run the ootd graph for 'heading to brunch'"
-     |
-     v
-CortexShell.prompt_async() returns text
-     |
-     v
-Mode detection: starts with "run" -> Bae mode
-     |
-     v
-Parse: graph=ootd, input={user_message: "heading to brunch"}
-     |
-     v
-ChannelBus.emit("core.user.input:", text)
-     |
-     v
-OTel: start span "cortex.input" (mode=bae)
-     |
-     v
-ctx.run_graph(IsTheUserGettingDressed(user_message="heading to brunch"))
-     |
-     v
-Graph.arun() -- on the SAME event loop
-     |
-     +-- resolve_fields() -> asyncio.gather(get_location, get_weather, get_schedule)
-     |     |
-     |     v  (each dep emits to "eng.{dep}.resolve:" channel)
-     |
-     +-- lm.choose_type([AnticipateUsersDay, No], context)
-     |     |
-     |     v  (emits to "eng.IsTheUserGettingDressed.choose:" channel)
-     |
-     +-- lm.fill(AnticipateUsersDay, resolved, instruction, source)
-     |     |
-     |     v  (emits to "eng.AnticipateUsersDay.fill:" channel)
-     |
-     +-- ... (continues through graph)
-     |
-     v
-GraphResult returned
-     |
-     v
-ctx.trace = result.trace
-ctx.result = result
-     |
-     v
-ChannelBus.emit("eng.graph.result:", formatted_result)
-     |
-     v
-Terminal renderer: styled output above prompt
-     |
-     v
-OTel: end span "cortex.input"
-     |
-     v
-Prompt reappears, user can now:
-  - `trace[-1].model_dump()` (inspect result)
-  - `graph.to_mermaid()` (visualize)
-  - NL: "what was the weather?" (AI answers from context)
-```
-
-### Event Loop Sharing (Critical Detail)
-
-prompt_toolkit's `prompt_async()` and bae's `Graph.arun()` share the same asyncio event loop. This is NOT two event loops or thread bridging. The sequence is:
-
-1. `asyncio.run(shell.run())` starts the loop
-2. `await session.prompt_async()` suspends the shell coroutine, loop handles other tasks
-3. User types input, shell coroutine resumes
-4. `await ctx.run_graph(node)` suspends shell, `Graph.arun()` runs on the SAME loop
-5. During `arun()`, `asyncio.gather()` fires parallel deps concurrently
-6. `arun()` completes, shell resumes, prompt reappears
-
-No `asyncio.to_thread()`, no nested `asyncio.run()`, no thread pools. Pure single-loop cooperative async.
-
-**The one exception:** `Graph.run()` (sync wrapper) calls `asyncio.run()` which would fail inside an already-running loop. Cortex must always use `Graph.arun()`. This is already the correct API -- `run()` is a convenience for sync callers, `arun()` is the real implementation.
-
-### Background Tasks
-
-Some operations can run in the background while the prompt is active:
+The user-facing view. Uses Rich Panels for framed display of AI responses and execution blocks.
 
 ```python
-# User kicks off a long graph run
-task = asyncio.create_task(ctx.run_graph(start_node))
-# Prompt reappears immediately
-# Channel emissions render above prompt via patch_stdout
-# User can inspect partial results or do other work
-# When task completes, result is in ctx.result
+class UserView:
+    """Framed panels for user-facing display."""
+
+    def render(self, channel_name, color, content, *, metadata=None):
+        meta = metadata or {}
+        content_type = meta.get("type", "")
+
+        if content_type == "response":
+            # AI response: framed panel with markdown rendering
+            self._render_ai_response(channel_name, color, content, meta)
+        elif content_type == "ai_exec":
+            # Code the AI is executing: syntax-highlighted panel
+            self._render_exec_code(channel_name, color, content, meta)
+        elif content_type == "ai_exec_result":
+            # Execution output: output panel
+            self._render_exec_output(channel_name, color, content, meta)
+        else:
+            # Fallback: prefixed lines (current behavior)
+            self._render_prefixed(channel_name, color, content, meta)
 ```
 
-This is enabled by `patch_stdout()` which ensures background output renders cleanly above the active prompt.
+**AI response rendering (framed panel):**
+
+```python
+from rich.panel import Panel
+from rich.markdown import Markdown
+from rich import box
+
+def _render_ai_response(self, channel_name, color, content, meta):
+    label = meta.get("label", "")
+    title = f"{channel_name}:{label}" if label else channel_name
+
+    panel = Panel(
+        Markdown(content),
+        title=f"[bold]{title}[/]",
+        border_style=color,
+        box=box.ROUNDED,
+        padding=(0, 1),
+    )
+    ansi = _rich_to_ansi(panel)
+    print_formatted_text(ANSI(ansi))
+```
+
+**Execution code rendering (syntax-highlighted panel):**
+
+```python
+from rich.syntax import Syntax
+
+def _render_exec_code(self, channel_name, color, content, meta):
+    label = meta.get("label", "")
+    title = f"{channel_name}:{label}" if label else channel_name
+
+    panel = Panel(
+        Syntax(content, "python", theme="monokai"),
+        title=f"[bold]{title}[/]",
+        subtitle="[dim]exec[/]",
+        border_style="dim",
+        box=box.ROUNDED,
+        padding=(0, 1),
+    )
+    ansi = _rich_to_ansi(panel)
+    print_formatted_text(ANSI(ansi))
+```
+
+**Execution output rendering:**
+
+```python
+def _render_exec_output(self, channel_name, color, content, meta):
+    label = meta.get("label", "")
+    title = f"{channel_name}:{label}" if label else channel_name
+
+    panel = Panel(
+        content,
+        title=f"[bold]{title}[/]",
+        subtitle="[dim]output[/]",
+        border_style="dim green" if "Error" not in content else "dim red",
+        box=box.ROUNDED,
+        padding=(0, 1),
+    )
+    ansi = _rich_to_ansi(panel)
+    print_formatted_text(ANSI(ansi))
+```
+
+#### DebugView
+
+Shows raw content with full metadata. Used during development or when debugging AI behavior.
+
+```python
+class DebugView:
+    """Raw content with metadata for debugging."""
+
+    def render(self, channel_name, color, content, *, metadata=None):
+        meta = metadata or {}
+        # Header with all metadata
+        header = f"[{channel_name}] type={meta.get('type','?')} label={meta.get('label','?')}"
+        _print_prefixed(header, color)
+        # Raw content, no markdown rendering
+        for line in content.splitlines():
+            _print_prefixed(f"  {line}", "#808080")
+```
+
+#### RawView
+
+No formatting at all. Content as-is. Useful for piping or copy-paste.
+
+```python
+class RawView:
+    """Unformatted content output."""
+
+    def render(self, channel_name, color, content, *, metadata=None):
+        print_formatted_text(FormattedText([("", content)]))
+```
+
+#### AISelfView
+
+What the AI "sees" -- shows the prompts, feedback, context injections. Renders the content the AI receives, not what it produces.
+
+```python
+class AISelfView:
+    """Shows AI perspective: prompts sent, feedback received."""
+
+    def render(self, channel_name, color, content, *, metadata=None):
+        meta = metadata or {}
+        content_type = meta.get("type", "")
+
+        if content_type in ("prompt", "feedback", "context"):
+            panel = Panel(
+                content,
+                title=f"[dim]{content_type}[/]",
+                border_style="dim yellow",
+                box=box.SIMPLE,
+                padding=(0, 1),
+            )
+            ansi = _rich_to_ansi(panel)
+            print_formatted_text(ANSI(ansi))
+        else:
+            # Non-prompt content is dimmed
+            _print_prefixed(content, "#555555")
+```
+
+**Note:** AISelfView requires new metadata types (`"prompt"`, `"feedback"`, `"context"`) to be emitted by `AI.__call__()`. This is part of the AI modifications.
+
+#### Shared Helper
+
+```python
+def _rich_to_ansi(renderable) -> str:
+    """Render any Rich renderable to ANSI string for prompt_toolkit."""
+    buf = StringIO()
+    console = Console(
+        file=buf,
+        width=os.get_terminal_size().columns if hasattr(os, 'get_terminal_size') else 80,
+        force_terminal=True,
+    )
+    console.print(renderable)
+    return buf.getvalue()
+```
+
+This is an extracted generalization of the existing `render_markdown()` function in channels.py. The existing function remains as a convenience but can internally call `_rich_to_ansi(Markdown(text, ...))`.
+
+### 3. Tool Call Detection (ai.py -- MODIFIED)
+
+**Where in the eval loop:** Between `_send()` response and `extract_code()`.
+
+Currently the eval loop is:
+```
+response = _send(prompt)
+router.write("ai", response)
+blocks = extract_code(response)
+```
+
+v5.0 adds a classification step:
+```
+response = _send(prompt)
+classified = classify_response(response)  # NEW
+router.write("ai", classified.text, metadata={..., "tools": classified.tools})
+blocks = extract_code(response)  # unchanged -- still extracts code
+```
+
+**What `classify_response` does:**
+
+It does NOT change the response content. It annotates what kinds of "tool calls" the AI is making. In cortex, "tool calls" are not API tool_use blocks (those are disabled via `--tools ""`). They are patterns in the AI's text response:
+
+| Pattern | Tool Type | Detection |
+|---------|-----------|-----------|
+| ` ```python ... ``` ` | `code_exec` | Existing `extract_code()` regex |
+| `ns()` or `ns(obj)` | `inspect` | Substring match in code blocks |
+| `store.search(...)` | `store_query` | Substring match in code blocks |
+| `import ...` | `import` | AST parse of code blocks |
+| Prose-only response | `none` | No code blocks found |
+
+```python
+@dataclass
+class ResponseClassification:
+    """What kinds of tool calls the AI response contains."""
+    text: str                    # Original response text
+    tools: list[str]             # e.g. ["code_exec", "inspect"]
+    code_blocks: list[str]       # Extracted code (same as extract_code)
+    has_code: bool               # Convenience: len(code_blocks) > 0
+
+
+def classify_response(text: str) -> ResponseClassification:
+    """Classify the tool calls in an AI response."""
+    blocks = AI.extract_code(text)
+    tools = []
+
+    if blocks:
+        tools.append("code_exec")
+        combined = "\n".join(blocks)
+        if "ns(" in combined:
+            tools.append("inspect")
+        if "store." in combined:
+            tools.append("store_query")
+        # AST-based import detection
+        for block in blocks:
+            try:
+                tree = ast.parse(block)
+                if any(isinstance(n, (ast.Import, ast.ImportFrom)) for n in ast.walk(tree)):
+                    tools.append("import")
+                    break
+            except SyntaxError:
+                pass
+
+    return ResponseClassification(
+        text=text,
+        tools=tools,
+        code_blocks=blocks,
+        has_code=bool(blocks),
+    )
+```
+
+**Why classify before display:** The view formatter uses the tool classification to decide how to render. UserView shows a code panel for `code_exec`, a special "inspecting..." indicator for `inspect`. DebugView shows the raw tool list. Without classification, the formatter would have to re-parse the content.
+
+**Integration with eval loop:**
+
+```python
+async def __call__(self, prompt: str) -> str:
+    # ... existing context building ...
+    response = await self._send(full_prompt)
+    await asyncio.sleep(0)
+
+    classified = classify_response(response)
+
+    self._router.write("ai", response, mode="NL", metadata={
+        "type": "response",
+        "label": self._label,
+        "tools": classified.tools,      # NEW
+    })
+
+    for _ in range(self._max_eval_iters):
+        if not classified.has_code:
+            break
+
+        results = []
+        for code in classified.code_blocks:
+            # ... existing execution logic (unchanged) ...
+            pass
+
+        feedback = "\n".join(...)
+        await asyncio.sleep(0)
+        response = await self._send(feedback)
+        await asyncio.sleep(0)
+
+        classified = classify_response(response)   # Re-classify each iteration
+
+        self._router.write("ai", response, mode="NL", metadata={
+            "type": "response",
+            "label": self._label,
+            "tools": classified.tools,
+        })
+
+    return response
+```
+
+**Key design decision:** `classify_response` is a pure function, not a method on AI. It takes text, returns a dataclass. No side effects, no state, fully testable in isolation.
+
+### 4. Execution Display Framing (views.py -- UserView)
+
+The current display for AI code execution is prefixed lines:
+
+```
+[py] x = 42
+[py] print(x)
+[py] 42
+```
+
+v5.0 replaces this with framed Rich Panels:
+
+```
+ ai:1 exec
+ x = 42           <- syntax highlighted
+ print(x)
+ output
+ 42
+```
+
+**Implementation:** The UserView formatter handles `ai_exec` and `ai_exec_result` metadata types with Panel rendering (shown in UserView section above).
+
+**Grouped execution display (code + output in one panel):**
+
+For the most polished experience, code and output can be grouped into a single panel using Rich's `Group` renderable:
+
+```python
+from rich.console import Group
+from rich.rule import Rule
+
+def _render_exec_grouped(self, code: str, output: str, meta: dict):
+    """Render code + output as a single framed panel."""
+    label = meta.get("label", "")
+    title = f"ai:{label}" if label else "ai"
+
+    parts = [Syntax(code, "python", theme="monokai")]
+    if output:
+        parts.append(Rule(style="dim"))
+        parts.append(Text(output))
+
+    panel = Panel(
+        Group(*parts),
+        title=f"[bold cyan]{title}[/]",
+        border_style="dim",
+        box=box.ROUNDED,
+        padding=(0, 1),
+    )
+    ansi = _rich_to_ansi(panel)
+    print_formatted_text(ANSI(ansi))
+```
+
+**Challenge:** The eval loop writes code and output as separate `router.write()` calls. To group them, the formatter needs to buffer the `ai_exec` write and wait for the corresponding `ai_exec_result` before rendering both.
+
+**Solution -- buffered exec display:**
+
+```python
+class UserView:
+    def __init__(self):
+        self._pending_exec: str | None = None
+        self._pending_meta: dict | None = None
+
+    def render(self, channel_name, color, content, *, metadata=None):
+        meta = metadata or {}
+        content_type = meta.get("type", "")
+
+        if content_type == "ai_exec":
+            # Buffer the code, wait for output
+            self._pending_exec = content
+            self._pending_meta = meta
+            return
+
+        if content_type == "ai_exec_result" and self._pending_exec is not None:
+            # Render grouped code + output
+            self._render_exec_grouped(self._pending_exec, content, self._pending_meta)
+            self._pending_exec = None
+            self._pending_meta = None
+            return
+
+        # ... other content types ...
+```
+
+This is safe because the eval loop always writes `ai_exec` immediately followed by `ai_exec_result` for the same block, synchronously within the same coroutine. No interleaving is possible.
+
+### 5. View Mode Switching (shell.py -- MODIFIED)
+
+**State:** `CortexShell` gains a `view_mode` field and a keybinding to cycle views.
+
+```python
+class ViewMode(Enum):
+    USER = "user"
+    DEBUG = "debug"
+    RAW = "raw"
+    AI_SELF = "ai_self"
+
+VIEW_CYCLE = [ViewMode.USER, ViewMode.DEBUG, ViewMode.RAW, ViewMode.AI_SELF]
+```
+
+**Keybinding:** Ctrl+V cycles view modes (mnemonic: View). On cycle, update the formatter on each channel.
+
+```python
+@kb.add("c-v")
+def cycle_view(event):
+    idx = VIEW_CYCLE.index(shell.view_mode)
+    shell.view_mode = VIEW_CYCLE[(idx + 1) % len(VIEW_CYCLE)]
+    formatter = VIEW_FORMATTERS[shell.view_mode]
+    for ch in shell.router._channels.values():
+        ch._formatter = formatter
+    shell.router.write("debug", f"view: {shell.view_mode.value}", mode="DEBUG")
+    event.app.invalidate()
+```
+
+**Toolbar indicator:** Add a view widget showing current view mode:
+
+```python
+def make_view_widget(shell) -> ToolbarWidget:
+    return lambda: [("class:toolbar.view", f" {shell.view_mode.value} ")]
+```
+
+### 6. AI Prompt Hardening (ai_prompt.md -- MODIFIED)
+
+The current prompt is 68 lines. v5.0 adds structured tool call conventions so the AI's responses are consistently parseable.
+
+**Key additions:**
+
+```markdown
+## Tool Conventions
+- Code blocks are your tools. Every fence is executed immediately.
+- Use EXACTLY ONE code fence per response when you need to act.
+- If you need multiple steps, let the eval loop iterate -- do not put multiple fences.
+- NEVER produce code you do not want executed.
+- NEVER produce code that calls ai() or ai.fill() -- you ARE the ai.
+
+## Response Structure
+When responding with code:
+1. Brief explanation of what you are doing (1-2 sentences)
+2. Single code fence
+3. No text after the fence (wait for execution result)
+
+When responding without code:
+- Answer directly in prose
+- Do NOT wrap answers in code blocks
+```
+
+**Why 1-fence-per-response:** The current eval loop handles multiple code blocks per response, but this creates ambiguity about which block produced which output. The AI gets cleaner feedback when it runs one block, sees the result, then decides the next action. The `max_eval_iters` limit ensures convergence.
+
+**Confidence:** MEDIUM. Prompt changes require empirical testing. The structure is sound but the exact wording needs iteration based on observed AI behavior.
+
+## Data Flow (v5.0)
+
+### AI Response Flow (Modified)
+
+```
+AI._send(prompt)
+     |
+     v
+  raw text response
+     |
+     v
+  classify_response(response)  ------> ResponseClassification
+     |                                    .text
+     |                                    .tools = ["code_exec", "inspect"]
+     |                                    .code_blocks = ["ns(graph)"]
+     |                                    .has_code = True
+     v
+  router.write("ai", response,
+    metadata={"type": "response",
+              "label": "1",
+              "tools": ["code_exec", "inspect"]})
+     |
+     v
+  Channel.write()
+     +-- store.record(...)              <-- tools list in metadata
+     +-- _buffer.append(...)
+     +-- if visible: _display(...)
+           |
+           v
+     _formatter.render(...)             <-- ViewFormatter dispatch
+           |
+           +-- [UserView]:  Panel(Markdown(response), title="ai:1", ...)
+           +-- [DebugView]: raw text + metadata dump
+           +-- [RawView]:   plain text
+           +-- [AISelfView]: shows prompt that was sent
+```
+
+### Execution Display Flow (Modified)
+
+```
+  for code in classified.code_blocks:
+     |
+     v
+  async_exec(code, namespace)
+     |
+     v
+  router.write("py", code, metadata={"type": "ai_exec", "label": "1"})
+     |
+     v
+  Channel._display() -> formatter.render()
+     |
+     +-- [UserView]: buffer code, wait for output
+     |
+     v
+  router.write("py", output, metadata={"type": "ai_exec_result", "label": "1"})
+     |
+     v
+  Channel._display() -> formatter.render()
+     |
+     +-- [UserView]: render grouped Panel(Syntax(code) + Rule + output)
+     +-- [DebugView]: prefixed lines with metadata
+     +-- [RawView]: plain text
+```
 
 ## Patterns to Follow
 
-### Pattern 1: Wrapper Instrumentation (Not Monkey-Patching)
+### Pattern 1: Formatter as Strategy
 
-**What:** Instrument existing objects by wrapping, not modifying.
-**When:** Adding OTel spans to Graph.arun(), LM.fill(), etc.
-**Example:** `TracedLM` wraps any `LM` implementation and adds spans around each method call. Same pattern as `TracingClaudeCLI` already in the codebase.
+**What:** ViewFormatter is the Strategy pattern. Channel delegates display to a swappable formatter object.
+**When:** Any time display behavior needs to change at runtime.
+**Why not subclass Channel:** Channels do not change type. A Channel named "ai" is always "ai" -- only its display behavior changes. Subclassing would require replacing Channel objects, breaking references held by router, store, and namespace.
 
-```python
-class TracedLM:
-    """LM wrapper that adds OTel spans."""
+### Pattern 2: Rich-to-ANSI Bridge (Existing)
 
-    def __init__(self, inner: LM, tracer: Tracer):
-        self._inner = inner
-        self._tracer = tracer
+**What:** All Rich rendering goes through `_rich_to_ansi()` then `print_formatted_text(ANSI(...))`.
+**When:** Every formatter that uses Rich renderables.
+**Why:** prompt_toolkit's `patch_stdout` requires all terminal output to go through prompt_toolkit's rendering pipeline. Direct `Console.print()` to stdout would corrupt the prompt.
 
-    async def fill(self, target, resolved, instruction, source=None):
-        with self._tracer.start_as_current_span("bae.lm.fill") as span:
-            span.set_attribute("target", target.__name__)
-            return await self._inner.fill(target, resolved, instruction, source)
-```
+### Pattern 3: Metadata-Driven Rendering
 
-### Pattern 2: Channel-Driven Output (Not Direct Print)
+**What:** Formatters decide how to render based on `metadata["type"]`, not by parsing content.
+**When:** Choosing between panel styles, grouping decisions, formatting.
+**Why:** Parsing content is fragile and duplicates work. The producer (AI eval loop) already knows what kind of content it is producing. Passing that knowledge via metadata is clean and testable.
 
-**What:** All REPL output goes through the ChannelBus, never raw `print()`.
-**When:** Any component that produces user-visible output.
-**Why:** Enables filtering, styling, logging, OTel event recording, and clean interaction with `patch_stdout`.
+### Pattern 4: Pure Classification Functions
 
-### Pattern 3: Namespace is the API
-
-**What:** The REPL's interactive API is whatever is in the namespace dict.
-**When:** Adding new functionality to the REPL.
-**Why:** No special command system needed. Adding a function to the namespace makes it callable. Adding a class makes it instantiable. Standard Python semantics apply.
-
-### Pattern 4: Context Dataclass, Not Singleton
-
-**What:** `CortexContext` is a dataclass passed by reference, not a module-level singleton.
-**When:** Accessing shared state across shell, agent, namespace, channels.
-**Why:** Testable (inject mock context), composable (multiple sessions), explicit dependencies.
+**What:** `classify_response()` is a pure function -- text in, dataclass out.
+**When:** Adding analysis steps to the eval loop.
+**Why:** Testable without mocks. No side effects. Can be unit tested with string fixtures.
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Nested Event Loops
+### Anti-Pattern 1: Rich Console Singleton
 
-**What:** Using `asyncio.run()` inside an already-running loop, or nesting `loop.run_until_complete()`.
-**Why bad:** RuntimeError. asyncio does not support nested loops.
-**Instead:** Always `await` coroutines. Use `asyncio.create_task()` for fire-and-forget. Never call `Graph.run()` from cortex -- always `Graph.arun()`.
+**What:** Sharing a single `Console` object across async render calls.
+**Why bad:** Rich Console carries state (cursor position, line count, style stack). Concurrent renders from background tasks would corrupt state.
+**Instead:** Create a fresh `Console(file=StringIO(), force_terminal=True)` per render call. The `_rich_to_ansi()` helper enforces this.
 
-### Anti-Pattern 2: Thread-Based REPL
+### Anti-Pattern 2: Channel Subclasses for Views
 
-**What:** Running prompt_toolkit in a separate thread with a second event loop.
-**Why bad:** Thread safety issues with shared namespace. Context propagation (OTel) breaks across threads. Complexity explosion.
-**Instead:** Single asyncio loop. prompt_toolkit 3.0 supports this natively via `prompt_async()`.
+**What:** `class AIChannel(Channel)`, `class DebugAIChannel(Channel)`, etc.
+**Why bad:** The router holds Channel references. Swapping subclasses at runtime means replacing objects in the dict, breaking any external references (namespace["channels"], store bindings).
+**Instead:** Composition. The Channel holds a formatter reference that can be swapped. The Channel identity stays stable.
 
-### Anti-Pattern 3: Custom Command Parser
+### Anti-Pattern 3: Parsing Content in Formatters
 
-**What:** Building a grammar/parser for REPL commands (click-style, argparse, etc.)
-**Why bad:** Reinvents shell badly. Users already know Python syntax.
-**Instead:** Bae commands are thin wrappers that call Python functions. `!run ootd "text"` is syntactic sugar for `await run(StartNode(msg="text"))`. Keep the command surface minimal.
+**What:** Formatter checking `if "```python" in content` to decide rendering.
+**Why bad:** Duplicates the parsing logic from AI.extract_code(). Fragile. Breaks if markdown quoting changes.
+**Instead:** Metadata-driven. The producer tags content with `metadata["type"]` and the formatter trusts the tag.
 
-### Anti-Pattern 4: Modal State Machine
+### Anti-Pattern 4: View Formatter Modifying Content
 
-**What:** Explicit mode state that users must toggle (like vi insert/normal modes).
-**Why bad:** Hidden state. Users forget which mode they're in. Mode-switch bugs.
-**Instead:** Prefix-based detection. Every input is unambiguously one mode. `>` for explicit Python. `!` for explicit bae command. Bare text defaults to NL or auto-detects Python.
+**What:** Formatter that strips, transforms, or enriches the content string before passing it to Rich.
+**Why bad:** The same content is stored in the SessionStore. If formatters modify content, the stored version and displayed version diverge, breaking replay and search.
+**Instead:** Formatters render content as-is. Visual framing (panels, colors, syntax highlighting) is additive, not transformative. The content string is immutable through the pipeline.
 
-### Anti-Pattern 5: Modifying graph.py for Instrumentation
+### Anti-Pattern 5: Tool Call Detection via Claude API tool_use
 
-**What:** Adding OTel imports and span creation directly in `Graph.arun()`.
-**Why bad:** Couples core execution to optional dependency. Adds overhead to non-REPL usage.
-**Instead:** Wrapper pattern (`TracedLM`, `traced_arun`). Core stays clean. Instrumentation is opt-in.
+**What:** Switching `--output-format` to JSON to get tool_use content blocks.
+**Why bad:** The AI subprocess uses `--tools ""` which disables all tools. There are no tool_use blocks in the response. Even if tools were enabled, JSON output would require parsing the entire response differently, breaking the existing text-based flow.
+**Instead:** Text-based pattern detection via `classify_response()`. The "tools" are code blocks in markdown -- they are already being detected by `extract_code()`. Classification adds semantic labels.
 
-### Anti-Pattern 6: ChannelBus as Mandatory Middleware
-
-**What:** Requiring all bae operations to go through channels, even outside the REPL.
-**Why bad:** Couples framework to REPL infrastructure. Non-REPL usage should not need channels.
-**Instead:** Channels are a REPL-only concern. `Graph.arun()` returns `GraphResult` as always. The REPL wraps calls and emits to channels. Core bae knows nothing about channels.
-
-## Scalability Considerations
-
-| Concern | REPL (1 user) | Future: Multi-session | Future: Remote |
-|---------|---------------|----------------------|----------------|
-| Event loop | Single asyncio loop | One loop per session | Loop per process |
-| Namespace | Single dict | Isolated dicts | Serialized state |
-| Channels | In-process Queue | Per-session bus | WebSocket bridge |
-| OTel | Local exporter | Shared collector | OTLP exporter |
-| LM concurrency | Sequential prompts | Independent sessions | Rate limiting |
-
-For v4.0, only the "REPL (1 user)" column matters. The architecture supports the other columns but should not build for them yet (YAGNI).
-
-## Integration Summary: New vs Modified
+## Integration Summary: New vs Modified vs Unchanged
 
 ### New Components
 
-| Component | File | LOC Estimate | Depends On |
-|-----------|------|-------------|------------|
-| CortexShell | `bae/repl/shell.py` | ~150 | prompt_toolkit, CortexContext |
-| ChannelBus | `bae/repl/channels.py` | ~80 | asyncio.Queue |
-| Namespace builder | `bae/repl/namespace.py` | ~60 | bae.* imports |
-| AiAgent | `bae/repl/ai.py` | ~100 | bae.lm.LM, CortexContext |
-| CortexContext | `bae/repl/context.py` | ~50 | bae.graph, bae.lm, bae.node |
-| OTel spans | `bae/repl/spans.py` | ~80 | opentelemetry-api (optional) |
-| Package init | `bae/repl/__init__.py` | ~15 | All above |
+| Component | File | Purpose | Depends On |
+|-----------|------|---------|------------|
+| ViewFormatter protocol | views.py | Display strategy interface | None |
+| UserView | views.py | Framed panel display | Rich Panel, Syntax, Markdown |
+| DebugView | views.py | Raw + metadata display | prompt_toolkit FormattedText |
+| RawView | views.py | Plain text display | prompt_toolkit FormattedText |
+| AISelfView | views.py | AI perspective display | Rich Panel |
+| `_rich_to_ansi()` | views.py | Rich renderable to ANSI string | Rich Console, StringIO |
+| `classify_response()` | ai.py | Tool call classification | AI.extract_code, ast |
+| ResponseClassification | ai.py | Classification result dataclass | None |
+| ViewMode enum | shell.py | View mode state | None |
 
 ### Modified Components
 
-| Component | File | Change | LOC Delta |
-|-----------|------|--------|-----------|
-| CLI | `bae/cli.py` | Add `bae cortex` command | ~20 |
-| Package init | `bae/__init__.py` | Export repl if available | ~3 |
+| Component | File | Change | Risk |
+|-----------|------|--------|------|
+| `Channel._display()` | channels.py | Delegate to `_formatter` if set, else existing logic | LOW -- backward compatible |
+| `Channel.__init__` | channels.py | Add `_formatter` field (default None) | LOW -- new field, optional |
+| `AI.__call__()` | ai.py | Add classify_response step, pass tools in metadata | LOW -- additive |
+| `ai_prompt.md` | ai_prompt.md | Add tool conventions section | MEDIUM -- behavior change |
+| `CortexShell.__init__()` | shell.py | Add view_mode state, view toolbar widget | LOW -- additive |
+| `_build_key_bindings()` | shell.py | Add Ctrl+V for view cycling | LOW -- new binding |
 
-### Zero-Change Components
+### Unchanged Components
 
-Every existing bae module: node.py, graph.py, lm.py, resolver.py, markers.py, result.py, exceptions.py, compiler.py, optimizer.py, dspy_backend.py, optimized_lm.py.
+| Component | Why Unchanged |
+|-----------|---------------|
+| `Channel.write()` | Recording, buffering, visibility check -- all the same |
+| `ChannelRouter` | Dispatch logic unchanged, formatters are per-channel |
+| `SessionStore` | Records content as-is, metadata already supports dicts |
+| `AI._send()` | Subprocess invocation unchanged |
+| `AI.extract_code()` | Still the core code block extractor |
+| `async_exec()` | Execution unchanged |
+| `TaskManager` | Task lifecycle unchanged |
+| `render_markdown()` | Still exists, used by UserView internally |
 
 ## Suggested Build Order
 
-Based on dependency analysis:
+### Phase A: View Formatter Infrastructure
 
-### Phase 1: Shell Foundation + Context
+**Build:** ViewFormatter protocol, `_rich_to_ansi()` helper, Channel `_formatter` field, `_display()` delegation.
 
-Build CortexContext and CortexShell with basic prompt_async loop. Single mode (Python exec). No channels, no AI, no OTel.
-
-**Why first:** Everything depends on the shell loop running. This validates that prompt_toolkit + asyncio + bae's async foundation work together on one event loop.
+**Why first:** All other features depend on the formatter dispatch. Without it, new rendering has nowhere to plug in.
 
 **Deliverables:**
-- `bae/repl/context.py` -- CortexContext dataclass
-- `bae/repl/namespace.py` -- build_namespace() with bae objects
-- `bae/repl/shell.py` -- CortexShell with prompt_async loop, Py exec only
-- `bae/repl/__init__.py` -- launch() entry point
-- `bae/cli.py` -- `bae cortex` command
+- `views.py` with ViewFormatter protocol and `_rich_to_ansi()`
+- Modified `Channel` with `_formatter` field and delegation in `_display()`
+- Tests: formatter protocol, delegation, backward compatibility when `_formatter is None`
 
-**Critical validation:** `await graph.arun(node, lm=lm)` works from the REPL prompt. This proves event loop sharing.
+**Validation:** Existing tests pass unchanged (no formatter set = old behavior).
 
-### Phase 2: Channel Bus + Multi-Mode
+### Phase B: UserView -- Execution Framing
 
-Add ChannelBus for labeled I/O. Add mode detection (NL/Py/Bae). Wire output through channels.
+**Build:** UserView formatter with Panel rendering for `ai_exec`, `ai_exec_result`, and `response` types. Buffered exec grouping.
 
-**Why second:** Channels are the I/O backbone. Mode detection needs channels for output routing. AI agent (Phase 3) needs channels to emit its output.
+**Why second:** This is the highest-visibility change. Users immediately see the difference. The existing eval loop already produces the right metadata types.
 
 **Deliverables:**
-- `bae/repl/channels.py` -- ChannelBus with emit/subscribe
-- Shell update: mode detection, channel-routed output
-- Terminal renderer task (background, reads from bus)
+- UserView class in views.py
+- Panel rendering for response, exec, and exec_result
+- Buffered exec grouping (code + output in one panel)
+- Tests: each render path, buffer flush, error output styling
 
-### Phase 3: AI Agent
+**Validation:** Set `_formatter = UserView()` on `ai` and `py` channels. Run AI conversation. Panels render correctly.
 
-Add AiAgent for NL mode. Wraps the session LM. Emits to channels.
+### Phase C: Tool Call Detection
 
-**Why third:** Requires working shell (Phase 1) and channels (Phase 2). The agent is a consumer of both.
+**Build:** `classify_response()`, ResponseClassification dataclass, integration into `AI.__call__()`.
 
-**Deliverables:**
-- `bae/repl/ai.py` -- AiAgent with handle()
-- Shell update: NL mode dispatches to agent
-
-### Phase 4: OTel Instrumentation
-
-Add span helpers. TracedLM wrapper. Session-level spans.
-
-**Why last:** Instrumentation is observability over working code. Requires all other components to be functional. OTel is optional -- cortex works without it.
+**Why third:** Depends on Phase A (formatters can use tool metadata). Independent of Phase B (classification is metadata enrichment, not display).
 
 **Deliverables:**
-- `bae/repl/spans.py` -- tracer setup, TracedLM, traced_arun
-- Shell update: wrap dispatch in spans
-- Optional dependency: `opentelemetry-api`, `opentelemetry-sdk`
+- `classify_response()` pure function
+- ResponseClassification dataclass
+- AI.__call__() modified to classify and pass tools in metadata
+- Tests: classification of various response types (code, inspect, import, prose)
 
-## Open Design Questions
+**Validation:** AI responses include `tools` in metadata. DebugView shows tool list.
 
-### 1. Python exec: `exec()` vs embedded ptpython
+### Phase D: View Mode Switching + Remaining Formatters
 
-**Option A:** Raw `exec(compile(text, ...), namespace)` with custom async eval for `await` expressions.
-**Option B:** Embed ptpython via `embed(globals=namespace, return_asyncio_coroutine=True)`.
+**Build:** ViewMode enum, Ctrl+V keybinding, DebugView, RawView, AISelfView, toolbar widget.
 
-**Recommendation:** Option A for v4.0. ptpython adds a heavy dependency (its own REPL loop, configuration system, toolbar). Raw exec with `ast.parse` for async detection is simpler and gives full control over how output routes through channels. ptpython can be explored later if users want richer Python editing.
+**Why last:** Requires all formatters (Phase B), tool metadata (Phase C), and formatter infrastructure (Phase A) to be in place. Multiple views are the user-facing integration of all previous phases.
 
-**Async exec pattern:**
-```python
-async def async_exec(code: str, ns: dict) -> object:
-    """Execute code that may contain await expressions."""
-    tree = ast.parse(code, mode="exec")
-    # If the last statement is an expression, capture its value
-    # If any node contains Await, wrap in async def and await it
-    ...
-```
+**Deliverables:**
+- ViewMode enum and VIEW_CYCLE
+- Ctrl+V keybinding in shell.py
+- DebugView, RawView, AISelfView formatters
+- View mode toolbar widget
+- Tests: mode cycling, formatter swapping, each formatter renders correctly
 
-### 2. Channel persistence: in-memory only or disk?
+**Validation:** Ctrl+V cycles through views. Each view shows the same content differently.
 
-**Recommendation:** In-memory only for v4.0. Channel history lives in the bus's subscriber queues. Session replay and persistence are future features.
+### Phase E: AI Prompt Hardening
 
-### 3. OTel exporter: console or OTLP?
+**Build:** Updated ai_prompt.md with tool conventions.
 
-**Recommendation:** Console exporter for v4.0 (spans print to a `sys.otel.span:` channel). OTLP exporter as a configuration option for users with Jaeger/Grafana Tempo.
+**Why separate:** Prompt changes are behavioral, not structural. They should be tested empirically after the infrastructure is in place.
+
+**Deliverables:**
+- Updated ai_prompt.md
+- Empirical testing of AI response quality
+- Iteration based on observed behavior
+
+**Validation:** AI produces single code fences per response. AI does not produce unwanted code blocks.
 
 ## Sources
 
-- [prompt_toolkit asyncio docs](https://python-prompt-toolkit.readthedocs.io/en/master/pages/advanced_topics/asyncio.html) -- HIGH confidence
-- [prompt_toolkit asking for input](https://python-prompt-toolkit.readthedocs.io/en/master/pages/asking_for_input.html) -- HIGH confidence
-- [prompt_toolkit asyncio-prompt.py example](https://github.com/prompt-toolkit/python-prompt-toolkit/blob/main/examples/prompts/asyncio-prompt.py) -- HIGH confidence
-- [ptpython asyncio embed example](https://github.com/prompt-toolkit/ptpython/blob/main/examples/asyncio-python-embed.py) -- HIGH confidence
-- [ptpython embedding docs (DeepWiki)](https://deepwiki.com/prompt-toolkit/ptpython/5-embedding-ptpython) -- MEDIUM confidence
-- [OpenTelemetry Python instrumentation](https://opentelemetry.io/docs/languages/python/instrumentation/) -- HIGH confidence
-- [OTel asyncio context example](https://github.com/open-telemetry/opentelemetry-python/blob/main/docs/examples/basic_context/async_context.py) -- HIGH confidence
-- [OTel asyncio instrumentation](https://opentelemetry-python-contrib.readthedocs.io/en/latest/instrumentation/asyncio/asyncio.html) -- HIGH confidence
-- [OTel Python 3.14 support (GitHub issue #4789)](https://github.com/open-telemetry/opentelemetry-python/issues/4789) -- HIGH confidence
-- [prompt_toolkit 3.0.52 on PyPI](https://pypi.org/project/prompt-toolkit/) -- HIGH confidence
-- Direct codebase analysis of all bae/ source files -- HIGH confidence
-- bae v3.0 roadmap and requirements (shipped async foundation) -- HIGH confidence
+### Primary (HIGH confidence)
+- Rich Panel docs: https://rich.readthedocs.io/en/stable/panel.html
+- Rich Syntax docs: https://rich.readthedocs.io/en/stable/syntax.html
+- Rich Group docs: https://rich.readthedocs.io/en/stable/group.html
+- Rich Box styles: https://rich.readthedocs.io/en/stable/appendix/box.html
+- Rich Console API (StringIO capture): https://rich.readthedocs.io/en/stable/console.html
+- prompt_toolkit ANSI class: https://python-prompt-toolkit.readthedocs.io/en/master/pages/reference.html
+- Direct codebase analysis: channels.py, ai.py, shell.py, views of all existing test files
+- Verified Rich Panel rendering via local `uv run` execution (code + output grouping)
+
+### Secondary (MEDIUM confidence)
+- Rich+prompt_toolkit integration discussion: https://github.com/Textualize/rich/discussions/936
+- prompt_toolkit patch_stdout behavior: https://github.com/prompt-toolkit/python-prompt-toolkit/issues/1346
+- Claude CLI reference (--tools, --output-format): https://code.claude.com/docs/en/cli-reference
 
 ---
-*Architecture research: 2026-02-13 -- cortex REPL integration*
+*Architecture research: 2026-02-14 -- v5.0 multi-view stream framework*

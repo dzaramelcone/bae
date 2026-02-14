@@ -1,225 +1,274 @@
 # Project Research Summary
 
-**Project:** Bae v4.0 - Cortex REPL
-**Domain:** Augmented async Python REPL for agent graph framework
-**Researched:** 2026-02-13
+**Project:** Bae v5.0 -- Multi-view stream framework, AI prompt hardening, tool call interception, execution display framing
+**Domain:** REPL enhancement — multi-view display system with AI behavioral guardrails
+**Researched:** 2026-02-14
 **Confidence:** HIGH
 
 ## Executive Summary
 
-Cortex is an interactive async Python REPL for bae that enables live development, debugging, and experimentation with agent graphs. Research shows that building this on prompt_toolkit 3.0 is the correct architectural choice -- it provides native asyncio support, async REPL primitives, and clean integration with bae's existing async foundation. The core insight is that cortex must own the event loop, not share or compete with it. Bae already has all the async infrastructure needed (Graph.arun(), async LM backends, asyncio.gather-based dep resolution); cortex adds an interactive shell layer that exposes these capabilities to users.
+v5.0 addresses critical v4.0 defects while introducing a multi-view display framework that transforms how channel data is consumed. The core problem: AI hallucinates tool-use XML despite CLI-level tool restrictions, and execution output appears redundant/unprofessional. The solution requires no new dependencies — every capability exists in the current stack (Rich 14.3.2, prompt_toolkit 3.0.52, Python stdlib).
 
-The recommended approach centers on four pillars: (1) A prompt_toolkit REPL shell with mode-based dispatch (NL/Py/Graph), (2) Channel-based I/O using labeled asyncio.Queue instances for multiplexed output, (3) A reflective namespace that exposes bae objects directly (no wrappers), and (4) Optional OTel instrumentation for observability. The stack additions are minimal -- only prompt_toolkit and opentelemetry-sdk as new runtime dependencies, leveraging Python 3.14's stdlib for everything else (asyncio.Queue.shutdown, annotationlib for introspection).
+The recommended approach layers three independent improvements: (1) prompt hardening with fewshot rejection examples to train the AI away from tool-use patterns, (2) tool call interception to catch and correct XML hallucinations that slip through, and (3) a view formatter framework that separates channel data from presentation, enabling Rich Panel framing for execution displays while preserving raw access for debugging. These work together but ship independently — prompt hardening fixes the most visible defect, view framework enables polished display.
 
-The critical risk is event loop ownership conflict. Bae's Graph.run() wraps arun() with asyncio.run(), which fails inside a running loop. Cortex must enforce that all graph execution uses await graph.arun(), never the sync wrapper. Secondary risks include output corruption from concurrent streams (solved by patch_stdout and channels), queue deadlocks (solved by unbounded output channels and multiplexed event waiting), and task lifecycle management (solved by TaskGroup or cortex-level cancellation). None of these are novel risks -- all have documented solutions in prompt_toolkit and asyncio patterns.
+Key risks center on over-constraining the AI prompt (which killed helpful behaviors in early v4.0) and breaking the existing Rich-to-prompt_toolkit ANSI bridge (which would corrupt terminal display). Both are mitigated through empirical testing against existing UAT cases and strict adherence to the StringIO capture pattern already proven in production.
 
 ## Key Findings
 
 ### Recommended Stack
 
-Research identified a lean stack with zero unnecessary dependencies. The decision to avoid IPython, aiochannel, typing-inspect, and other "obvious" choices is backed by analysis showing Python 3.14's stdlib now provides what those libraries once offered.
+**Verdict: Zero new dependencies.** Every v5.0 capability is provided by installed packages or stdlib modules. The work is architecture and prompt engineering, not procurement.
 
 **Core technologies:**
-- **prompt_toolkit >=3.0.50**: Async REPL foundation with native asyncio integration. PromptSession.prompt_async() runs on the same event loop as bae's graph execution. patch_stdout() prevents concurrent output corruption. KeyBindings and dynamic completers enable mode switching.
-- **opentelemetry-sdk >=1.39**: Span instrumentation for REPL interactions, graph execution, and LM calls. InMemorySpanExporter enables programmatic span access for debugging. Already depends on opentelemetry-api (transitive via pydantic-ai), SDK adds TracerProvider and processors.
-- **Python 3.14 stdlib**: asyncio.Queue.shutdown() replaces the need for aiochannel. annotationlib module (PEP 649/749) replaces typing-inspect. No external channel or introspection libraries needed.
-- **pygments >=2.19 (dev only)**: Python syntax highlighting via prompt_toolkit's PygmentsLexer. Already transitive via rich/typer, made explicit for dev environments.
+- **Rich 14.3.2**: Provides Panel, Syntax, Group, Rule for framed displays — already installed, tested locally, API stable since Rich 10+
+- **prompt_toolkit 3.0.52**: REPL and patch_stdout integration already proven in channels.py render_markdown() — same ANSI bridge pattern extends to Panel/Syntax
+- **re (stdlib)**: Tool call XML detection via 4 known patterns (`<function_calls>`, `<tool_use>`, `<invoke>`, `<`) — false positive tested against legitimate code
+- **typing.Protocol (stdlib)**: ViewFormatter interface for pluggable display strategies — no coupling to base classes
+- **ai_prompt.md (text)**: Fewshot examples documented by Anthropic multishot guide — 3-5 examples dramatically improve constraint compliance
 
-**Stack decisions validated:**
-- Do NOT use IPython -- it owns the event loop and display system, making integration harder than building on prompt_toolkit directly
-- Do NOT use aiochannel -- asyncio.Queue.shutdown() (Python 3.13+) provides closable queues
-- Do NOT use rich inside the REPL -- prompt_toolkit and rich both manage terminal state, causing cursor conflicts
-- Do NOT use nest_asyncio -- papers over event loop conflicts but introduces reentrancy bugs in bae's resolver
+**Critical constraint:** All Rich rendering MUST go through `Console(file=StringIO(), force_terminal=True)` then `print_formatted_text(ANSI(...))`. Direct Console.print() to stdout bypasses patch_stdout and corrupts the REPL prompt. This pattern exists in production (channels.py:30-40) and must be preserved.
 
 ### Expected Features
 
-Research identified three tiers of features based on REPL ecosystem analysis (ptpython, IPython, xonsh, Aider).
+Research structured features into table stakes (fix defects), differentiators (transform experience), and anti-features (explicitly avoid).
 
 **Must have (table stakes):**
-- Async Python execution with top-level await -- every modern Python REPL supports this; users expect await graph.arun() to work
-- Syntax highlighting and multiline editing -- baseline expectation for 2026 REPLs
-- Tab completion on namespace objects -- essential for discoverability
-- Shared mutable namespace across modes -- variables set in Py mode visible in NL mode
-- History persistence -- up-arrow recalls previous inputs
-- Error display with full tracebacks -- including bae's typed exceptions with .trace attributes
-- Graceful Ctrl-C / Ctrl-D -- cancellation without REPL exit, clean shutdown on exit
-- Bae objects pre-loaded in namespace -- Node, Graph, Dep, Recall available without import
-- Mode indicator in prompt -- user always knows which mode they're in
+- **AI prompt hardening** — v4.0 UAT-2 test 2 FAILED: AI generates fake tool_use XML with fabricated results. Users see hallucinated tool calls instead of Python code. Explicit "no tools" constraint + fewshot rejection examples address this.
+- **Tool call interception** — Even with prompt hardening, occasional XML slips through. Interception catches it, feeds corrective feedback, AI self-corrects. Regex on known patterns inserted between _send() and extract_code().
+- **Deduplicated execution display** — v4.0 UAT-2 test 5: code appears in AI markdown AND [py] channel output, 2-3x duplication. Rich Panel frames with syntax highlighting replace redundant [py] lines.
 
-**Should have (differentiators):**
-- Three-mode input (NL/Py/Graph) -- single REPL handles natural language, Python code, and graph commands without context switching
-- Channel-based I/O with labeled streams -- all output tagged by source ([ai], [py], [graph], [otel]), users can mute/unmute channels
-- AI as first-class namespace object -- ai("explain this") triggers NL interaction, ai.fill(Node) calls LM directly, composable like any Python object
-- Reflective namespace introspection -- /ns shows all variables with types, /ns graph shows topology and fields
-- Graph-aware REPL context -- last result in _, last trace in _trace, node instances directly inspectable
-- OTel span instrumentation -- every command, graph execution, and LM call emits spans for observability
+**Should have (competitive):**
+- **Multi-view stream framework** — Same channel data, different formatters for different consumers. User sees Rich Panels, AI gets structured feedback, debug shows raw data, cross-session gets store records. Conceptual leap from "channels as display" to "channels as data bus with pluggable views."
+- **Framed code + output panels** — AI code blocks render in Panel with syntax highlighting and title ("ai:1 code"). Output in separate panel below ("output"). Visually groups execution context. Professional appearance replacing flat prefixed lines.
+- **View mode cycling** — Ctrl+V toggles UserView (rich), DebugView (raw+meta), RawView (unformatted), AISelfView (what AI sees). Debug invaluable for understanding AI perspective vs user perspective.
 
-**Defer (v2+):**
-- Ephemeral spawned interfaces (HitL) -- terminal/browser spawning for human-in-loop interactions has high complexity and tooling dependencies
-- Full TUI layout -- scrollback terminal output sufficient, full-screen panes are scope creep
-- Persistent AI conversation memory -- session-scoped is sufficient, cross-session memory requires storage layer
-- Web-based REPL -- Jupyter already exists for that use case
-- Voice/multimodal input -- adds audio capture complexity for unclear value
+**Defer (anti-features for v5.0):**
+- **Streaming display** — Claude CLI with `--output-format text` returns complete responses. Streaming requires Anthropic API directly (key management, conversation state). Separate milestone.
+- **AI bash dispatch** — Security surface. AI execution sandboxed to Python REPL namespace. Bash requires permission prompts, allowlisting, process isolation.
+- **Custom view plugins** — YAGNI. Three built-in views (user, debug, AI-self) cover all known use cases. Python is the extension system.
 
 ### Architecture Approach
 
-The architecture is additive -- no existing bae modules require modification. Cortex is a new bae/repl/ package that imports from bae and shares its event loop. The only changes to existing code are adding repl exports to bae/__init__.py and a new CLI entry point in cli.py.
+v5.0 extends the existing Channel/ChannelRouter display pipeline with a ViewFormatter strategy pattern. Currently Channel.write() -> Channel._display() directly renders via print_formatted_text. The view framework inserts a formatter layer: Channel.write() -> Channel._display() -> formatter.render(). The formatter is swappable at runtime, enabling view mode toggling without changing channel identity or breaking references held by router/store/namespace.
 
 **Major components:**
-1. **CortexShell (shell.py)** -- Owns the event loop and prompt session. Dispatches input to mode handlers (NL/Py/Graph) based on prefix detection. Uses prompt_toolkit's PromptSession.prompt_async() for non-blocking input. Implements mode switching via KeyBindings and dynamic completers.
-2. **ChannelBus (channels.py)** -- Labeled message routing using asyncio.Queue. Each channel is a named stream (core.user.py.out, eng.graph.trace, ai.agent.action). Producers emit to channels, consumers subscribe to patterns. Terminal renderer reads from all unmuted channels and uses print_formatted_text() via patch_stdout.
-3. **Namespace (namespace.py)** -- Builds the REPL's globals dict with bae objects (Node, Graph, LM backends) and session state (graph, trace, result, lm). No wrappers -- users interact with real bae objects. Reflective features leverage Pydantic's introspection (model_fields, model_json_schema) and Python's inspect module.
-4. **AiAgent (ai.py)** -- Wraps the session's LM backend to provide NL-to-action translation. Thin layer -- just a single LM call with namespace context, not a complex reasoning chain. Emits output to ai.agent.action: channel.
-5. **CortexContext (context.py)** -- Dataclass holding shared session state (namespace, lm, graph, trace, bus, tracer). Passed by reference, not a singleton, enabling testability.
-6. **OTel spans (spans.py)** -- Wrapper instrumentation using TracedLM pattern (similar to existing TracingClaudeCLI in codebase). Creates spans at graph/node/LM-call granularity. Uses context managers (never manual start/end) for leak prevention.
 
-**Integration pattern:** Cortex runs asyncio.run(shell.run()). Shell owns the event loop. Graph execution via await graph.arun() shares the loop. Background tasks (graph execution, output rendering) run concurrently with prompt_async(). No nested loops, no threading, pure cooperative async.
+1. **ViewFormatter protocol (views.py)** — Strategy interface with render(channel_name, color, content, metadata). Channel delegates _display() to formatter when set, falls back to existing logic when None (backward compatible, zero test failures).
+
+2. **Concrete formatters (UserView, DebugView, RawView, AISelfView)** — Each receives same channel data, renders differently. UserView uses Rich Panel/Syntax for framed execution display. DebugView shows raw content + full metadata. All use _rich_to_ansi() helper enforcing StringIO capture pattern.
+
+3. **Tool call classification (classify_response in ai.py)** — Pure function analyzing AI responses for "tool patterns" (code blocks, namespace inspection, store queries, imports). Returns dataclass with text, tools list, code blocks. Inserted between _send() and extract_code(). Metadata-driven rendering uses tool list to decide framing style.
+
+4. **AI prompt hardening (ai_prompt.md)** — Adds explicit no-tools constraint and fewshot rejection example. Current prompt says nothing about tools; Claude CLI internal prompt includes tool instructions. Model fine-tuned on tool-use patterns produces them without explicit counterpressure. Fewshot teaches by example: attempted tool call -> rejection -> correct Python code.
+
+5. **View mode state (shell.py)** — CortexShell gains view_mode field, Ctrl+V keybinding cycles views. On cycle, update formatter on each channel. Toolbar shows active view. Simple dict mapping ViewMode enum to formatter instances.
 
 ### Critical Pitfalls
 
-Research identified 15 pitfalls across four categories. The top 5 that force architectural decisions:
+Research identified 12 pitfalls across critical/moderate/minor severity. Top 5 that would cause rewrites or major regressions:
 
-1. **Event loop ownership conflict** -- Graph.run() calls asyncio.run() which fails inside a running loop. Prevention: cortex owns the loop, all graph execution uses await graph.arun(), never graph.run(). Detection: make graph.run() detect running loop and error clearly. Phase 1 critical.
+1. **ANSI escape contamination in nested Rich rendering** — Wrapping pre-rendered ANSI strings in Rich Panel breaks box-drawing width calculations. Panel must wrap Markdown OBJECT in renderable tree, not ANSI string output. Single render pass with composed renderables (`Panel(Markdown(text))`), never two passes.
 
-2. **Output corruption from concurrent streams** -- Background graph execution prints to stdout, corrupting the prompt line. Prevention: all output through channels, use patch_stdout() around entire REPL session, print_formatted_text() for rendering. Phase 1 critical.
+2. **Over-constraining AI prompt kills helpful behaviors** — Too many NEVER/MUST NOT constraints shift model toward compliance over helpfulness. v4.0 already calibrated "code when needed" balance. Adding heavy-handed "no tools" risks breaking it. Frame as positive guidance ("use Python for computation"), test with existing UAT prompts (natural NL, code when appropriate).
 
-3. **Channel deadlock from bounded queue** -- If output queue is bounded and consumer is blocked waiting for user input, producers deadlock on full queue. Prevention: unbounded output queues (display output is finite per execution), multiplex prompt wait and output consumption with asyncio.wait(FIRST_COMPLETED). Phase 2 critical.
+3. **Multi-view abstraction breaks existing Channel display** — Introducing formatter layer risks blank output, double-rendering, lost content if view has bugs. Must be opt-in per channel with None default (existing behavior). Zero tolerance for existing test failures. Build default path first, verify zero regressions, then add custom formatters.
 
-4. **asyncio.gather exception handling destroys sibling tasks** -- Resolver's gather() without return_exceptions=True orphans tasks on failure. In REPL, this leaks LLM subprocesses and running tasks across interactions. Prevention: use TaskGroup (Python 3.11+) or cortex-level task management with cancellation. Phase 1 high priority.
+4. **Tool call interception regex matches normal code** — XML patterns appear legitimately in Python (HTML processing, f-strings, Rich markup, docstrings). Interception must scan OUTSIDE code fences only. Require structural match (full `<invoke name="...">` block), not keyword match. False positive injects confusing correction feedback.
 
-5. **OTel context propagation breaks across gather boundaries** -- Span context copied at task creation, not shared. Span leaks from unclosed spans in failed deps. Prevention: span at right granularity (graph/node/LM, not individual deps), always use context managers, test trace hierarchy. Phase 4 high priority.
-
-**Common theme:** All critical pitfalls relate to async event loop management. Cortex inverts bae's execution model from batch (script controls loop lifecycle) to interactive (REPL controls loop, graph execution is a guest). Getting this right in Phase 1 is non-negotiable.
+5. **Execution display deduplication removes useful information** — v4.0 duplication is CODE appearing twice (AI markdown + [py] ai_exec), not results. Suppress CODE echo ([py] with type=ai_exec), display RESULTS ([py] with type=ai_exec_result). User needs to see execution output. Store records both regardless of display suppression.
 
 ## Implications for Roadmap
 
-Based on dependency analysis and pitfall avoidance, four phases are recommended:
+Based on dependency analysis and pitfall severity, suggested phase structure decouples behavioral fixes from display refactoring:
 
-### Phase 1: REPL Shell Foundation
-**Rationale:** Everything depends on having a working event loop and prompt session. Validates that prompt_toolkit + asyncio + bae's async foundation work together. Must establish event loop sovereignty before building on it.
+### Phase 1: AI Prompt Hardening + Tool Call Interception
 
-**Delivers:** Working async Python REPL with bae objects in namespace. Users can await graph.arun(node, lm=lm) interactively. Single mode (Python exec) with history persistence and error handling.
+**Rationale:** Fixes the most visible v4.0 defect (hallucinated tool calls) with lowest complexity and zero refactoring. Independent of multi-view framework. Immediately testable against UAT-2 failure cases.
 
-**Addresses:** Table stakes features (async exec, syntax highlighting, tab completion, shared namespace, history, error display, Ctrl-C/Ctrl-D)
+**Delivers:**
+- Updated ai_prompt.md with explicit no-tools constraint and fewshot rejection example
+- Tool call detection regex (TOOL_CALL_RE matching 4 XML patterns)
+- Interception in AI.__call__() between _send() and extract_code()
+- Corrective feedback loop (1 attempt max to avoid amplification)
 
-**Avoids:** Pitfall #1 (event loop conflict) by establishing cortex as loop owner. Pitfall #2 (output corruption) by setting up patch_stdout. Pitfall #4 (task leaks) by defining task lifecycle. Pitfall #10 (graceful shutdown) by implementing shutdown sequence. Pitfall #12 (user code crashes) by exception boundary.
+**Addresses:**
+- FEATURES.md table stakes: "AI prompt hardening" and "tool call interception"
+- v4.0 UAT-2 test 2 failure (fake tool_use XML with fabricated results)
 
-**Components:** CortexContext, namespace builder, CortexShell (basic), CLI entry point
+**Avoids:**
+- Pitfall #2 (over-constraining) via positive framing and UAT regression testing
+- Pitfall #4 (false positive regex) via code fence exclusion and structural matching
+- Pitfall #7 (correction amplification) via max_corrections=1 limit
 
-**Research flag:** Standard patterns (prompt_toolkit async REPL is well-documented). No additional research needed.
+**Research flag:** Standard patterns. Anthropic multishot docs + langchain-aws issue #521 provide complete guidance. No deeper research needed.
 
-### Phase 2: Channel I/O and Mode Dispatch
-**Rationale:** Channels are the I/O backbone for all modes. Mode detection needs channels for output routing. AI agent (Phase 3) needs channels to emit responses. Must exist before multi-mode functionality.
+---
 
-**Delivers:** Labeled output streams with mute/unmute controls. Mode detection (NL/Py/Graph) with prefix-based dispatch. All output routed through channels, terminal renderer consumes from all unmuted channels.
+### Phase 2: Multi-View Formatter Framework
 
-**Addresses:** Differentiator features (channel I/O, mode switching, channel surfing). Namespace introspection (/ns command showing variables and types).
+**Rationale:** Structural refactor enabling Phase 3. Building view framework BEFORE execution display prevents rewriting display code twice. Formatters ship with default (None) maintaining existing behavior — zero existing test failures required.
 
-**Avoids:** Pitfall #3 (channel deadlock) by unbounded queues and multiplexed waiting. Pitfall #6 (namespace GC issues) by history depth limits. Pitfall #9 (namespace leaks internals) by read-only views. Pitfall #13 (expensive tab completion) by ThreadedCompleter and caching.
+**Delivers:**
+- ViewFormatter protocol in views.py
+- _rich_to_ansi() helper enforcing StringIO pattern
+- Channel._formatter field (default None)
+- Channel._display() delegation (if formatter set, delegate; else existing logic)
+- Backward compatibility tests
 
-**Uses:** asyncio.Queue (stdlib), ChannelBus pattern from research
+**Addresses:**
+- FEATURES.md differentiator: "Multi-view stream framework" conceptual foundation
+- Architecture pattern: formatter as strategy, metadata-driven rendering
 
-**Implements:** ChannelBus component, mode dispatcher in shell, reflective namespace features
+**Avoids:**
+- Pitfall #3 (breaking existing display) via opt-in default=None
+- Pitfall #8 (patch_stdout bypass) via _rich_to_ansi() factory enforcing StringIO
+- Pitfall #10 (global debug state) via formatter swap not flag
 
-**Research flag:** Channel architecture is novel (no existing Python REPL does this). Consider targeted research on pub/sub patterns and asyncio.Queue multiplexing if implementation complexity exceeds estimates.
+**Research flag:** Novel design over existing primitives. May need iterative refinement as formatters are built. Not complex enough for dedicated research-phase; handle in planning review.
 
-### Phase 3: AI Agent Integration
-**Rationale:** Requires both namespace (Phase 1) and channels (Phase 2) to function. AI output goes to [ai] channel, AI reads namespace for context. Can't build AI before its infrastructure exists.
+---
 
-**Delivers:** AI as callable object in namespace. ai("explain graph") for NL interaction, ai.fill(Node) for direct LM access. Context assembly from namespace state. Output on [ai] channel.
+### Phase 3: UserView + Framed Execution Display
 
-**Addresses:** Differentiator feature (AI as first-class object). NL mode dispatch.
+**Rationale:** Depends on Phase 2 formatter framework. Highest-visibility UX improvement. Existing eval loop already produces right metadata types (ai_exec, ai_exec_result). Rich Panel/Syntax tested locally, API stable.
 
-**Avoids:** Pitfall #7 (AI context explosion) by scoped context and summaries. Pitfall #8 (streaming conflicts) by dedicated output region or gated input.
+**Delivers:**
+- UserView formatter class
+- render_code_panel() and render_output_panel() using Rich Panel + Syntax
+- Buffered exec grouping (code + output in single Panel)
+- Metadata-driven rendering for ai_exec and ai_exec_result types
+- Deduplication (suppress CODE echo, display RESULTS)
 
-**Uses:** Existing bae LM backends, wraps session's lm object
+**Addresses:**
+- FEATURES.md table stakes: "Deduplicated execution display"
+- FEATURES.md differentiator: "Framed code + output panels"
+- v4.0 UAT-2 test 5 (code appears 2-3x)
 
-**Implements:** AiAgent component, NL mode handler
+**Avoids:**
+- Pitfall #1 (ANSI contamination) via single render pass with composed renderables
+- Pitfall #5 (removing results) via type-based suppression (ai_exec only, not ai_exec_result)
+- Pitfall #6 (width desync) via Console handling Panel borders internally
+- Pitfall #12 (empty frames) via skipping frame when output is empty
 
-**Research flag:** AI context scoping and summarization patterns may need research if naive approach (full namespace serialization) hits token limits in practice. Consider research-phase if MVP testing shows context issues.
+**Research flag:** Standard patterns. Rich Panel/Syntax well-documented, ANSI bridge proven in production. No research needed.
 
-### Phase 4: OTel Instrumentation
-**Rationale:** Observability over working code. Requires all components to be functional. OTel is optional -- cortex works without it. Can be added incrementally without changing existing code.
+---
 
-**Delivers:** Span instrumentation for REPL commands, graph execution, node steps, LM calls. [otel] channel for human-readable span output. Optional OTLP exporter for external collectors.
+### Phase 4: Tool Call Classification + Remaining Formatters
 
-**Addresses:** Differentiator feature (OTel spans for observability)
+**Rationale:** Depends on Phase 2 (formatters can consume tool metadata) but independent of Phase 3 (classification enriches metadata, not display). Delivers DebugView, RawView, AISelfView for view mode cycling. Includes Ctrl+V keybinding and toolbar.
 
-**Avoids:** Pitfall #5 (context propagation) by correct span granularity and context managers. Pitfall #11 (performance overhead) by spans at right level, events not spans for deps, sampling.
+**Delivers:**
+- classify_response() pure function
+- ResponseClassification dataclass (text, tools list, code blocks, has_code)
+- AI.__call__() integration passing tools in metadata
+- DebugView, RawView, AISelfView formatters
+- ViewMode enum, VIEW_CYCLE, Ctrl+V keybinding
+- View mode toolbar widget
 
-**Uses:** opentelemetry-sdk, InMemorySpanExporter, TracerProvider
+**Addresses:**
+- FEATURES.md differentiator: "View registry with debug toggle"
+- FEATURES.md differentiator: "AI self-view (structured feedback)"
+- Architecture component: tool call classification
 
-**Implements:** OTel spans component, TracedLM wrapper, span decorators
+**Avoids:**
+- Pitfall #9 (stale fewshot) via minimal behavior-focused examples
+- Pitfall #11 (exposing internal state) via curated summary in cross-AI view
 
-**Research flag:** Standard patterns (OTel Python instrumentation is well-documented). Span hierarchy testing may need attention to validate no orphan spans in complex gather scenarios.
+**Research flag:** Novel classification logic. AST-based import detection straightforward but needs test coverage. Standard implementation, no research needed.
+
+---
+
+### Phase 5: AI Prompt Refinement (Empirical)
+
+**Rationale:** Prompt changes are behavioral, not structural. Test empirically after infrastructure is in place. Iterate based on observed AI response quality with real usage.
+
+**Delivers:**
+- Updated ai_prompt.md with tool conventions section
+- "1 fence per response" guidance for cleaner feedback
+- Response structure recommendations
+- Empirical testing against UAT cases
+- Iteration based on AI behavior
+
+**Addresses:**
+- FEATURES.md context: ensuring prompt hardening doesn't break helpful code generation
+- Architecture component: structured response patterns for cleaner parsing
+
+**Avoids:**
+- Pitfall #2 (over-constraining) via positive framing and iterative testing
+
+**Research flag:** Behavioral tuning. Requires empirical observation. Not suitable for upfront research; handle iteratively during execution.
+
+---
 
 ### Phase Ordering Rationale
 
-- **Sequential dependency chain:** Phase 1 establishes the event loop foundation that Phases 2-4 build on. Phase 2's channels are required by Phase 3's AI output and Phase 4's OTel events. Phase 3 is independent of Phase 4 (AI doesn't need OTel).
-- **Pitfall mitigation:** All critical pitfalls are addressed in Phases 1-2. By the time AI and OTel are added, the async architecture is proven stable.
-- **Incremental value:** Each phase delivers a usable REPL. Phase 1 = basic async Python REPL. Phase 2 = multi-mode REPL with channels. Phase 3 = AI-augmented REPL. Phase 4 = observable REPL.
-- **Risk front-loading:** The highest-risk components (event loop management, channel architecture) are in Phases 1-2. Phases 3-4 are lower risk because they consume stable infrastructure.
+- **Phases 1 and 2 are parallel-safe** — prompt hardening has zero code dependencies, framework refactor doesn't touch AI logic. Could execute concurrently if resources available.
+- **Phase 3 depends on Phase 2** — UserView needs formatter infrastructure. Building framework first prevents display code rewrites.
+- **Phase 4 depends on Phase 2, independent of Phase 3** — Classification uses formatter metadata, doesn't care about Panel rendering.
+- **Phase 5 is empirical** — Needs working system to observe AI behavior. Must come after Phases 1-4 are integrated.
+- **Critical path: 2 -> 3** — Framework enables framing. Longest dependency chain.
+- **Highest value: 1, 3** — Fix visible defects (hallucinated tools, redundant output). Deliver these first for immediate user benefit.
 
 ### Research Flags
 
-**Phases needing deeper research during planning:**
-- **Phase 2:** Channel multiplexing architecture is novel. If complexity exceeds estimates or deadlock scenarios emerge during implementation, consider targeted research on asyncio pub/sub patterns and bounded queue strategies.
-- **Phase 3:** AI context assembly and token budgeting may need research if MVP shows context explosion. Summarization strategies and sliding window patterns documented but not proven at bae's scale.
+**Phases needing deeper research:** None. All patterns are standard or directly documented:
+- Prompt hardening: Anthropic multishot guide (official)
+- Tool interception: Regex on known XML patterns (langchain-aws issue #521)
+- View framework: Strategy pattern + existing ANSI bridge
+- Rich rendering: Panel/Syntax API documented, tested locally
+- Classification: Pure function, AST stdlib usage
 
-**Phases with standard patterns (skip research-phase):**
-- **Phase 1:** Async REPL on prompt_toolkit is well-documented with canonical examples. Event loop patterns in asyncio are Python fundamentals.
-- **Phase 4:** OTel Python instrumentation has extensive official docs. TracedLM wrapper follows existing codebase pattern (TracingClaudeCLI).
+**Phases with standard patterns:**
+- **All phases** — Every component builds on proven primitives (Rich, prompt_toolkit, stdlib) or documented patterns (fewshot, strategy, metadata-driven rendering). No novel integration requiring dedicated research-phase.
+
+**Validation during planning:**
+- Phase 2 (view framework) may need planning review to verify formatter interface accommodates all view types before building concrete formatters.
+- Phase 5 (prompt refinement) is inherently empirical; planning should define testing criteria (which UAT cases must pass) not prescriptive prompt text.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | prompt_toolkit 3.0.52 and opentelemetry-sdk 1.39+ verified via PyPI, docs, and source inspection. Python 3.14 stdlib features (Queue.shutdown, annotationlib) confirmed via runtime checks. All "do NOT add" decisions backed by analysis showing stdlib provides equivalents. |
-| Features | HIGH | Table stakes derived from REPL ecosystem analysis (ptpython, IPython, xonsh) with consistent patterns. Differentiators validated against existing tools (Aider, Claude Code, Open Interpreter) showing novelty. Anti-features based on architectural complexity and YAGNI principle. |
-| Architecture | HIGH | Integration points mapped from direct codebase analysis (graph.py, resolver.py, lm.py). Event loop sharing pattern verified via official prompt_toolkit asyncio examples. Channel architecture inferred from Docker Compose and asyncio.Queue docs. No modifications to core bae modules needed. |
-| Pitfalls | HIGH | Event loop conflicts and output corruption verified via prompt_toolkit issues and asyncio docs. Task lifecycle and gather() semantics from Python stdlib docs and CPython issues. OTel context propagation from official examples. All critical pitfalls have documented solutions. |
+| Stack | HIGH | All imports verified against installed packages via runtime check. Rich Panel/Syntax/Group tested locally. ANSI bridge proven in production (channels.py). No new dependencies needed. |
+| Features | HIGH | Table stakes derived from v4.0 UAT failures (first-party evidence). Differentiators based on existing channel/router architecture. Anti-features grounded in scope constraints (streaming = API migration, bash = security). |
+| Architecture | HIGH | Direct codebase analysis of channels.py, ai.py, shell.py. Formatter pattern fits existing design (Channel already has visibility, markdown, color swappable attributes). Rich-to-prompt_toolkit bridge exists and works. |
+| Pitfalls | HIGH | 7 of 12 pitfalls have first-party evidence from v4.0 UAT failures or codebase analysis. ANSI contamination, patch_stdout bypass, width desync documented in Rich/prompt_toolkit issue trackers. Over-constraining grounded in v4.0 prompt calibration history. |
 
 **Overall confidence:** HIGH
 
-Research converged on consistent recommendations from multiple high-quality sources. Stack choices are backed by official documentation and runtime verification. Architecture patterns have canonical examples in prompt_toolkit and ptpython. Pitfalls are known issues with established solutions.
+All research grounded in official documentation (Anthropic, Rich, prompt_toolkit), verified codebase patterns (channels.py render_markdown, AI eval loop), or first-party failure evidence (v4.0 UAT-2 tests 2 and 5). No speculative designs or unproven integrations.
 
 ### Gaps to Address
 
-**Medium priority (validate during implementation):**
-- Channel multiplexing scalability: Research shows patterns for pub/sub and asyncio.Queue, but the specific design (labeled queues with wildcard subscription) is novel. If >10 concurrent channels cause latency issues, may need buffering or backpressure strategies beyond unbounded queues.
-- AI context token budgeting: Scoped context and summarization are documented strategies, but bae's specific context (graph topology, trace history, Pydantic models) may have unique characteristics. Monitor token counts in Phase 3 MVP and adjust summarization aggressiveness.
+**Prompt hardening calibration:** Exact wording of no-tools constraint and fewshot examples requires empirical tuning. Research provides pattern (Anthropic multishot guide), but specific text must be validated against AI behavior. Handle iteratively in Phase 5 with defined test criteria (UAT-2 tests 1, 2, 5 must all pass).
 
-**Low priority (defer until needed):**
-- Ephemeral spawned interfaces: Ghostty's programmatic API is evolving (GitHub discussion #2353). Inline HitL prompts are sufficient for v4.0. Terminal spawning deferred to v5.0 when Ghostty scripting stabilizes.
-- Persistent conversation memory: In-session AI context is sufficient for v4.0. Cross-session memory requires storage layer and raises UX questions (what gets persisted? how long?). Defer until user feedback shows need.
+**View formatter interface completeness:** Research proposes `render(channel_name, color, content, metadata)` signature. During Phase 2 planning, verify this accommodates all known view types (user, debug, raw, AI-self). If AISelfView needs conversation history context beyond single write, interface may need session reference. Resolve in planning review before building concrete formatters.
+
+**Tool call regex false positives:** TOOL_CALL_RE pattern tested against 4 input cases but not exhaustive AI output corpus. Research provides structural matching strategy (require full `<invoke name="...">` envelope, exclude code fences). Phase 1 execution should include comprehensive fixture testing (XML in docstrings, HTML processing code, Rich markup) before declaring regex production-ready.
+
+**Cross-AI view curation:** Research identifies anti-pitfall #11 (don't expose raw internal state to receiving AI). Cross-AI view mentioned in multi-view concept but not spec'd in detail. If v5.0 includes cross-session memory, define curated summary format during Phase 4 planning. If deferred to v6.0, document explicitly in anti-features.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [prompt_toolkit official docs](https://python-prompt-toolkit.readthedocs.io/) -- asyncio integration, PromptSession API, patch_stdout, completers, key bindings
-- [ptpython async embed example](https://github.com/prompt-toolkit/ptpython/blob/main/examples/asyncio-python-embed.py) -- canonical async REPL pattern with custom namespace
-- [prompt_toolkit asyncio-prompt.py](https://github.com/prompt-toolkit/python-prompt-toolkit/blob/main/examples/prompts/asyncio-prompt.py) -- background tasks with patch_stdout
-- [Python asyncio docs](https://docs.python.org/3/library/asyncio-task.html) -- TaskGroup, gather semantics, cancellation
-- [Python asyncio.Queue docs](https://docs.python.org/3/library/asyncio-queue.html) -- shutdown() method (3.13+)
-- [OpenTelemetry Python instrumentation](https://opentelemetry.io/docs/languages/python/instrumentation/) -- TracerProvider, span creation, context propagation
-- [OTel async context example](https://github.com/open-telemetry/opentelemetry-python/blob/main/docs/examples/basic_context/async_context.py) -- contextvars propagation in asyncio
-- [Python 3.14 annotationlib](https://docs.python.org/3/library/annotationlib.html) -- PEP 649/749, Format enum, get_annotations
-- [pydantic-ai instrumentation](https://ai.pydantic.dev/logfire/) -- Agent.instrument_all() for OTel spans
-- Bae codebase analysis (graph.py, resolver.py, lm.py, node.py) -- integration points verified
+- **Codebase analysis:** bae/repl/channels.py (render_markdown ANSI bridge, Channel._display), bae/repl/ai.py (eval loop, _send CLI flags, extract_code), bae/repl/ai_prompt.md (current prompt), .planning/phases/20-ai-eval-loop/20-UAT-2.md (v4.0 failure evidence)
+- **Anthropic official:** [Multishot prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/multishot-prompting) (fewshot technique), [Reduce hallucinations](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations) (constraint calibration)
+- **Rich library:** [Panel docs](https://rich.readthedocs.io/en/stable/panel.html), [Syntax docs](https://rich.readthedocs.io/en/stable/syntax.html), [Group docs](https://rich.readthedocs.io/en/stable/group.html), [Console API](https://rich.readthedocs.io/en/stable/console.html) (StringIO capture), [FAQ](https://github.com/textualize/rich/blob/master/FAQ.md) (ANSI contamination warning)
+- **Claude CLI:** [CLI reference](https://code.claude.com/docs/en/cli-reference) (--tools "", --strict-mcp-config, --output-format flags)
+- **Local testing:** Rich 14.3.2 Panel/Syntax rendering verified via uv run execution (code + output grouping, 1133 chars ANSI output)
 
 ### Secondary (MEDIUM confidence)
-- [Docker multiplexed logs](https://docs.docker.com/reference/cli/docker/container/logs/) -- labeled stream pattern for channel architecture
-- [OTel GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-agent-spans/) -- span naming for AI operations (Development status)
-- [Anthropic context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) -- context scoping, history management
-- [Armin Ronacher async pressure](https://lucumr.pocoo.org/2020/1/1/async-pressure/) -- backpressure patterns in asyncio
-- [OneUptime OTel performance](https://oneuptime.com/blog/post/2026-01-07-opentelemetry-performance-impact/view) -- span overhead and sampling
-- [Ghostty scripting discussion](https://github.com/ghostty-org/ghostty/discussions/2353) -- programmatic API status (evolving)
+- **prompt_toolkit:** [Issue #1346](https://github.com/prompt-toolkit/python-prompt-toolkit/issues/1346) (patch_stdout behavior with Rich), [ANSI class reference](https://python-prompt-toolkit.readthedocs.io/en/master/pages/reference.html)
+- **Rich integration:** [Discussions #936](https://github.com/Textualize/rich/discussions/936) (Rich+prompt_toolkit pattern), [Issue #3349](https://github.com/Textualize/rich/issues/3349) (ANSI escape width calculations), [Discussions #2648](https://github.com/Textualize/rich/discussions/2648) (ANSI bridge pattern)
+- **Tool call format:** [langchain-aws #521](https://github.com/langchain-ai/langchain-aws/issues/521) (Claude XML tool call patterns: function_calls, invoke, antml_invoke)
+- **LLM feedback loops:** [EmergentMind research](https://www.emergentmind.com/topics/llm-driven-feedback-loops), [LLMLOOP paper](https://valerio-terragni.github.io/assets/pdf/ravi-icsme-2025.pdf) (correction amplification)
 
-### Tertiary (LOW confidence)
-- xonsh, Aider, Open Interpreter comparisons -- mode switching patterns inferred from documentation and demos, not direct usage
-- Channel deadlock scenarios -- extrapolated from general asyncio bounded-buffer patterns, not tested in bae context
-- OTel span overhead quantification (5ms estimate) -- derived from benchmarks in unrelated projects, not measured in bae
+### Tertiary (inference from codebase)
+- **v4.0 calibration history:** .planning/phases/20-ai-eval-loop/20-04-PLAN.md (prompt rewrite from "always code" to "code when needed" balance), 20-UAT.md (tests 1, 3, 6 runaway eval loop)
+- **Metadata-driven rendering:** Existing code uses metadata["type"] in channels.py for label construction — view framework extends this pattern
+- **Strategy pattern fitness:** Channel already has swappable attributes (visible, markdown, color) — formatter follows existing design
 
 ---
-*Research completed: 2026-02-13*
+*Research completed: 2026-02-14*
 *Ready for roadmap: yes*
