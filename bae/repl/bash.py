@@ -27,6 +27,7 @@ async def dispatch_bash(cmd: str, *, tm=None) -> tuple[str, str]:
 
     proc = await asyncio.create_subprocess_shell(
         cmd,
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=os.getcwd(),
