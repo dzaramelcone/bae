@@ -38,6 +38,50 @@ from bae.repl.toolbar import TASKS_PER_PAGE, ToolbarConfig, make_cwd_widget, mak
 ANSI_SEQUENCES["\x1b[13;2u"] = (Keys.Escape, Keys.ControlM)
 
 
+def _contains_coroutines(obj, _seen=None):
+    """Recursively check if obj is or contains unawaited coroutines.
+
+    Only traverses list, tuple, set, dict -- not arbitrary iterables.
+    Uses id-tracking to handle circular references.
+    """
+    if _seen is None:
+        _seen = set()
+    obj_id = id(obj)
+    if obj_id in _seen:
+        return False
+    _seen.add(obj_id)
+
+    if asyncio.iscoroutine(obj):
+        return True
+    if isinstance(obj, (list, tuple, set)):
+        return any(_contains_coroutines(item, _seen) for item in obj)
+    if isinstance(obj, dict):
+        return any(_contains_coroutines(v, _seen) for v in obj.values())
+    return False
+
+
+def _count_and_close_coroutines(obj, _seen=None):
+    """Recursively find coroutines, close each, return count.
+
+    Closing prevents RuntimeWarning from garbage collection of unawaited coroutines.
+    """
+    if _seen is None:
+        _seen = set()
+    obj_id = id(obj)
+    if obj_id in _seen:
+        return 0
+    _seen.add(obj_id)
+
+    if asyncio.iscoroutine(obj):
+        obj.close()
+        return 1
+    if isinstance(obj, (list, tuple, set)):
+        return sum(_count_and_close_coroutines(item, _seen) for item in obj)
+    if isinstance(obj, dict):
+        return sum(_count_and_close_coroutines(v, _seen) for v in obj.values())
+    return 0
+
+
 def _print_task_menu(shell: CortexShell) -> None:
     """Print numbered task list to scrollback above the prompt."""
     active = shell.tm.active()
@@ -295,7 +339,12 @@ class CortexShell:
                         try:
                             val = await coro
                             if val is not None:
-                                self.router.write("py", repr(val), mode="PY", metadata={"type": "expr_result"})
+                                if _contains_coroutines(val):
+                                    n = _count_and_close_coroutines(val)
+                                    msg = f"<{n} unawaited coroutine{'s' if n != 1 else ''}>"
+                                    self.router.write("py", msg, mode="PY", metadata={"type": "warning"})
+                                else:
+                                    self.router.write("py", repr(val), mode="PY", metadata={"type": "expr_result"})
                         except asyncio.CancelledError:
                             self.router.write("debug", "cancelled py task", mode="DEBUG")
                         except Exception:
@@ -303,7 +352,13 @@ class CortexShell:
                             self.router.write("py", tb.rstrip("\n"), mode="PY", metadata={"type": "error"})
                     self.tm.submit(_py_task(result), name=f"py:{text[:30]}", mode="py")
                 elif result is not None:
-                    self.router.write("py", repr(result), mode="PY", metadata={"type": "expr_result"})
+                    if _contains_coroutines(result):
+                        n = _count_and_close_coroutines(result)
+                        msg = f"<{n} unawaited coroutine{'s' if n != 1 else ''}>"
+                        self.router.write("py", msg, mode="PY", metadata={"type": "warning"})
+                        self.namespace.pop("_", None)
+                    else:
+                        self.router.write("py", repr(result), mode="PY", metadata={"type": "expr_result"})
             except KeyboardInterrupt:
                 pass
             except Exception:
