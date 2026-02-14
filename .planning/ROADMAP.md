@@ -104,10 +104,10 @@ Plans:
   1. ViewFormatter protocol exists with a render method that receives channel name, color, content, and metadata
   2. Channel._display() delegates to formatter when one is set, falls back to existing behavior when unset
   3. All existing REPL tests pass without modification (zero regression)
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 23-01: TBD
+- [ ] 23-01-PLAN.md — ViewFormatter protocol, Channel._formatter field, _display() delegation + tests
 
 ### Phase 24: Execution Display
 **Goal**: AI code execution renders as polished framed panels with deduplication
