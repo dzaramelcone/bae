@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 
 ## Current Position
 
-Phase: 30 (Agent Core Extraction)
-Plan: 01 of 02 complete
-Status: Plan 30-01 complete, ready for 30-02
-Last activity: 2026-02-15 -- 30-01 agent core extracted
+Phase: 30 (Agent Core Extraction) -- COMPLETE
+Plan: 02 of 02 complete
+Status: Phase 30 complete, ready for next phase
+Last activity: 2026-02-15 -- 30-02 AgenticBackend + REPL AI refactor
 
-Progress: v1-v5 done | v6.0 [#.........] 5%
+Progress: v1-v5 done | v6.0 [##........] 10%
 
 ## Performance Metrics
 
@@ -28,6 +28,7 @@ Progress: v1-v5 done | v6.0 [#.........] 5%
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
+| 30-02 | AgenticBackend + AI refactor | 3min | 2 | 5 |
 | 30-01 | Agent Core | 2min | 1 | 2 |
 | 26-01 | dep_cache + hardening | 3min | 1 | 3 |
 
@@ -37,6 +38,9 @@ Progress: v1-v5 done | v6.0 [#.........] 5%
 
 See PROJECT.md Key Decisions table for full history.
 
+- 30-02: REPL AI keeps interleaved tool-tag + run-block loop; agent_loop only for AgenticBackend
+- 30-02: Lazy import of async_exec in agent.py to break circular import chain
+- 30-02: AgenticBackend delegates choose_type/make/decide to wrapped ClaudeCLIBackend
 - 30-01: Agent core as module-level functions, not class -- stateless per invocation
 - 30-01: _cli_send takes session_id/call_count as params -- caller owns session state
 - 26-01: Internal dep_cache variable renamed to cache to avoid parameter shadowing
@@ -68,6 +72,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 26-01-PLAN.md, ready for 26-02
+Stopped at: Completed 30-02-PLAN.md, Phase 30 complete
 Branch: main
 Resume file: None
