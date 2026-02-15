@@ -7,7 +7,7 @@
 - v3.0 Async Graphs -- Phases 11-13 (shipped 2026-02-13)
 - v4.0 Cortex -- Phases 14-20 (shipped 2026-02-14)
 - v5.0 Stream Views -- Phases 21-25 (shipped 2026-02-14)
-- v6.0 Graph Runtime -- Phases 26-29 (in progress)
+- v6.0 Graph Runtime -- Phases 26-30 (in progress)
 
 ## Phases
 
@@ -74,6 +74,7 @@
 - [ ] **Phase 27: Graph Mode** - Command interface for graph management
 - [ ] **Phase 28: Input Gates** - Future-based human-in-the-loop suspension with routing UX
 - [ ] **Phase 29: Observability** - Channel integration, debug views, metrics, scaling validation
+- [x] **Phase 30: Agent Core Extraction** - Shared agent loop, AgenticBackend (parallel, no deps on 27-29) (2026-02-15)
 
 ## Phase Details
 
@@ -174,16 +175,22 @@ Plans:
 | 27. Graph Mode | v6.0 | 0/TBD | Not started | - |
 | 28. Input Gates | v6.0 | 0/TBD | Not started | - |
 | 29. Observability | v6.0 | 0/TBD | Not started | - |
+| 30. Agent Core Extraction | v6.0 | 2/2 | Complete | 2026-02-15 |
 
 ### Phase 30: Agent Core Extraction
-
-**Goal:** Extract eval loop from REPL AI into shared agent core; build AgenticBackend for tool-augmented fill()
-**Depends on:** Phase 29
-**Plans:** 2 plans
+**Goal**: Extract eval loop from REPL AI into shared agent core; build AgenticBackend for tool-augmented fill()
+**Depends on**: Phase 25 (v5.0 complete) — parallel to 27-29 chain
+**Requirements**: None (internal refactor)
+**Success Criteria** (what must be TRUE):
+  1. `bae/agent.py` exports `extract_executable` and `agent_loop` with zero REPL coupling
+  2. REPL AI delegates to shared `extract_executable` with no behavior change
+  3. `AgenticBackend` implements LM protocol with two-phase fill (agent research → structured extraction)
+  4. `from bae import AgenticBackend` works
+**Plans**: 2 plans
 
 Plans:
 - [x] 30-01-PLAN.md -- Create bae/agent.py with extract_executable, agent_loop, namespace, CLI send (TDD)
 - [x] 30-02-PLAN.md -- Refactor AI to use agent core, build AgenticBackend, export + tests
 
 ---
-*Last updated: 2026-02-15 after Phase 30 planning*
+*Last updated: 2026-02-15 — Phase 30 complete, dependency corrected*
