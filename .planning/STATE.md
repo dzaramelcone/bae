@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-15)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** Planning next milestone
+**Current focus:** v6.0 Graph Runtime — defining requirements
 
 ## Current Position
 
-Phase: 25 of 25
-Plan: 3 of 3 in Phase 25 (complete)
-Status: v5.0 Stream Views milestone SHIPPED
-Last activity: 2026-02-15 -- v5.0 milestone archived
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-14 — Milestone v6.0 started
 
 Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 done
 

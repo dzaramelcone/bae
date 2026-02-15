@@ -55,7 +55,19 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 
 ### Active
 
-(No active milestone -- planning next)
+## Current Milestone: v6.0 Graph Runtime
+
+**Goal:** Run bae graphs async inside cortex with concurrent execution, human-in-the-loop input gates, and full observability through the view system.
+
+**Target features:**
+- Async graph execution engine inside cortex
+- Graph registry for 10+ concurrent graphs with lifecycle management
+- Graph mode as management hub (list, inspect, cancel, logs)
+- Pending input system with notification UX (shush mode badge + inline interrupts)
+- Graph I/O flowing through channel/view system
+- Debug views for graph observability (IO, validation errors, run times, memory, dep calls)
+- Graph lifecycle notifications (start/complete/transition)
+- Graphs as managed tasks (TaskManager integration)
 
 ### Out of Scope
 
@@ -137,4 +149,4 @@ Reference implementation: `examples/ootd.py` -- 3-node outfit recommendation gra
 - AI streaming/progressive display deferred (NL responses currently blocking)
 
 ---
-*Last updated: 2026-02-15 after v5.0 Stream Views milestone complete*
+*Last updated: 2026-02-14 after v6.0 Graph Runtime milestone started*
