@@ -82,6 +82,10 @@ def recall_from_trace(trace: list, target_type: type) -> object:
         RecallError: If no matching field is found in the entire trace.
     """
     for node in reversed(trace):
+        # Match node instance itself (Recall a Node type from the trace)
+        if isinstance(node, target_type):
+            return node
+
         hints = get_type_hints(node.__class__, include_extras=True)
         for field_name, hint in hints.items():
             if field_name == "return":
@@ -296,6 +300,9 @@ async def _resolve_one(fn: object, cache: dict, trace: list) -> object:
                     target = _dep_target(m, base_type)
                     if target is not None:
                         kwargs[param_name] = cache[target]
+                    break
+                if isinstance(m, Recall):
+                    kwargs[param_name] = recall_from_trace(trace, base_type)
                     break
 
     if inspect.iscoroutinefunction(fn):

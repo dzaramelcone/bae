@@ -100,8 +100,8 @@ class TestPromptStructure:
 
         prompt = captured_args["prompt"]
 
-        # Source node context
-        assert "StartNode" in prompt
+        # Source node data
+        assert "Input data:" in prompt
         assert "ugh i just got up" in prompt
 
         # Resolved deps as context
@@ -292,7 +292,7 @@ class TestFillNestedModelPreservation:
             return {
                 "vibe": {
                     "mood": "groggy",
-                    "communication_style": "casual",
+                    "stylometry": "casual",
                     "context_cues": "just woke up",
                 }
             }

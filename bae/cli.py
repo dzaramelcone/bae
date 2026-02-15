@@ -233,10 +233,6 @@ def run_graph(
         Optional[str],
         typer.Option("--input", "-i", help="JSON input for start node"),
     ] = None,
-    backend: Annotated[
-        str,
-        typer.Option("-b", "--backend", help="LLM backend (dspy, claude)"),
-    ] = "dspy",
 ):
     """Run a graph with optional input.
 
@@ -265,13 +261,9 @@ def run_graph(
             typer.echo(f"Error: {start_cls.__name__} requires input. Use --input with JSON.")
             raise typer.Exit(1)
 
-    # Get LM backend
-    if backend == "claude":
-        from bae import ClaudeCLIBackend
+    from bae import ClaudeCLIBackend
 
-        lm = ClaudeCLIBackend()
-    else:
-        lm = None  # Uses DSPyBackend by default
+    lm = ClaudeCLIBackend()
 
     typer.echo(f"Running {graph.start.__name__}...")
     result = graph.run(start_node, lm=lm)

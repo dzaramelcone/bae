@@ -388,3 +388,48 @@ class TestTerminalNodeInTrace:
         assert len(result.trace) == 2
         assert isinstance(result.trace[-1], SimpleTerminal)
         assert result.trace[-1].message == "finished"
+
+
+# =============================================================================
+# Feature 7: Recall in dep function parameters
+# =============================================================================
+
+
+class SourceNode(Node):
+    """Node whose data is recalled by a dep on a later node."""
+
+    value: str
+
+    async def __call__(self) -> ConsumerNode: ...
+
+
+def dep_with_recall(src: Annotated[SourceNode, Recall()]) -> str:
+    return f"recalled:{src.value}"
+
+
+class ConsumerNode(Node):
+    """Node with a dep that recalls from the trace."""
+
+    derived: Annotated[str, Dep(dep_with_recall)]
+
+    async def __call__(self) -> None: ...
+
+
+class TestRecallInDeps:
+    """Feature 7: Dep functions can use Recall() to access the trace."""
+
+    async def test_dep_recalls_from_trace(self):
+        """Dep function parameter with Recall() resolves from trace."""
+        graph = Graph(start=SourceNode)
+
+        result = await graph.arun(
+            SourceNode(value="hello"),
+            lm=MockV2LM(responses={
+                ConsumerNode: ConsumerNode(derived="placeholder"),
+            }),
+        )
+
+        assert len(result.trace) == 2
+        consumer = result.trace[-1]
+        assert isinstance(consumer, ConsumerNode)
+        assert consumer.derived == "recalled:hello"

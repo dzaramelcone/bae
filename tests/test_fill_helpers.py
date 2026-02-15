@@ -310,9 +310,7 @@ class TestPlainModelDescriptions:
 
     def test_plain_model_description_in_json_schema(self):
         """transform_schema output includes description strings from plain model."""
-        from anthropic import transform_schema
-
-        from bae.lm import _build_plain_model
+        from bae.lm import _build_plain_model, transform_schema
 
         PlainModel = _build_plain_model(DescribedNode)
         schema = transform_schema(PlainModel)

@@ -25,3 +25,5 @@ ENV/
 .ruff_cache/
 .mypy_cache/
 tests/traces/
+.DS_Store
+.bae/

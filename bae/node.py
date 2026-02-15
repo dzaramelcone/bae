@@ -14,7 +14,7 @@ import ast
 import inspect
 import textwrap
 import types
-from typing import ClassVar, TypedDict, get_type_hints, get_args
+from typing import Annotated, ClassVar, TypedDict, get_type_hints, get_args, get_origin
 from pydantic import BaseModel, ConfigDict
 
 from bae.lm import LM
@@ -78,14 +78,31 @@ def _has_ellipsis_body(method) -> bool:
     return False
 
 
+def _unwrap_annotated(hint):
+    """Strip Annotated wrapper, returning the base type."""
+    if get_origin(hint) is Annotated:
+        return get_args(hint)[0]
+    return hint
+
+
 def _extract_types_from_hint(hint) -> set[type]:
     """Extract concrete types from a type hint, excluding None."""
     if hint is None or hint is type(None):
         return set()
 
+    # Annotated[X, ...] — unwrap
+    hint = _unwrap_annotated(hint)
+
     # X | Y union syntax (types.UnionType)
     if isinstance(hint, types.UnionType):
-        return {arg for arg in get_args(hint) if arg is not type(None) and isinstance(arg, type)}
+        result = set()
+        for arg in get_args(hint):
+            if arg is type(None):
+                continue
+            arg = _unwrap_annotated(arg)
+            if isinstance(arg, type):
+                result.add(arg)
+        return result
 
     # Single type
     if isinstance(hint, type):
@@ -98,6 +115,8 @@ def _hint_includes_none(hint) -> bool:
     """Check if a type hint includes None (i.e., is optional/terminal)."""
     if hint is None or hint is type(None):
         return True
+
+    hint = _unwrap_annotated(hint)
 
     if isinstance(hint, types.UnionType):
         return type(None) in get_args(hint)

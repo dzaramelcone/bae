@@ -11,8 +11,9 @@ from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
 from bae.exceptions import BaeError, DepError, RecallError
 from bae.lm import LM
-from bae.node import Node, _has_ellipsis_body, _wants_lm
-from bae.resolver import LM_KEY, resolve_fields
+from bae.markers import Effect
+from bae.node import Node, _has_ellipsis_body, _unwrap_annotated, _wants_lm
+from bae.resolver import LM_KEY, classify_fields, resolve_fields
 from bae.result import GraphResult
 
 logger = logging.getLogger(__name__)
@@ -76,10 +77,18 @@ def _get_routing_strategy(
     if return_hint is None or return_hint is type(None):
         return ("terminal",)
 
+    # Unwrap top-level Annotated (e.g. Annotated[X, Effect(fn)])
+    unwrapped = _unwrap_annotated(return_hint)
+
     # Handle union types (X | Y | None)
-    if isinstance(return_hint, types.UnionType):
-        args = get_args(return_hint)
-        concrete_types = [arg for arg in args if arg is not type(None) and isinstance(arg, type)]
+    if isinstance(unwrapped, types.UnionType):
+        args = get_args(unwrapped)
+        concrete_types = [
+            _unwrap_annotated(arg)
+            for arg in args
+            if arg is not type(None) and _unwrap_annotated(arg) is not type(None)
+        ]
+        concrete_types = [a for a in concrete_types if isinstance(a, type)]
         is_optional = type(None) in args
 
         # No concrete types -> terminal
@@ -94,10 +103,35 @@ def _get_routing_strategy(
         return ("decide", concrete_types)
 
     # Single type (not union)
-    if isinstance(return_hint, type):
-        return ("make", return_hint)
+    if isinstance(unwrapped, type):
+        return ("make", unwrapped)
 
     return ("terminal",)
+
+
+def _get_effects(return_hint, target_type: type) -> list:
+    """Extract Effect callables for a target type from a return hint."""
+    def _collect(hint):
+        if get_origin(hint) is not Annotated:
+            return []
+        args = get_args(hint)
+        base = args[0]
+        if base is target_type or (isinstance(base, type) and issubclass(target_type, base)):
+            return [meta.fn for meta in args[1:] if isinstance(meta, Effect)]
+        return []
+
+    # Single Annotated
+    if get_origin(return_hint) is Annotated:
+        return _collect(return_hint)
+
+    # Union with Annotated members
+    if isinstance(return_hint, types.UnionType):
+        for arg in get_args(return_hint):
+            found = _collect(arg)
+            if found:
+                return found
+
+    return []
 
 
 class Graph:
@@ -247,11 +281,10 @@ class Graph:
             DepError: If a dependency function fails.
             RecallError: If recall finds no matching field in trace.
         """
-        # Default to DSPyBackend if no LM provided
         if lm is None:
-            from bae.dspy_backend import DSPyBackend
+            from bae.lm import ClaudeCLIBackend
 
-            lm = DSPyBackend()
+            lm = ClaudeCLIBackend()
 
         trace: list[Node] = []
         dep_cache: dict = {LM_KEY: lm}
@@ -300,12 +333,50 @@ class Graph:
                 current = None
             elif strategy[0] == "custom":
                 # Custom __call__ logic
+                source_node = current
                 if _wants_lm(current.__class__.__call__):
                     current = await current(lm)
                 else:
                     current = await current()
+
+                # Fill required plain fields the caller didn't set
+                if current is not None:
+                    model_fields = current.__class__.model_fields
+                    plain = {
+                        n for n, k in classify_fields(current.__class__).items()
+                        if k == "plain" and n in model_fields
+                    }
+                    unfilled = {
+                        n for n in plain
+                        if n not in (current.model_fields_set or set())
+                        and model_fields[n].is_required()
+                    }
+                    if unfilled:
+                        target_resolved = await resolve_fields(
+                            current.__class__, trace, dep_cache
+                        )
+                        for name in plain & (current.model_fields_set or set()):
+                            target_resolved[name] = getattr(current, name)
+                        current = await lm.fill(
+                            current.__class__, target_resolved,
+                            _build_instruction(current.__class__),
+                            source=source_node,
+                        )
+
+                # Fire effects annotated on the return type hint
+                if current is not None:
+                    source_cls = source_node.__class__
+                    raw_hint = get_type_hints(
+                        source_cls.__call__, include_extras=True
+                    ).get("return")
+                    if raw_hint:
+                        for fn in _get_effects(raw_hint, current.__class__):
+                            result = fn(current)
+                            if asyncio.iscoroutine(result):
+                                await result
             else:
                 # Ellipsis body -- LM routing via v2 API
+                source_cls = current.__class__
                 if strategy[0] == "make":
                     target_type = strategy[1]
                 elif strategy[0] == "decide":
@@ -323,6 +394,15 @@ class Graph:
                 current = await lm.fill(
                     target_type, target_resolved, instruction, source=current
                 )
+
+                # Fire effects annotated on the return type hint
+                raw_hint = get_type_hints(
+                    source_cls.__call__, include_extras=True
+                ).get("return")
+                for fn in _get_effects(raw_hint, target_type):
+                    result = fn(current)
+                    if asyncio.iscoroutine(result):
+                        await result
 
             iters += 1
 

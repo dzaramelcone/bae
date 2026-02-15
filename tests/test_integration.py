@@ -3,17 +3,15 @@
 These tests make actual API calls - run with:
     uv run pytest tests/test_integration.py -v -s
 
-For pydantic-ai tests, set ANTHROPIC_API_KEY.
 For Claude CLI tests, just have claude CLI available.
 """
 
 from __future__ import annotations
 
-import os
 import pytest
 from bae.node import Node
 from bae.graph import Graph
-from bae.lm import LM, PydanticAIBackend, ClaudeCLIBackend
+from bae.lm import LM, ClaudeCLIBackend
 from bae.result import GraphResult
 
 
@@ -75,68 +73,6 @@ class Answer(Node):
     async def __call__(self, lm: LM) -> None:
         """Terminal node."""
         return None
-
-
-# Skip condition for API-based tests
-requires_anthropic_key = pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"),
-    reason="ANTHROPIC_API_KEY not set"
-)
-
-
-@requires_anthropic_key
-class TestPydanticAIBackend:
-    """Tests using pydantic-ai with real LLM calls."""
-
-    @pytest.fixture
-    def lm(self):
-        return PydanticAIBackend(model="anthropic:claude-sonnet-4-20250514")
-
-    async def test_make_produces_typed_output(self, lm):
-        """lm.make should produce an instance of the target type."""
-        task = Task(description="Write a hello world program")
-        result = await lm.make(task, Result)
-
-        assert isinstance(result, Result)
-        assert isinstance(result.summary, str)
-        assert isinstance(result.steps_taken, list)
-        assert len(result.summary) > 0
-
-    async def test_decide_picks_from_options(self, lm):
-        """lm.decide should pick one of the valid successor types."""
-        task = Task(description="Calculate 2 + 2")
-        next_node = await lm.decide(task)
-
-        # Should be either SubTasks or Result
-        assert isinstance(next_node, (SubTasks, Result))
-
-    async def test_decide_can_return_none_for_terminal(self, lm):
-        """lm.decide should be able to return None for terminal nodes."""
-        result = Result(summary="Done", steps_taken=["step 1"])
-        next_node = await lm.decide(result)
-
-        # Result's only option is None (terminal)
-        assert next_node is None
-
-    async def test_graph_run_simple(self, lm):
-        """Run a simple graph to completion."""
-        graph = Graph(start=Question)
-
-        question = Question(text="What is 2 + 2?")
-        result = await graph.arun(question, lm=lm, max_iters=5)
-
-        assert isinstance(result, GraphResult)
-        assert result.node is None  # Terminated successfully
-
-    async def test_graph_run_task_decomposition(self, lm):
-        """Run task decomposition graph."""
-        graph = Graph(start=Task)
-
-        task = Task(description="Make a peanut butter sandwich")
-        result = await graph.arun(task, lm=lm, max_iters=10)
-
-        assert isinstance(result, GraphResult)
-        assert result.node is None  # Terminated successfully
 
 
 class TestClaudeCLIBackend:

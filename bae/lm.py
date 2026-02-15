@@ -19,11 +19,95 @@ from typing import (
     runtime_checkable,
 )
 
-from anthropic import transform_schema
 from pydantic import BaseModel, create_model
-from pydantic_ai import Agent
 
 from bae.resolver import classify_fields
+
+# String formats Claude's structured output API supports natively.
+_SUPPORTED_FORMATS = {
+    "email", "ipv4", "date", "uuid", "hostname",
+    "duration", "date-time", "uri", "ipv6", "time",
+}
+
+
+def transform_schema(
+    json_schema: type[BaseModel] | dict[str, Any],
+) -> dict[str, Any]:
+    """Convert a Pydantic model or JSON Schema dict for Claude structured output.
+
+    Recursively walks the schema, forces additionalProperties: false on objects,
+    and moves unsupported constraints into the description field so the model
+    still sees them as hints.
+    """
+    if isinstance(json_schema, type) and issubclass(json_schema, BaseModel):
+        json_schema = json_schema.model_json_schema()
+
+    strict: dict[str, Any] = {}
+    schema = {**json_schema}
+
+    ref = schema.pop("$ref", None)
+    if ref is not None:
+        return {"$ref": ref}
+
+    defs = schema.pop("$defs", None)
+    if defs is not None:
+        strict["$defs"] = {
+            name: transform_schema(s) for name, s in defs.items()
+        }
+
+    type_ = schema.pop("type", None)
+    any_of = schema.pop("anyOf", None)
+    one_of = schema.pop("oneOf", None)
+    all_of = schema.pop("allOf", None)
+
+    if isinstance(any_of, list):
+        strict["anyOf"] = [transform_schema(v) for v in any_of]
+    elif isinstance(one_of, list):
+        strict["anyOf"] = [transform_schema(v) for v in one_of]
+    elif isinstance(all_of, list):
+        strict["allOf"] = [transform_schema(v) for v in all_of]
+    else:
+        if type_ is None:
+            raise ValueError("Schema must have 'type', 'anyOf', 'oneOf', or 'allOf'.")
+        strict["type"] = type_
+
+    for key in ("description", "title"):
+        val = schema.pop(key, None)
+        if val is not None:
+            strict[key] = val
+
+    if type_ == "object":
+        strict["properties"] = {
+            k: transform_schema(v) for k, v in schema.pop("properties", {}).items()
+        }
+        schema.pop("additionalProperties", None)
+        strict["additionalProperties"] = False
+        required = schema.pop("required", None)
+        if required is not None:
+            strict["required"] = required
+    elif type_ == "string":
+        fmt = schema.pop("format", None)
+        if fmt and fmt in _SUPPORTED_FORMATS:
+            strict["format"] = fmt
+        elif fmt:
+            schema["format"] = fmt  # unsupported → append to description below
+    elif type_ == "array":
+        items = schema.pop("items", None)
+        if items is not None:
+            strict["items"] = transform_schema(items)
+        min_items = schema.pop("minItems", None)
+        if min_items is not None and min_items in (0, 1):
+            strict["minItems"] = min_items
+        elif min_items is not None:
+            schema["minItems"] = min_items
+
+    # Unsupported leftover fields → fold into description as hints
+    if schema:
+        desc = strict.get("description", "")
+        extra = "{" + ", ".join(f"{k}: {v}" for k, v in schema.items()) + "}"
+        strict["description"] = (desc + "\n\n" + extra) if desc else extra
+
+    return strict
 
 if TYPE_CHECKING:
     from bae.node import Node
@@ -106,6 +190,15 @@ def validate_plain_fields(
         ) from e
 
 
+def _dump_plain_fields(node: "BaseModel") -> dict:
+    """Serialize only plain fields of a node — skip deps and recalls."""
+    plain = {k for k, v in classify_fields(type(node)).items() if v == "plain"}
+    return {
+        k: v
+        for k, v in node.model_dump(mode="json", include=plain).items()
+    }
+
+
 def _build_fill_prompt(
     target: type,
     resolved: dict[str, object],
@@ -122,23 +215,23 @@ def _build_fill_prompt(
 
     Output schema is NOT included in the prompt — it's passed separately via
     --json-schema for constrained decoding (ClaudeCLIBackend) or as output_type
-    (PydanticAIBackend). Including it would send it twice.
+    constrained decoding. Including it would send it twice.
     """
     import json
 
     parts: list[str] = []
 
     if source is not None:
-        # source_schema = transform_schema(type(source))
-        # parts.append(f"Input schema:\n{json.dumps(source_schema, indent=2)}")
-
-        source_data = source.model_dump(mode="json")
+        source_data = _dump_plain_fields(source)
         parts.append(f"Input data:\n{json.dumps(source_data, indent=2)}")
 
     if resolved:
         context: dict[str, object] = {}
         for k, v in resolved.items():
-            context[k] = v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+            if isinstance(v, BaseModel):
+                context[k] = _dump_plain_fields(v)
+            else:
+                context[k] = v
         parts.append(f"Context:\n{json.dumps(context, indent=2)}")
 
     parts.append(instruction)
@@ -228,134 +321,6 @@ class LM(Protocol):
             source: The previous node (context frame), serialized in prompt.
         """
         ...
-
-
-class PydanticAIBackend:
-    """LLM backend using pydantic-ai."""
-
-    def __init__(self, model: str = "anthropic:claude-sonnet-4-20250514"):
-        self.model = model
-        self._agents: dict[tuple, Agent] = {}
-
-    def _get_agent(self, output_types: tuple[type, ...], allow_none: bool) -> Agent:
-        """Get or create an agent for the given output types."""
-        cache_key = (output_types, allow_none)
-        if cache_key not in self._agents:
-            # Build output type list
-            type_list = list(output_types)
-            if allow_none:
-                type_list.append(type(None))
-
-            self._agents[cache_key] = Agent(
-                self.model,
-                output_type=type_list,  # type: ignore
-            )
-        return self._agents[cache_key]
-
-    def _node_to_prompt(self, node: Node) -> str:
-        """Convert node state to JSON prompt string."""
-        import json
-
-        data = {node.__class__.__name__: node.model_dump(mode="json")}
-        return json.dumps(data, indent=2)
-
-    async def make(self, node: Node, target: type[T]) -> T:
-        """Produce an instance of target type using pydantic-ai."""
-        agent = self._get_agent((target,), allow_none=False)
-        prompt = self._node_to_prompt(node)
-
-        # Add instruction about what to produce
-        full_prompt = f"{prompt}\n\nProduce a {target.__name__}."
-
-        result = await agent.run(full_prompt)
-        return result.output
-
-    async def decide(self, node: Node) -> Node | None:
-        """Let LLM pick successor type and produce it."""
-        successors = tuple(node.successors())
-        is_terminal = node.is_terminal()
-
-        if not successors and is_terminal:
-            return None
-
-        if not successors:
-            raise ValueError(f"{node.__class__.__name__} has no successors and is not terminal")
-
-        agent = self._get_agent(successors, allow_none=is_terminal)
-        prompt = self._node_to_prompt(node)
-
-        # Add instruction about choices
-        type_names = [t.__name__ for t in successors]
-        if is_terminal:
-            type_names.append("None (terminate)")
-
-        full_prompt = f"{prompt}\n\nDecide the next step. Options: {', '.join(type_names)}"
-
-        result = await agent.run(full_prompt)
-        return result.output
-
-    async def choose_type(
-        self,
-        types: list[type[Node]],
-        context: dict[str, object],
-    ) -> type[Node]:
-        """Pick successor type from candidates using pydantic-ai."""
-        if len(types) == 1:
-            return types[0]
-
-        # Ask agent to pick a type name
-        agent = self._get_agent((str,), allow_none=False)
-        type_names = [t.__name__ for t in types]
-
-        import json
-
-        context_json = json.dumps(
-            {
-                "context": {
-                    k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
-                    for k, v in context.items()
-                }
-            },
-            indent=2,
-        )
-        prompt = f"{context_json}\n\nPick one type: {', '.join(type_names)}"
-
-        result = await agent.run(prompt)
-        chosen = result.output.strip()
-
-        # Map name back to type
-        for t in types:
-            if t.__name__ == chosen:
-                return t
-
-        # Fallback: partial match
-        for t in types:
-            if t.__name__.lower() in chosen.lower():
-                return t
-
-        return types[0]
-
-    async def fill(
-        self,
-        target: type[T],
-        resolved: dict[str, object],
-        instruction: str,
-        source: Node | None = None,
-    ) -> T:
-        """Populate target node fields using pydantic-ai with JSON output."""
-        plain_model = _build_plain_model(target)
-        agent = self._get_agent((plain_model,), allow_none=False)
-
-        prompt = _build_fill_prompt(target, resolved, instruction, source)
-
-        result = await agent.run(prompt)
-        # Merge LLM output with resolved deps
-        all_fields = dict(resolved)
-        plain_output = result.output
-        if isinstance(plain_output, BaseModel):
-            for name in type(plain_output).model_fields:
-                all_fields[name] = getattr(plain_output, name)
-        return target.model_construct(**all_fields)
 
 
 class ClaudeCLIBackend:

@@ -1,8 +1,8 @@
 """Annotation markers for bae Node fields.
 
-Dep and Recall markers for annotating Node fields with typing.Annotated.
-The resolver uses these markers to classify fields for dependency injection
-and trace recall.
+Dep, Recall, and Effect markers for annotating Node fields, dep function
+parameters, and return type hints. The resolver uses these markers for
+dependency injection, trace recall, and transition effects.
 """
 
 from collections.abc import Callable
@@ -38,3 +38,21 @@ class Recall:
     """
 
     pass
+
+
+@dataclass(frozen=True)
+class Effect:
+    """Marker for side effects on graph transitions.
+
+    Annotate a return type hint to fire a callable after the target node
+    is produced. The callable receives the produced node instance.
+
+    Usage:
+        # One-off effect on a single edge
+        async def __call__(self) -> Annotated[CommitTask, Effect(vcs_commit)]: ...
+
+        # Type alias for reuse across edges
+        Committed = Annotated[CommitTask, Effect(vcs_commit)]
+    """
+
+    fn: Callable
