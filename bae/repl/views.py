@@ -12,6 +12,7 @@ AISelfView labels writes with AI-perspective tags (ai-output, exec-code, etc).
 from __future__ import annotations
 
 import os
+import re
 from enum import Enum
 from io import StringIO
 
@@ -36,6 +37,26 @@ def _rich_to_ansi(renderable, width=None):
     console = Console(file=buf, width=width, force_terminal=True)
     console.print(renderable)
     return buf.getvalue()
+
+
+_STRIP_RUN_RE = re.compile(r"<run>\s*\n?.*?\n?\s*</run>", re.DOTALL)
+_STRIP_TOOL_RE = re.compile(
+    r"^[ \t]*<(?:R|Read|W|Write|E|Edit|G|Glob|Grep):[^>]+>.*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+_STRIP_WRITE_RE = re.compile(
+    r"^[ \t]*<(?:W|Write):[^>]+>\s*\n.*?\n[ \t]*</(?:W|Write)>",
+    re.DOTALL | re.MULTILINE | re.IGNORECASE,
+)
+
+
+def _strip_executable(text):
+    """Strip <run> blocks and tool tags from AI response for clean display."""
+    text = _STRIP_WRITE_RE.sub("", text)   # Multi-line Write tags first
+    text = _STRIP_RUN_RE.sub("", text)
+    text = _STRIP_TOOL_RE.sub("", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)  # Collapse blank runs
+    return text.strip()
 
 
 class UserView:
@@ -64,6 +85,12 @@ class UserView:
             self._render_grouped_panel(self._pending_code, content, self._pending_meta or {})
             self._pending_code = None
             self._pending_meta = None
+            return
+
+        if content_type == "response":
+            cleaned = _strip_executable(content)
+            if cleaned:
+                self._render_prefixed(channel_name, color, cleaned, meta)
             return
 
         if content_type == "tool_translated":
@@ -121,17 +148,23 @@ class UserView:
         print_formatted_text(ANSI(ansi))
 
     def _render_prefixed(self, channel_name, color, content, meta):
-        """Standard line-by-line display with channel prefix."""
+        """Display with channel prefix on first line, indented continuation."""
         label = f"[{channel_name}]"
         if meta and "label" in meta:
             label = f"[{channel_name}:{meta['label']}]"
-        for line in content.splitlines():
-            text = FormattedText([
-                (f"{color} bold", label),
-                ("", " "),
+        lines = content.splitlines()
+        if not lines:
+            return
+        print_formatted_text(FormattedText([
+            (f"{color} bold", label),
+            ("", " "),
+            ("", lines[0]),
+        ]))
+        for line in lines[1:]:
+            print_formatted_text(FormattedText([
+                ("fg:#808080", "  "),
                 ("", line),
-            ])
-            print_formatted_text(text)
+            ]))
 
 
 class DebugView:
@@ -175,8 +208,9 @@ class AISelfView:
         tag = self._tag_map.get(content_type, content_type or channel_name)
         if "label" in meta:
             tag = f"{tag}:{meta['label']}"
+        display = _strip_executable(content) if content_type == "response" else content
         print_formatted_text(FormattedText([("fg:#b0b040 bold", f"[{tag}]")]))
-        for line in content.splitlines():
+        for line in display.splitlines():
             print_formatted_text(FormattedText([
                 ("fg:#808080", "  "),
                 ("", line),

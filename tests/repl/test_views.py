@@ -11,7 +11,7 @@ from bae.repl.ai import _tool_summary
 from bae.repl.views import (
     UserView, DebugView, AISelfView,
     ViewMode, VIEW_CYCLE, VIEW_FORMATTERS,
-    _rich_to_ansi,
+    _rich_to_ansi, _strip_executable,
 )
 
 
@@ -308,3 +308,64 @@ def test_view_formatters_maps_all_modes():
     assert VIEW_FORMATTERS[ViewMode.USER] is UserView
     assert VIEW_FORMATTERS[ViewMode.DEBUG] is DebugView
     assert VIEW_FORMATTERS[ViewMode.AI_SELF] is AISelfView
+
+
+# --- _strip_executable tests ---
+
+
+def test_strip_executable_removes_run_blocks():
+    """<run> blocks are stripped, surrounding prose preserved."""
+    text = "Here is the plan.\n<run>\nx = 1\n</run>\nDone."
+    result = _strip_executable(text)
+    assert "<run>" not in result
+    assert "x = 1" not in result
+    assert "Here is the plan." in result
+    assert "Done." in result
+
+
+def test_strip_executable_removes_tool_tags():
+    """<R:foo.py> on its own line is stripped."""
+    text = "Let me check:\n<R:foo.py>\nThat file has what we need."
+    result = _strip_executable(text)
+    assert "<R:foo.py>" not in result
+    assert "Let me check:" in result
+    assert "That file has what we need." in result
+
+
+def test_strip_executable_preserves_inline_refs():
+    """<R:foo.py> mid-sentence is NOT stripped (not on its own line)."""
+    text = "See the file <R:foo.py> for details."
+    result = _strip_executable(text)
+    assert "<R:foo.py>" in result
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_user_view_response_strips_run(mock_pft):
+    """UserView with 'response' type strips <run> content before display."""
+    view = UserView()
+    view.render("ai", "#87d7ff", "Hello\n<run>\nx = 1\n</run>\nDone.",
+                metadata={"type": "response"})
+    mock_pft.assert_called()
+    all_text = ""
+    for call in mock_pft.call_args_list:
+        ft = call[0][0]
+        all_text += "".join(text for _, text in ft)
+    assert "<run>" not in all_text
+    assert "x = 1" not in all_text
+    assert "Hello" in all_text
+    assert "Done." in all_text
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_ai_self_view_response_strips_tools(mock_pft):
+    """AISelfView with 'response' type strips tool tags from display."""
+    view = AISelfView()
+    view.render("ai", "#87d7ff", "Checking:\n<R:bae/node.py>\nFound it.",
+                metadata={"type": "response"})
+    all_text = ""
+    for call in mock_pft.call_args_list:
+        ft = call[0][0]
+        all_text += "".join(text for _, text in ft)
+    assert "<R:bae/node.py>" not in all_text
+    assert "Checking:" in all_text
+    assert "Found it." in all_text

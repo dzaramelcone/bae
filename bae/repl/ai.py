@@ -12,8 +12,10 @@ import asyncio
 import inspect
 import os
 import re
+import sys
 import traceback
 import uuid
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -150,7 +152,14 @@ class AI:
             try:
                 result, captured = await async_exec(code, self._namespace)
                 if asyncio.iscoroutine(result):
-                    result = await result
+                    buf = StringIO()
+                    old = sys.stdout
+                    sys.stdout = buf
+                    try:
+                        result = await result
+                    finally:
+                        sys.stdout = old
+                    captured += buf.getvalue()
                 output = captured
                 if result is not None:
                     output += repr(result)

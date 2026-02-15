@@ -813,3 +813,42 @@ class TestEvalLoopToolCalls:
         assert "contents of a" in feedback
         assert "---" in feedback
         assert "contents of b" in feedback
+
+
+# --- TestAsyncStdoutCapture ---
+
+
+class TestAsyncStdoutCapture:
+    """Tests for stdout capture around awaited coroutines in eval loop."""
+
+    @pytest.fixture
+    def eval_ai(self, mock_lm, mock_router):
+        ai = AI(lm=mock_lm, router=mock_router, namespace={}, max_eval_iters=3)
+        ai._send = AsyncMock()
+        return ai
+
+    @pytest.mark.asyncio
+    async def test_async_stdout_captured_for_coroutine(self, eval_ai):
+        """print() during awaited coroutine appears in ai_exec_result, not leaked."""
+        eval_ai._send.side_effect = [
+            "<run>\nawait do_stuff()\n</run>",
+            "Done.",
+        ]
+
+        async def fake_coro():
+            print("printed during await")
+            return None
+
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = (fake_coro(), "before await\n")
+            await eval_ai("run async")
+
+        # The ai_exec_result write should contain both pre- and during-await output
+        py_writes = [
+            c for c in eval_ai._router.write.call_args_list
+            if c[0][0] == "py" and c.kwargs.get("metadata", {}).get("type") == "ai_exec_result"
+        ]
+        assert len(py_writes) == 1
+        output = py_writes[0][0][1]
+        assert "before await" in output
+        assert "printed during await" in output
