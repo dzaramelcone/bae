@@ -7,6 +7,7 @@ from prompt_toolkit.formatted_text import ANSI, FormattedText
 from rich.text import Text
 
 from bae.repl.channels import ViewFormatter
+from bae.repl.ai import _tool_summary
 from bae.repl.views import (
     UserView, DebugView, AISelfView,
     ViewMode, VIEW_CYCLE, VIEW_FORMATTERS,
@@ -122,6 +123,56 @@ def test_rich_to_ansi_uses_terminal_width(mock_size):
     for line in result.splitlines():
         clean = re.sub(r"\033\[[^m]*m", "", line)
         assert len(clean) <= 40
+
+
+# --- Tool call display tests ---
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_user_view_tool_translated_shows_summary(mock_pft):
+    """tool_translated metadata renders concise tool_summary, not raw tag."""
+    view = UserView()
+    view.render("py", "#87ff87", "<R:foo.py>", metadata={
+        "type": "tool_translated",
+        "tool_summary": "read foo.py (42 lines)",
+    })
+    mock_pft.assert_called_once()
+    fragments = list(mock_pft.call_args[0][0])
+    assert fragments[0] == ("#87ff87 bold", "[py]")
+    assert fragments[2] == ("fg:#808080 italic", "read foo.py (42 lines)")
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_user_view_tool_translated_fallback(mock_pft):
+    """tool_translated without tool_summary falls back to raw content."""
+    view = UserView()
+    view.render("py", "#87ff87", "<R:foo.py>", metadata={
+        "type": "tool_translated",
+    })
+    mock_pft.assert_called_once()
+    fragments = list(mock_pft.call_args[0][0])
+    assert fragments[2] == ("fg:#808080 italic", "<R:foo.py>")
+
+
+def test_tool_summary_read():
+    """_tool_summary generates 'read path (N lines)' for Read tags."""
+    output = "line1\nline2\nline3"
+    result = _tool_summary("<R:bae/repl/ai.py>", output)
+    assert result == "read bae/repl/ai.py (3 lines)"
+
+
+def test_tool_summary_glob():
+    """_tool_summary generates 'glob pattern (N matches)' for Glob tags."""
+    output = "src/a.py\nsrc/b.py\nsrc/c.py"
+    result = _tool_summary("<G:src/*.py>", output)
+    assert result == "glob src/*.py (3 matches)"
+
+
+def test_tool_summary_write():
+    """_tool_summary passes Write output through as-is."""
+    output = "Wrote 42 chars to foo.py"
+    result = _tool_summary("<W:foo.py>", output)
+    assert result == "Wrote 42 chars to foo.py"
 
 
 # --- DebugView tests ---
