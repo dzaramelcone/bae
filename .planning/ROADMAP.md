@@ -182,8 +182,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 30-01-PLAN.md -- Create bae/agent.py with extract_executable, agent_loop, namespace, CLI send (TDD)
-- [ ] 30-02-PLAN.md -- Refactor AI to use agent core, build AgenticBackend, export + tests
+- [x] 30-01-PLAN.md -- Create bae/agent.py with extract_executable, agent_loop, namespace, CLI send (TDD)
+- [x] 30-02-PLAN.md -- Refactor AI to use agent core, build AgenticBackend, export + tests
 
 ---
 *Last updated: 2026-02-15 after Phase 30 planning*
