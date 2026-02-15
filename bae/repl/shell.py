@@ -22,6 +22,7 @@ from pygments.lexers.python import PythonLexer
 
 from bae.repl.ai import AI
 from bae.repl.bash import dispatch_bash
+from bae.repl.engine import GraphRegistry
 from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, toggle_channels
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
@@ -220,6 +221,7 @@ class CortexShell:
         self.mode: Mode = DEFAULT_MODE
         self.namespace: dict = seed()
         self.tm = TaskManager()
+        self.engine = GraphRegistry()
         self._task_menu = False
         self._task_menu_page = 0
         self.store = SessionStore(Path.cwd() / ".bae" / "store.db")
@@ -239,6 +241,7 @@ class CortexShell:
         self._active_session: str = "1"
         self.ai = self._get_or_create_session("1")
         self.namespace["ai"] = self.ai
+        self.namespace["engine"] = self.engine
         self.toolbar = ToolbarConfig()
         self.toolbar.add("mode", make_mode_widget(self))
         self.toolbar.add("view", make_view_widget(self))
@@ -331,21 +334,18 @@ class CortexShell:
             self.router.write("ai", tb.rstrip("\n"), mode="NL", metadata={"type": "error"})
 
     async def _run_graph(self, text: str) -> None:
-        """GRAPH mode: graph execution, self-contained error handling."""
+        """GRAPH mode: graph execution via engine."""
         graph = self.namespace.get("graph")
         if not graph:
-            self.router.write("graph", "(Graph mode stub) Not yet implemented.", mode="GRAPH")
+            self.router.write("graph", "(no graph in namespace)", mode="GRAPH")
             return
         try:
-            result = await channel_arun(graph, text, self.router)
-            if result and result.trace:
-                self.namespace["_trace"] = result.trace
-        except asyncio.CancelledError:
-            self.router.write("debug", "cancelled graph task", mode="DEBUG")
-        except Exception as exc:
-            trace = getattr(exc, "trace", None)
-            if trace:
-                self.namespace["_trace"] = trace
+            run = self.engine.submit(graph, self.tm, lm=self._lm, text=text)
+            self.router.write(
+                "graph", f"submitted {run.run_id}", mode="GRAPH",
+                metadata={"type": "lifecycle", "run_id": run.run_id},
+            )
+        except Exception:
             tb = traceback.format_exc()
             self.router.write("graph", tb.rstrip("\n"), mode="GRAPH", metadata={"type": "error"})
 
@@ -431,7 +431,7 @@ class CortexShell:
                 self._run_nl(prompt), name=f"ai:{self._active_session}:{prompt[:30]}", mode="nl"
             )
         elif self.mode == Mode.GRAPH:
-            self.tm.submit(self._run_graph(text), name=f"graph:{text[:30]}", mode="graph")
+            await self._run_graph(text)
         elif self.mode == Mode.BASH:
             self.tm.submit(self._run_bash(text), name=f"bash:{text[:30]}", mode="bash")
 
@@ -465,7 +465,7 @@ class CortexShell:
                     self.router.write("debug", "interrupted, revoked all tasks", mode="DEBUG")
 
 
-async def channel_arun(graph, start_node, router, *, lm=None, max_iters=10):
+async def channel_arun(graph, router, *, lm=None, max_iters=10, **kwargs):
     """Wrap graph.arun() routing output through [graph] channel."""
     graph_logger = logging.getLogger("bae.graph")
     buf = StringIO()
@@ -475,7 +475,7 @@ async def channel_arun(graph, start_node, router, *, lm=None, max_iters=10):
     old_level = graph_logger.level
     graph_logger.setLevel(logging.DEBUG)
     try:
-        result = await graph.arun(start_node, lm=lm, max_iters=max_iters)
+        result = await graph.arun(lm=lm, max_iters=max_iters, **kwargs)
     finally:
         graph_logger.removeHandler(handler)
         graph_logger.setLevel(old_level)
