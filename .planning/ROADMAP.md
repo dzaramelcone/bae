@@ -87,11 +87,11 @@
   3. The registry tracks each graph's lifecycle state (RUNNING/WAITING/DONE/FAILED/CANCELLED) and current node
   4. Per-node timing data (start/end) and dep call durations are captured for every graph run
   5. `Graph.arun()` accepts a `dep_cache` parameter without breaking existing call sites
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 26-01: TBD
-- [ ] 26-02: TBD
+- [ ] 26-01-PLAN.md -- dep_cache parameter, event loop yield, CancelledError fix
+- [ ] 26-02-PLAN.md -- GraphRegistry, TimingLM, engine wrapper, shell integration
 
 ### Phase 27: Graph Mode
 **Goal**: Dzara can start, monitor, inspect, and cancel graphs through GRAPH mode commands
@@ -174,6 +174,15 @@ Plans:
 | 27. Graph Mode | v6.0 | 0/TBD | Not started | - |
 | 28. Input Gates | v6.0 | 0/TBD | Not started | - |
 | 29. Observability | v6.0 | 0/TBD | Not started | - |
+
+### Phase 30: Agent Core Extraction
+
+**Goal:** [To be planned]
+**Depends on:** Phase 29
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 30 to break down)
 
 ---
 *Last updated: 2026-02-15 after v6.0 roadmap creation*
