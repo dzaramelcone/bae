@@ -388,7 +388,12 @@ class ClaudeCLIBackend:
             )
         except asyncio.TimeoutError:
             process.kill()
+            await process.wait()
             raise RuntimeError(f"Claude CLI timed out after {self.timeout}s")
+        except asyncio.CancelledError:
+            process.kill()
+            await process.wait()
+            raise
 
         stdout = stdout_bytes.decode()
         stderr = stderr_bytes.decode()

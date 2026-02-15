@@ -9,11 +9,13 @@ import types
 from collections import deque
 from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
+from pydantic.fields import FieldInfo
+
 from bae.exceptions import BaeError, DepError, RecallError
 from bae.lm import LM
 from bae.markers import Effect
 from bae.node import Node, _has_ellipsis_body, _unwrap_annotated, _wants_lm
-from bae.resolver import LM_KEY, classify_fields, resolve_fields
+from bae.resolver import LM_KEY, classify_fields, resolve_fields, validate_node_deps
 from bae.result import GraphResult
 
 logger = logging.getLogger(__name__)
@@ -142,10 +144,10 @@ class Graph:
     graph = Graph(start=AnalyzeRequest)
 
     # Sync API (most common)
-    result = graph.run(AnalyzeRequest(request="Build a web scraper"), lm=lm)
+    result = graph.run(request="Build a web scraper", lm=lm)
 
     # Async API (when already in an event loop)
-    result = await graph.arun(AnalyzeRequest(request="Build a web scraper"), lm=lm)
+    result = await graph.arun(request="Build a web scraper", lm=lm)
     ```
 
     The graph topology is discovered by walking return type hints from the start node.
@@ -156,10 +158,30 @@ class Graph:
 
         Args:
             start: The starting node type.
+
+        Raises:
+            TypeError: If start node has Recall fields or invalid deps.
         """
         self.start = start
         self._nodes: dict[type[Node], set[type[Node]]] = {}
         self._discover()
+        self._validate_start()
+
+    def _validate_start(self) -> None:
+        """Validate start node and compute input field schema."""
+        errors = validate_node_deps(self.start, is_start=True)
+        if errors:
+            raise TypeError(f"{self.start.__name__}: {'; '.join(errors)}")
+
+        fields = classify_fields(self.start)
+        model_fields = self.start.model_fields
+
+        self._input_fields: dict[str, FieldInfo] = {}
+        for name, kind in fields.items():
+            if kind == "plain" and name in model_fields:
+                fi = model_fields[name]
+                if fi.is_required():
+                    self._input_fields[name] = fi
 
     def _discover(self) -> None:
         """Discover all nodes reachable from start via type hints."""
@@ -224,74 +246,82 @@ class Graph:
 
         return issues
 
-    def run(
-        self,
-        start_node: Node,
-        lm: LM | None = None,
-        max_iters: int = 10,
-    ) -> GraphResult:
+    def run(self, *, lm: LM | None = None, max_iters: int = 10, **kwargs) -> GraphResult:
         """Execute the graph synchronously.
 
         Convenience wrapper around arun(). Cannot be called from within
         a running event loop (raises RuntimeError).
 
         Args:
-            start_node: Initial node instance with fields populated.
             lm: Language model backend for producing nodes.
             max_iters: Maximum iterations (0 = infinite). Default 10.
+            **kwargs: Input fields for the start node.
 
         Returns:
             GraphResult with trace of visited nodes.
 
         Raises:
+            TypeError: If required start node fields are missing.
             BaeError: If max_iters exceeded.
             DepError: If a dependency function fails.
             RecallError: If recall finds no matching field in trace.
         """
-        return asyncio.run(self.arun(start_node, lm=lm, max_iters=max_iters))
+        return asyncio.run(self.arun(lm=lm, max_iters=max_iters, **kwargs))
 
     async def arun(
         self,
-        start_node: Node,
+        *,
         lm: LM | None = None,
         max_iters: int = 10,
+        dep_cache: dict | None = None,
+        **kwargs,
     ) -> GraphResult:
         """Execute the graph asynchronously.
 
         Use when already in an event loop. For sync callers, use run().
 
-        Uses v2 execution loop:
-        1. resolve_fields() resolves Dep and Recall fields on each node
-        2. Resolved values set on self via object.__setattr__
-        3. Routing via _get_routing_strategy:
-           - Terminal: exit loop
-           - Custom __call__: invoke directly (LM passed if _wants_lm)
-           - Ellipsis body: route via lm.choose_type/fill (v2 LM API)
-
         Args:
-            start_node: Initial node instance with fields populated.
             lm: Language model backend for producing nodes.
             max_iters: Maximum iterations (0 = infinite). Default 10.
+            dep_cache: Pre-seeded resolver cache entries. Keys are dep
+                functions, values are their cached results. Entries bypass
+                dep function calls entirely.
+            **kwargs: Input fields for the start node.
 
         Returns:
             GraphResult with trace of visited nodes.
 
         Raises:
+            TypeError: If required start node fields are missing.
             BaeError: If max_iters exceeded.
             DepError: If a dependency function fails.
             RecallError: If recall finds no matching field in trace.
         """
+        missing = set(self._input_fields) - set(kwargs)
+        if missing:
+            raise TypeError(
+                f"{self.start.__name__} requires: {', '.join(sorted(missing))}"
+            )
+
+        start_node = self.start.model_construct(
+            _fields_set=set(kwargs.keys()), **kwargs
+        )
+
         if lm is None:
             from bae.lm import ClaudeCLIBackend
 
             lm = ClaudeCLIBackend()
 
         trace: list[Node] = []
-        dep_cache: dict = {LM_KEY: lm}
+        cache: dict = {LM_KEY: lm}
+        if dep_cache is not None:
+            cache.update(dep_cache)
         current: Node | None = start_node
         iters = 0
 
         while current is not None:
+            await asyncio.sleep(0)  # yield to event loop
+
             # Iteration guard
             if max_iters and iters >= max_iters:
                 err = BaeError(f"Graph execution exceeded {max_iters} iterations")
@@ -300,7 +330,7 @@ class Graph:
 
             # 1. Resolve deps and recalls
             try:
-                resolved = await resolve_fields(current.__class__, trace, dep_cache)
+                resolved = await resolve_fields(current.__class__, trace, cache)
             except RecallError:
                 raise  # Already correct type
             except Exception as e:
@@ -353,7 +383,7 @@ class Graph:
                     }
                     if unfilled:
                         target_resolved = await resolve_fields(
-                            current.__class__, trace, dep_cache
+                            current.__class__, trace, cache
                         )
                         for name in plain & (current.model_fields_set or set()):
                             target_resolved[name] = getattr(current, name)
@@ -389,7 +419,7 @@ class Graph:
                     continue
 
                 # Resolve target's dep/recall fields before fill
-                target_resolved = await resolve_fields(target_type, trace, dep_cache)
+                target_resolved = await resolve_fields(target_type, trace, cache)
                 instruction = _build_instruction(target_type)
                 current = await lm.fill(
                     target_type, target_resolved, instruction, source=current
