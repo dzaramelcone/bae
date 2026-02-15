@@ -177,12 +177,13 @@ Plans:
 
 ### Phase 30: Agent Core Extraction
 
-**Goal:** [To be planned]
+**Goal:** Extract eval loop from REPL AI into shared agent core; build AgenticBackend for tool-augmented fill()
 **Depends on:** Phase 29
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 30 to break down)
+- [ ] 30-01-PLAN.md -- Create bae/agent.py with extract_executable, agent_loop, namespace, CLI send (TDD)
+- [ ] 30-02-PLAN.md -- Refactor AI to use agent core, build AgenticBackend, export + tests
 
 ---
-*Last updated: 2026-02-15 after v6.0 roadmap creation*
+*Last updated: 2026-02-15 after Phase 30 planning*
