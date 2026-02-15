@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 25-views-completion
 source: [25-01-SUMMARY.md, 25-02-SUMMARY.md]
 started: 2026-02-14T23:58:00Z
-updated: 2026-02-15T00:08:00Z
+updated: 2026-02-15T00:12:00Z
 ---
 
 ## Current Test
@@ -53,5 +53,12 @@ skipped: 0
   reason: "User reported: Tool call translations (R: tags) dump entire file contents as [py] channel lines — very spammy. Should show something like 'read (some file)' instead of the full file contents."
   severity: major
   test: 4
-  artifacts: []
-  missing: []
+  root_cause: "Eval loop (ai.py:124-133) writes full tool output to py channel. _exec_read() returns full file contents. UserView has no tool_result summarization — falls through to _render_prefixed() which prints every line."
+  artifacts:
+    - path: "bae/repl/ai.py"
+      issue: "run_tool_calls output written to py channel unsummarized (lines 124-133, 286-294)"
+    - path: "bae/repl/views.py"
+      issue: "UserView has no special handling for tool_result metadata type"
+  missing:
+    - "Write summarized output to py channel for user display (e.g., 'read bae/repl/ai.py (513 lines)') while keeping full output for AI feedback"
+  debug_session: ""
