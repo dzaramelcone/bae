@@ -66,6 +66,16 @@ class UserView:
             self._pending_meta = None
             return
 
+        if content_type == "tool_translated":
+            summary = meta.get("tool_summary", content)
+            text = FormattedText([
+                (f"{color} bold", f"[{channel_name}]"),
+                ("", " "),
+                ("fg:#808080 italic", summary),
+            ])
+            print_formatted_text(text)
+            return
+
         self._render_prefixed(channel_name, color, content, meta)
 
     def _render_grouped_panel(self, code, output, meta):

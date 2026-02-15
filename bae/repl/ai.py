@@ -125,11 +125,10 @@ class AI:
             if tool_results:
                 all_outputs = []
                 for tag, output in tool_results:
+                    summary = _tool_summary(tag, output)
                     self._router.write("py", tag, mode="PY",
-                        metadata={"type": "tool_translated", "label": self._label})
-                    if output:
-                        self._router.write("py", output, mode="PY",
-                            metadata={"type": "tool_result", "label": self._label})
+                        metadata={"type": "tool_translated", "label": self._label,
+                                  "tool_summary": summary})
                     all_outputs.append(output)
 
                 combined = "\n---\n".join(all_outputs)
@@ -374,6 +373,35 @@ _TOOL_EXEC = {
     "G": _exec_glob,
     "Grep": _exec_grep,
 }
+
+
+def _tool_summary(tag: str, output: str) -> str:
+    """Human-readable one-liner summarizing a tool call result.
+
+    Parses the tag format <TYPE:arg> to determine tool kind,
+    then generates a concise summary (read/glob/grep get counts,
+    write/edit pass output through as-is).
+    """
+    # Extract TYPE and arg from <TYPE:arg>
+    m = re.match(r"<(\w+):(.+?)>", tag.strip())
+    if not m:
+        return output
+    tool_type = _TOOL_NAMES.get(m.group(1).lower(), m.group(1))
+    arg = m.group(2).strip()
+
+    if tool_type == "R":
+        n = output.count("\n") + 1 if output else 0
+        return f"read {arg} ({n} lines)"
+    if tool_type == "G":
+        lines = output.splitlines()
+        n = len(lines) if output and output != "(no matches)" else 0
+        return f"glob {arg} ({n} matches)"
+    if tool_type == "Grep":
+        lines = output.splitlines()
+        n = len(lines) if output and output != "(no matches)" else 0
+        return f"grep {arg} ({n} matches)"
+    # W and E: output is already concise (e.g. "Wrote 42 chars to foo.py")
+    return output
 
 
 def run_tool_calls(text: str) -> list[tuple[str, str]]:

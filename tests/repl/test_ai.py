@@ -741,7 +741,7 @@ class TestEvalLoopToolCalls:
 
     @pytest.mark.asyncio
     async def test_tool_call_metadata_type(self, eval_ai):
-        """Router writes use tool_translated and tool_result metadata types."""
+        """Router writes tool_translated with tool_summary, no separate tool_result."""
         eval_ai._send.side_effect = ["<R:foo.py>", "Done."]
         with patch("bae.repl.ai.run_tool_calls") as mock_run:
             mock_run.side_effect = [[("<R:foo.py>", "output")], []]
@@ -750,9 +750,10 @@ class TestEvalLoopToolCalls:
             c for c in eval_ai._router.write.call_args_list
             if c[0][0] == "py"
         ]
-        assert len(py_writes) == 2
-        assert py_writes[0].kwargs["metadata"]["type"] == "tool_translated"
-        assert py_writes[1].kwargs["metadata"]["type"] == "tool_result"
+        assert len(py_writes) == 1
+        meta = py_writes[0].kwargs["metadata"]
+        assert meta["type"] == "tool_translated"
+        assert "tool_summary" in meta
 
     @pytest.mark.asyncio
     async def test_tool_call_before_run_block(self, eval_ai):
