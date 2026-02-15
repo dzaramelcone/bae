@@ -6,7 +6,7 @@
 - v2.0 Context Frames — Phases 5-10 (shipped 2026-02-08)
 - v3.0 Async Graphs — Phases 11-13 (shipped 2026-02-13)
 - v4.0 Cortex — Phases 14-20 (shipped 2026-02-14)
-- v5.0 Stream Views — Phases 21-25 (in progress)
+- v5.0 Stream Views — Phases 21-25 (shipped 2026-02-14)
 
 ## Phases
 
@@ -62,7 +62,7 @@
 - [x] **Phase 22: Tool Call Translation** - Detect and translate AI tool call patterns to Python equivalents
 - [x] **Phase 23: View Framework** - ViewFormatter protocol with channel delegation
 - [x] **Phase 24: Execution Display** - UserView with Rich Panel framing, code+output grouping, deduplication
-- [ ] **Phase 25: Views Completion** - DebugView, AI self-view, and runtime view toggling
+- [x] **Phase 25: Views Completion** - DebugView, AI self-view, and runtime view toggling
 
 ## Phase Details
 
@@ -169,7 +169,7 @@ Phases 21 and 23 are parallel-safe (no dependencies between them). Phase 22 foll
 | 22. Tool Call Translation | v5.0 | 2/2 | Complete | 2026-02-14 |
 | 23. View Framework | v5.0 | 1/1 | Complete | 2026-02-14 |
 | 24. Execution Display | v5.0 | 1/1 | Complete | 2026-02-14 |
-| 25. Views Completion | v5.0 | 0/2 | Planned | - |
+| 25. Views Completion | v5.0 | 2/2 | Complete | 2026-02-14 |
 
 ---
-*Last updated: 2026-02-14 after Phase 24 execution complete*
+*Last updated: 2026-02-14 after Phase 25 execution complete*

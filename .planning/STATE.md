@@ -14,7 +14,7 @@ Plan: 2 of 2 in Phase 25 (complete)
 Status: Phase 25 complete (all view infrastructure wired into REPL)
 Last activity: 2026-02-14 — Plan 25-02 complete (shell view wiring + toolbar + keybinding)
 
-Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 [█████████] 83%
+Progress: v1.0 done | v2.0 done | v3.0 done | v4.0 done | v5.0 [██████████] 100%
 
 ## Performance Metrics
 
