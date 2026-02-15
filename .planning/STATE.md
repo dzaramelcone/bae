@@ -29,6 +29,7 @@ Progress: v1-v5 done | v6.0 [#.........] 5%
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | 30-01 | Agent Core | 2min | 1 | 2 |
+| 26-01 | dep_cache + hardening | 3min | 1 | 3 |
 
 ## Accumulated Context
 
@@ -38,6 +39,9 @@ See PROJECT.md Key Decisions table for full history.
 
 - 30-01: Agent core as module-level functions, not class -- stateless per invocation
 - 30-01: _cli_send takes session_id/call_count as params -- caller owns session state
+- 26-01: Internal dep_cache variable renamed to cache to avoid parameter shadowing
+- 26-01: CancelledError handled separately from TimeoutError (re-raises directly)
+- 26-01: await process.wait() added after process.kill() for both error paths in _run_cli_json
 
 ### Pending Todos
 
@@ -64,6 +68,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 30-01-PLAN.md, ready for 30-02
+Stopped at: Completed 26-01-PLAN.md, ready for 26-02
 Branch: main
 Resume file: None
