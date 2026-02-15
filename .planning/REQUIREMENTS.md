@@ -80,37 +80,37 @@ Requirements for v6.0 Graph Runtime. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ENG-01 | — | Pending |
-| ENG-02 | — | Pending |
-| ENG-03 | — | Pending |
-| ENG-04 | — | Pending |
-| ENG-05 | — | Pending |
-| MODE-01 | — | Pending |
-| MODE-02 | — | Pending |
-| MODE-03 | — | Pending |
-| MODE-04 | — | Pending |
-| MODE-05 | — | Pending |
-| MODE-06 | — | Pending |
-| GATE-01 | — | Pending |
-| GATE-02 | — | Pending |
-| GATE-03 | — | Pending |
-| GATE-04 | — | Pending |
-| GATE-05 | — | Pending |
-| OBS-01 | — | Pending |
-| OBS-02 | — | Pending |
-| OBS-03 | — | Pending |
-| OBS-04 | — | Pending |
-| OBS-05 | — | Pending |
-| OBS-06 | — | Pending |
-| INT-01 | — | Pending |
-| INT-02 | — | Pending |
-| INT-03 | — | Pending |
+| ENG-01 | Phase 26 | Pending |
+| ENG-02 | Phase 26 | Pending |
+| ENG-03 | Phase 26 | Pending |
+| ENG-04 | Phase 26 | Pending |
+| ENG-05 | Phase 26 | Pending |
+| MODE-01 | Phase 27 | Pending |
+| MODE-02 | Phase 27 | Pending |
+| MODE-03 | Phase 27 | Pending |
+| MODE-04 | Phase 27 | Pending |
+| MODE-05 | Phase 27 | Pending |
+| MODE-06 | Phase 28 | Pending |
+| GATE-01 | Phase 28 | Pending |
+| GATE-02 | Phase 28 | Pending |
+| GATE-03 | Phase 28 | Pending |
+| GATE-04 | Phase 28 | Pending |
+| GATE-05 | Phase 28 | Pending |
+| OBS-01 | Phase 29 | Pending |
+| OBS-02 | Phase 29 | Pending |
+| OBS-03 | Phase 29 | Pending |
+| OBS-04 | Phase 29 | Pending |
+| OBS-05 | Phase 29 | Pending |
+| OBS-06 | Phase 29 | Pending |
+| INT-01 | Phase 26 | Pending |
+| INT-02 | Phase 29 | Pending |
+| INT-03 | Phase 29 | Pending |
 
 **Coverage:**
 - v6.0 requirements: 25 total
-- Mapped to phases: 0
-- Unmapped: 25
+- Mapped to phases: 25
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after initial definition*
+*Last updated: 2026-02-15 after roadmap creation -- all requirements mapped to phases*
