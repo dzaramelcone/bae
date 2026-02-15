@@ -1,5 +1,33 @@
 # Project Milestones: Bae
 
+## v5.0 Stream Views (Shipped: 2026-02-14)
+
+**Delivered:** Multi-view stream framework with tool call translation and execution display overhaul -- `<run>` convention for executable code, native tool call interception, three pluggable view formatters with runtime cycling.
+
+**Phases completed:** 21-25 (5 phases, 9 plans)
+
+**Key accomplishments:**
+- `<run>` execution convention with 100% compliance across all Claude tiers -- clean separation of executable from illustrative code
+- Tool call translation pipeline: 5 tool types (R, W, E, G, Grep) detected, executed natively, with concise display summaries
+- ViewFormatter protocol enabling pluggable channel display via strategy pattern
+- UserView with Rich Panel execution display -- buffered code+output grouping, syntax highlighting, deduplication
+- Three-view system (UserView, DebugView, AISelfView) with Ctrl+V runtime cycling and toolbar indicator
+- Response display stripping of executable markup -- no `<run>` block or tool tag duplication
+
+**Stats:**
+- 44 files modified
+- 6,436 lines of Python (bae/repl/ + tests/repl/)
+- 5 phases, 9 plans, ~50 commits
+- 1 day (2026-02-14)
+
+**Git range:** `feat(21-01)` -> `fix(25)`
+
+**Tech debt accepted:**
+- AIHR-01 deferred (no-tools constraint fewshot -- tool interception approach proved more effective)
+- tests/traces/json_structured_fill_reference.py drift
+
+---
+
 ## v3.0 Async Graphs (Shipped: 2026-02-13)
 
 **Delivered:** Full async interface with parallel dep resolution — all three LM backends native async, asyncio.gather() for independent deps, sync/async callable mixing, nested model preservation in fill().
