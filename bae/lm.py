@@ -360,8 +360,16 @@ class AgenticBackend:
             call_count += 1
             return result
 
+        plain_model = _build_plain_model(target)
+        schema = transform_schema(plain_model)
+
         prompt = _build_fill_prompt(target, resolved, instruction, source)
-        prompt += "\n\nUse Python in <run> tags to research and gather information, then provide your answer."
+        import json
+
+        prompt += (
+            f"\n\nTarget schema:\n{json.dumps(schema, indent=2)}"
+            "\n\nUse Python in <run> tags to research and gather information, then provide your answer."
+        )
 
         namespace = _agent_namespace()
 
@@ -371,8 +379,6 @@ class AgenticBackend:
         )
 
         # Phase 2: Structured extraction
-        plain_model = _build_plain_model(target)
-        schema = transform_schema(plain_model)
         extraction_prompt = (
             f"Based on your research:\n\n{final_response}\n\n"
             f"Extract the structured data for: {instruction}"
