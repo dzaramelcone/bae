@@ -137,7 +137,7 @@ Plans:
 Plans:
 - [x] 25-01-PLAN.md -- DebugView + AISelfView formatters, ViewMode enum, VIEW_FORMATTERS dict
 - [x] 25-02-PLAN.md -- Shell wiring: _set_view, Ctrl+V keybinding, toolbar view widget
-- [ ] 25-03-PLAN.md -- Gap closure: summarize tool call display in UserView
+- [x] 25-03-PLAN.md -- Gap closure: summarize tool call display in UserView
 
 ## Progress
 
@@ -170,7 +170,7 @@ Phases 21 and 23 are parallel-safe (no dependencies between them). Phase 22 foll
 | 22. Tool Call Translation | v5.0 | 2/2 | Complete | 2026-02-14 |
 | 23. View Framework | v5.0 | 1/1 | Complete | 2026-02-14 |
 | 24. Execution Display | v5.0 | 1/1 | Complete | 2026-02-14 |
-| 25. Views Completion | v5.0 | 2/3 | UAT gap closure | 2026-02-14 |
+| 25. Views Completion | v5.0 | 3/3 | Complete | 2026-02-14 |
 
 ---
-*Last updated: 2026-02-15 after Phase 25 gap closure plan created*
+*Last updated: 2026-02-15 after Phase 25 gap closure complete*
