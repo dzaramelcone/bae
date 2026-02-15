@@ -114,13 +114,12 @@ async def save_project_roadmap(node) -> None:
 class AgreeOnProblem(Node):
     """User states what they want to build and what problem they're dealing with."""
 
-    description: str
     prompt: PromptDep
     stated_problem: str = ""
 
     async def __call__(self) -> ExamineProblem:
         result = await self.prompt.ask(
-            f"You want to: {self.description}\n\n"
+            "You want to build something.\n\n"
             "What is the actual problem you're dealing with?\n"
             "Not the solution you have in mind — the problem itself."
         )
@@ -253,7 +252,9 @@ class ReviewRoadmap(Node):
     roadmap: Annotated[AssembleRoadmap, Recall()]
     prompt: PromptDep
 
-    async def __call__(self) -> Annotated[CommitRoadmap, Effect(save_project_roadmap)] | IdentifyTopics:
+    async def __call__(
+        self,
+    ) -> Annotated[CommitRoadmap, Effect(save_project_roadmap)] | IdentifyTopics:
         if await self.prompt.confirm("Approve roadmap?"):
             return CommitRoadmap.model_construct()
         return IdentifyTopics.model_construct()

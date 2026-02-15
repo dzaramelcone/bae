@@ -248,5 +248,8 @@ class RecommendOOTD(Node):
 graph = Graph(start=IsTheUserGettingDressed)
 
 if __name__ == "__main__":
-    result = graph.run(IsTheUserGettingDressed(user_message="ugh i just got up"))
+    result = graph.run(
+        user_info=UserInfo(),
+        user_message="ugh i just got up",
+    )
     print(result.trace[-1].model_dump_json(indent=2))
