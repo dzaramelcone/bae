@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-15)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v6.0 Graph Runtime -- Phase 26 Engine Foundation
+**Current focus:** v6.0 Graph Runtime -- Phase 30 Agent Core Extraction
 
 ## Current Position
 
-Phase: 26 of 29 (Engine Foundation)
-Plan: --
-Status: Ready to plan
-Last activity: 2026-02-15 -- v6.0 roadmap created (4 phases, 25 requirements)
+Phase: 30 (Agent Core Extraction)
+Plan: 01 of 02 complete
+Status: Plan 30-01 complete, ready for 30-02
+Last activity: 2026-02-15 -- 30-01 agent core extracted
 
-Progress: v1-v5 done | v6.0 [..........] 0%
+Progress: v1-v5 done | v6.0 [#.........] 5%
 
 ## Performance Metrics
 
@@ -26,11 +26,18 @@ Progress: v1-v5 done | v6.0 [..........] 0%
 - v4.0 duration: 2 days (2026-02-13 -> 2026-02-14)
 - v5.0 duration: 1 day (2026-02-14)
 
+| Phase | Plan | Duration | Tasks | Files |
+|-------|------|----------|-------|-------|
+| 30-01 | Agent Core | 2min | 1 | 2 |
+
 ## Accumulated Context
 
 ### Decisions
 
 See PROJECT.md Key Decisions table for full history.
+
+- 30-01: Agent core as module-level functions, not class -- stateless per invocation
+- 30-01: _cli_send takes session_id/call_count as params -- caller owns session state
 
 ### Pending Todos
 
@@ -43,6 +50,10 @@ See PROJECT.md Key Decisions table for full history.
 
 None.
 
+### Roadmap Evolution
+
+- Phase 30 added: Agent Core Extraction
+
 ### Research Notes (v6.0)
 
 - Phase 28 (Input Gates) flagged for deeper research: Future-based prompt + dep_cache injection + concurrent routing
@@ -53,6 +64,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: v6.0 roadmap created, ready to plan Phase 26
+Stopped at: Completed 30-01-PLAN.md, ready for 30-02
 Branch: main
 Resume file: None
