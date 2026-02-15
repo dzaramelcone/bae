@@ -52,6 +52,8 @@ Recent context for v5.0:
 - AI streaming/progressive display for NL responses
 - Session store: conversation indexing agent — partitions large contexts by topic with short summaries + tags, organized as a B-tree (recursive if needed). Prior session info no longer auto-included; replaced by a labeled REMEMBER object showing recent summaries with tags and partition references.
 - AI agent doesn't see user's REPL I/O (typed commands, stdout) -- needs feedback channel from eval loop to AI context
+- AI self-view: bash tags not mapped to [tool-call], Read tag duplicated across [ai-output] and [tool-call], tool output echoed in AI response
+- UserView execution display: raw [ai:1] lines leak <run> block before Rich panel, execution output above panel not grouped below, code duplicated
 
 ### Blockers/Concerns
 
