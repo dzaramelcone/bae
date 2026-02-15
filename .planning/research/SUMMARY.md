@@ -1,274 +1,230 @@
 # Project Research Summary
 
-**Project:** Bae v5.0 -- Multi-view stream framework, AI prompt hardening, tool call interception, execution display framing
-**Domain:** REPL enhancement — multi-view display system with AI behavioral guardrails
-**Researched:** 2026-02-14
+**Project:** Cortex v6.0 Graph Runtime
+**Domain:** Concurrent graph execution engine with human-in-the-loop gates integrated in async REPL
+**Researched:** 2026-02-15
 **Confidence:** HIGH
 
 ## Executive Summary
 
-v5.0 addresses critical v4.0 defects while introducing a multi-view display framework that transforms how channel data is consumed. The core problem: AI hallucinates tool-use XML despite CLI-level tool restrictions, and execution output appears redundant/unprofessional. The solution requires no new dependencies — every capability exists in the current stack (Rich 14.3.2, prompt_toolkit 3.0.52, Python stdlib).
+Cortex v6.0 adds concurrent graph execution to the REPL, allowing 10+ graphs to run simultaneously with human input gates, observability, and lifecycle management. The research demonstrates this entire milestone can be built using Python 3.14 stdlib plus existing dependencies (Rich, prompt-toolkit, Pydantic). Zero new packages required. Two new stdlib APIs in Python 3.14 (`asyncio.capture_call_graph` and `asyncio.format_call_graph`) provide purpose-built observability for async task relationships.
 
-The recommended approach layers three independent improvements: (1) prompt hardening with fewshot rejection examples to train the AI away from tool-use patterns, (2) tool call interception to catch and correct XML hallucinations that slip through, and (3) a view formatter framework that separates channel data from presentation, enabling Rich Panel framing for execution displays while preserving raw access for debugging. These work together but ship independently — prompt hardening fixes the most visible defect, view framework enables polished display.
+The recommended approach uses asyncio.TaskGroup for structured concurrency, asyncio.Future for input gate suspension, and a registry pattern to track running graphs (analogous to existing `_ai_sessions`). Each graph gets its own CortexPrompt implementation that suspends execution via Future instead of blocking on stdin. The graph engine wraps `Graph.arun()` but does NOT modify it — integration happens through dep_cache injection and channel routing, keeping the framework layer clean.
 
-Key risks center on over-constraining the AI prompt (which killed helpful behaviors in early v4.0) and breaking the existing Rich-to-prompt_toolkit ANSI bridge (which would corrupt terminal display). Both are mitigated through empirical testing against existing UAT cases and strict adherence to the StringIO capture pattern already proven in production.
+The critical risk is **input gate deadlock**: graphs using `TerminalPrompt.ask()` will compete with prompt_toolkit for stdin, freezing the REPL. Prevention requires a Future-based CortexPrompt that routes through the channel system rather than calling `input()`. Secondary risks include subprocess orphans from cancelled LM calls, channel flooding from concurrent output, and memory leaks from retained graph traces. All have clear mitigation strategies based on existing cortex patterns.
 
 ## Key Findings
 
 ### Recommended Stack
 
-**Verdict: Zero new dependencies.** Every v5.0 capability is provided by installed packages or stdlib modules. The work is architecture and prompt engineering, not procurement.
+Zero new dependencies. The entire milestone uses Python 3.14 stdlib + existing packages: Rich 14.3.2, prompt-toolkit 3.0.52, Pydantic 2.12.5.
 
 **Core technologies:**
-- **Rich 14.3.2**: Provides Panel, Syntax, Group, Rule for framed displays — already installed, tested locally, API stable since Rich 10+
-- **prompt_toolkit 3.0.52**: REPL and patch_stdout integration already proven in channels.py render_markdown() — same ANSI bridge pattern extends to Panel/Syntax
-- **re (stdlib)**: Tool call XML detection via 4 known patterns (`<function_calls>`, `<tool_use>`, `<invoke>`, `<`) — false positive tested against legitimate code
-- **typing.Protocol (stdlib)**: ViewFormatter interface for pluggable display strategies — no coupling to base classes
-- **ai_prompt.md (text)**: Fewshot examples documented by Anthropic multishot guide — 3-5 examples dramatically improve constraint compliance
+- **asyncio.TaskGroup** (stdlib): Structured concurrency for multiple graph runs — cancels siblings on failure, preventing runaway LM calls when one graph errors
+- **asyncio.Future** (stdlib): Input gate suspension — graph awaits Future, user responds via GRAPH mode, Future resolves with response text
+- **asyncio.Semaphore** (stdlib): Throttle concurrent LM calls across all graphs to prevent API saturation
+- **asyncio.capture_call_graph** (NEW in 3.14): Debug stuck graphs by showing which tasks await which, zero instrumentation needed
+- **dataclasses + time.perf_counter_ns** (stdlib): Metrics collection for per-node timing, LM call counts, dep resolution durations
+- **Rich Table + Console(file=StringIO())** (existing dep): Render metrics as ANSI via existing ViewFormatter protocol
 
-**Critical constraint:** All Rich rendering MUST go through `Console(file=StringIO(), force_terminal=True)` then `print_formatted_text(ANSI(...))`. Direct Console.print() to stdout bypasses patch_stdout and corrupts the REPL prompt. This pattern exists in production (channels.py:30-40) and must be preserved.
+**Key integration points:**
+- TaskManager.submit() wraps each graph run — existing Ctrl-C menu shows graphs alongside AI/PY/BASH tasks
+- ChannelRouter writes graph events to `[graph]` channel with typed metadata — persists to SessionStore automatically
+- ViewFormatter protocol renders events — UserView shows summaries, DebugView shows full metadata, no new view types needed initially
+- Toolbar gets `make_graphs_widget()` showing active count + pending input badge
 
 ### Expected Features
 
-Research structured features into table stakes (fix defects), differentiators (transform experience), and anti-features (explicitly avoid).
-
 **Must have (table stakes):**
-- **AI prompt hardening** — v4.0 UAT-2 test 2 FAILED: AI generates fake tool_use XML with fabricated results. Users see hallucinated tool calls instead of Python code. Explicit "no tools" constraint + fewshot rejection examples address this.
-- **Tool call interception** — Even with prompt hardening, occasional XML slips through. Interception catches it, feeds corrective feedback, AI self-corrects. Regex on known patterns inserted between _send() and extract_code().
-- **Deduplicated execution display** — v4.0 UAT-2 test 5: code appears in AI markdown AND [py] channel output, 2-3x duplication. Rich Panel frames with syntax highlighting replace redundant [py] lines.
+- **Graph Registry with lifecycle management** — track 10+ concurrent graph instances by ID, states (RUNNING/WAITING/DONE/FAILED/CANCELLED), start time, current node
+- **GRAPH mode as management hub** — commands for `/run`, `/graphs`, `/kill`, `/trace`, with input routing to pending gates
+- **Pending input system** — asyncio.Future-based suspension when graph needs user response, toolbar badge shows waiting count, notification via `[graph]` channel
+- **Graph I/O through channels** — structured events (`node_transition`, `dep_resolved`, `input_requested`, `result`, `error`) flow through existing view system
+- **Graphs as managed tasks** — integrate with TaskManager for Ctrl-C menu, graceful shutdown, task tracking
 
 **Should have (competitive):**
-- **Multi-view stream framework** — Same channel data, different formatters for different consumers. User sees Rich Panels, AI gets structured feedback, debug shows raw data, cross-session gets store records. Conceptual leap from "channels as display" to "channels as data bus with pluggable views."
-- **Framed code + output panels** — AI code blocks render in Panel with syntax highlighting and title ("ai:1 code"). Output in separate panel below ("output"). Visually groups execution context. Professional appearance replacing flat prefixed lines.
-- **View mode cycling** — Ctrl+V toggles UserView (rich), DebugView (raw+meta), RawView (unformatted), AISelfView (what AI sees). Debug invaluable for understanding AI perspective vs user perspective.
+- **Graph debug views** — inline observability without external tools (LangGraph requires LangSmith/Langfuse) — show node timings, dep durations, LM call times, validation errors
+- **Inspect command** — Rich Table showing full trace of running/completed graph with timing and field values
+- **Input schema display** — pending gates show field name, type, description from Pydantic so user knows what to provide
+- **Cross-mode input shortcut** — `@g1 yes` routes input to graph 1 from any mode, reducing friction
 
-**Defer (anti-features for v5.0):**
-- **Streaming display** — Claude CLI with `--output-format text` returns complete responses. Streaming requires Anthropic API directly (key management, conversation state). Separate milestone.
-- **AI bash dispatch** — Security surface. AI execution sandboxed to Python REPL namespace. Bash requires permission prompts, allowlisting, process isolation.
-- **Custom view plugins** — YAGNI. Three built-in views (user, debug, AI-self) cover all known use cases. Python is the extension system.
+**Defer (v2+):**
+- **State snapshots/checkpointing** — LangGraph feature for resuming graphs after process restart. Bae graphs are short-lived (seconds to minutes). YAGNI.
+- **Distributed execution** — architecture must not preclude it (keep Graph.arun() as clean coroutine) but don't build Celery/Redis layer now
+- **Visual DAG rendering** — Mermaid diagrams exist for static viz, ASCII art in terminal is awkward
+- **Auto-retry on validation errors** — defer to DSPy optimization work, don't build retry loops that hide errors
+- **Token-level streaming** — requires API client migration, separate milestone
+- **Graph-to-graph orchestration** — users compose via custom `__call__` nodes, Python is the orchestration layer
 
 ### Architecture Approach
 
-v5.0 extends the existing Channel/ChannelRouter display pipeline with a ViewFormatter strategy pattern. Currently Channel.write() -> Channel._display() directly renders via print_formatted_text. The view framework inserts a formatter layer: Channel.write() -> Channel._display() -> formatter.render(). The formatter is swappable at runtime, enabling view mode toggling without changing channel identity or breaking references held by router/store/namespace.
+The graph runtime is NOT a new subsystem — it adapts `Graph.arun()` to cortex via four new components: GraphRegistry (tracks definitions and running instances), CortexPrompt (Future-based Prompt implementation), GraphRunner (wraps single execution with channel integration), and toolbar badge. Integration uses existing primitives: dep_cache injection routes CortexPrompt to all nodes without modifying Node or Graph, TaskManager handles lifecycle, ChannelRouter displays events.
 
 **Major components:**
+1. **GraphRegistry** (`bae/repl/graphs.py`, NEW) — tracks running graphs by ID, multiplexes input routing, provides `/run`, `/graphs`, `/kill`, `/trace` commands
+2. **CortexPrompt** (`bae/repl/graphs.py`, NEW) — implements Prompt protocol using asyncio.Future instead of stdin, writes notifications to `[graph]` channel, suspends graph until user responds
+3. **GraphRunner** (`bae/repl/graphs.py`, NEW) — wraps `Graph.arun()` with dep_cache injection (maps `get_prompt` -> CortexPrompt), captures result/error, routes terminal node repr through channel
+4. **Graph mode dispatch** (`shell.py`, MODIFIED) — `/commands` for management, `@gid response` for targeted input routing, bare text routes to only pending graph
+5. **Toolbar pending widget** (`toolbar.py`, MODIFIED) — shows `[N pending]` badge when any graph waits for input, visible in all modes
 
-1. **ViewFormatter protocol (views.py)** — Strategy interface with render(channel_name, color, content, metadata). Channel delegates _display() to formatter when set, falls back to existing logic when None (backward compatible, zero test failures).
+**Modified files (minimal surface):**
+- `bae/graph.py`: Add `dep_cache` param to `arun()` (additive, backward compatible)
+- `bae/repl/shell.py`: Replace `_run_graph` stub, add GraphRegistry to `__init__`, add pending widget
+- `bae/repl/toolbar.py`: Add `make_pending_widget()`
+- `bae/repl/views.py`: Add `input_gate` rendering in UserView
 
-2. **Concrete formatters (UserView, DebugView, RawView, AISelfView)** — Each receives same channel data, renders differently. UserView uses Rich Panel/Syntax for framed execution display. DebugView shows raw content + full metadata. All use _rich_to_ansi() helper enforcing StringIO capture pattern.
-
-3. **Tool call classification (classify_response in ai.py)** — Pure function analyzing AI responses for "tool patterns" (code blocks, namespace inspection, store queries, imports). Returns dataclass with text, tools list, code blocks. Inserted between _send() and extract_code(). Metadata-driven rendering uses tool list to decide framing style.
-
-4. **AI prompt hardening (ai_prompt.md)** — Adds explicit no-tools constraint and fewshot rejection example. Current prompt says nothing about tools; Claude CLI internal prompt includes tool instructions. Model fine-tuned on tool-use patterns produces them without explicit counterpressure. Fewshot teaches by example: attempted tool call -> rejection -> correct Python code.
-
-5. **View mode state (shell.py)** — CortexShell gains view_mode field, Ctrl+V keybinding cycles views. On cycle, update formatter on each channel. Toolbar shows active view. Simple dict mapping ViewMode enum to formatter instances.
+**Unchanged files:** `bae/node.py`, `bae/resolver.py`, `bae/markers.py`, `bae/result.py`, `bae/lm.py`, `bae/work/prompt.py`, `bae/work/new_project.py`, `bae/repl/channels.py`, `bae/repl/tasks.py`, `bae/repl/store.py`
 
 ### Critical Pitfalls
 
-Research identified 12 pitfalls across critical/moderate/minor severity. Top 5 that would cause rewrites or major regressions:
+1. **Input gate deadlock** — graphs calling `TerminalPrompt.ask()` compete with prompt_toolkit for stdin, freezing REPL. **Mitigation:** CortexPrompt creates asyncio.Future, writes notification to `[graph]` channel, awaits Future (graph suspends), user responds via GRAPH mode, Future resolves. Never call `input()` from background tasks.
 
-1. **ANSI escape contamination in nested Rich rendering** — Wrapping pre-rendered ANSI strings in Rich Panel breaks box-drawing width calculations. Panel must wrap Markdown OBJECT in renderable tree, not ANSI string output. Single render pass with composed renderables (`Panel(Markdown(text))`), never two passes.
+2. **Subprocess orphans on cancellation** — cancelling graph task doesn't kill Claude CLI subprocesses from LM calls. **Mitigation:** Wrap `process.communicate()` with `try/except CancelledError: process.kill(); await process.wait(); raise`. Track processes per graph in registry for bulk cleanup.
 
-2. **Over-constraining AI prompt kills helpful behaviors** — Too many NEVER/MUST NOT constraints shift model toward compliance over helpfulness. v4.0 already calibrated "code when needed" balance. Adding heavy-handed "no tools" risks breaking it. Frame as positive guidance ("use Python for computation"), test with existing UAT prompts (natural NL, code when appropriate).
+3. **Event loop starvation** — `Graph.arun()` loop with many synchronous Pydantic validations between `await` points blocks event loop, freezing toolbar. **Mitigation:** Add `await asyncio.sleep(0)` at top of each graph iteration to yield to event loop.
 
-3. **Multi-view abstraction breaks existing Channel display** — Introducing formatter layer risks blank output, double-rendering, lost content if view has bugs. Must be opt-in per channel with None default (existing behavior). Zero tolerance for existing test failures. Build default path first, verify zero regressions, then add custom formatters.
+4. **Channel flooding** — 10+ concurrent graphs writing to `[graph]` channel creates unreadable interleaved output. **Mitigation:** Use existing `metadata["label"]` support for per-graph prefixes (`[graph:g1]`), add output policy (visible/quiet/silent), buffer output and flush on completion.
 
-4. **Tool call interception regex matches normal code** — XML patterns appear legitimately in Python (HTML processing, f-strings, Rich markup, docstrings). Interception must scan OUTSIDE code fences only. Require structural match (full `<invoke name="...">` block), not keyword match. False positive injects confusing correction feedback.
-
-5. **Execution display deduplication removes useful information** — v4.0 duplication is CODE appearing twice (AI markdown + [py] ai_exec), not results. Suppress CODE echo ([py] with type=ai_exec), display RESULTS ([py] with type=ai_exec_result). User needs to see execution output. Store records both regardless of display suppression.
+5. **Memory leak from retained traces** — GraphResult.trace holds every node instance with resolved deps and LM responses. **Mitigation:** Registry distinguishes running/completed/archived states, archives old graphs (drops trace, keeps terminal node + metadata), max_completed limit triggers auto-archival.
 
 ## Implications for Roadmap
 
-Based on dependency analysis and pitfall severity, suggested phase structure decouples behavioral fixes from display refactoring:
+Based on research, suggested phase structure prioritizes foundation (registry + engine) before UX features (commands, debug views). Input gate system is hardest and most critical — build after infrastructure exists.
 
-### Phase 1: AI Prompt Hardening + Tool Call Interception
+### Phase 1: Foundation (Registry + Engine + TaskManager Integration)
 
-**Rationale:** Fixes the most visible v4.0 defect (hallucinated tool calls) with lowest complexity and zero refactoring. Independent of multi-view framework. Immediately testable against UAT-2 failure cases.
-
-**Delivers:**
-- Updated ai_prompt.md with explicit no-tools constraint and fewshot rejection example
-- Tool call detection regex (TOOL_CALL_RE matching 4 XML patterns)
-- Interception in AI.__call__() between _send() and extract_code()
-- Corrective feedback loop (1 attempt max to avoid amplification)
-
-**Addresses:**
-- FEATURES.md table stakes: "AI prompt hardening" and "tool call interception"
-- v4.0 UAT-2 test 2 failure (fake tool_use XML with fabricated results)
-
-**Avoids:**
-- Pitfall #2 (over-constraining) via positive framing and UAT regression testing
-- Pitfall #4 (false positive regex) via code fence exclusion and structural matching
-- Pitfall #7 (correction amplification) via max_corrections=1 limit
-
-**Research flag:** Standard patterns. Anthropic multishot docs + langchain-aws issue #521 provide complete guidance. No deeper research needed.
-
----
-
-### Phase 2: Multi-View Formatter Framework
-
-**Rationale:** Structural refactor enabling Phase 3. Building view framework BEFORE execution display prevents rewriting display code twice. Formatters ship with default (None) maintaining existing behavior — zero existing test failures required.
+**Rationale:** GraphRegistry is the skeleton everything hangs on. Without registry, nothing to list/inspect/input. Without engine emitting events, views have nothing to render. This phase delivers usable concurrent graph execution (no input gates yet) and integrates with TaskManager for Ctrl-C menu.
 
 **Delivers:**
-- ViewFormatter protocol in views.py
-- _rich_to_ansi() helper enforcing StringIO pattern
-- Channel._formatter field (default None)
-- Channel._display() delegation (if formatter set, delegate; else existing logic)
-- Backward compatibility tests
+- `GraphRegistry` class tracking running graphs by ID with lifecycle states
+- Graph engine coroutine wrapping `Graph.arun()` with lifecycle event emission
+- Events to `[graph]` channel with typed metadata (`node_transition`, `result`, `error`, `lifecycle`)
+- `TaskManager.submit()` integration — graphs appear in Ctrl-C menu
+- Timing instrumentation per node (start/end timestamps via perf_counter_ns)
+- Modified `Graph.arun()` accepting `dep_cache` parameter
 
-**Addresses:**
-- FEATURES.md differentiator: "Multi-view stream framework" conceptual foundation
-- Architecture pattern: formatter as strategy, metadata-driven rendering
+**Addresses features:** Graph Registry, Graphs as Managed Tasks, Graph I/O Through Channels, Graph Lifecycle Notifications
 
-**Avoids:**
-- Pitfall #3 (breaking existing display) via opt-in default=None
-- Pitfall #8 (patch_stdout bypass) via _rich_to_ansi() factory enforcing StringIO
-- Pitfall #10 (global debug state) via formatter swap not flag
+**Avoids pitfalls:** #3 (event loop starvation via sleep(0)), #2 (subprocess cleanup on CancelledError), #10 (TaskManager pruning)
 
-**Research flag:** Novel design over existing primitives. May need iterative refinement as formatters are built. Not complex enough for dedicated research-phase; handle in planning review.
+**Research flag:** Standard patterns, well-documented asyncio primitives. Skip research-phase.
 
----
+### Phase 2: GRAPH Mode Commands
 
-### Phase 3: UserView + Framed Execution Display
-
-**Rationale:** Depends on Phase 2 formatter framework. Highest-visibility UX improvement. Existing eval loop already produces right metadata types (ai_exec, ai_exec_result). Rich Panel/Syntax tested locally, API stable.
+**Rationale:** Commands make the registry usable. User can start, monitor, cancel graphs. This is a functional graph runtime without input gates yet — graphs that don't need user input work end-to-end.
 
 **Delivers:**
-- UserView formatter class
-- render_code_panel() and render_output_panel() using Rich Panel + Syntax
-- Buffered exec grouping (code + output in single Panel)
-- Metadata-driven rendering for ai_exec and ai_exec_result types
-- Deduplication (suppress CODE echo, display RESULTS)
+- Command parsing in `_run_graph()` (split on space, match verb)
+- `/run <name>` — evaluate expression, submit graph to engine
+- `/graphs` — show all running graphs with state, timing, current node
+- `/kill <id>` — revoke via registry -> TaskManager
+- `/trace <id>` — show node execution history as Rich Table
+- Lifecycle events logged to `[graph]` channel (launched, completed, failed, cancelled)
 
-**Addresses:**
-- FEATURES.md table stakes: "Deduplicated execution display"
-- FEATURES.md differentiator: "Framed code + output panels"
-- v4.0 UAT-2 test 5 (code appears 2-3x)
+**Addresses features:** GRAPH Mode as Management Hub, Inspect Command (basic), Graph Debug Views (foundation)
 
-**Avoids:**
-- Pitfall #1 (ANSI contamination) via single render pass with composed renderables
-- Pitfall #5 (removing results) via type-based suppression (ai_exec only, not ai_exec_result)
-- Pitfall #6 (width desync) via Console handling Panel borders internally
-- Pitfall #12 (empty frames) via skipping frame when output is empty
+**Avoids pitfalls:** #4 (channel flooding via per-graph labels in metadata)
 
-**Research flag:** Standard patterns. Rich Panel/Syntax well-documented, ANSI bridge proven in production. No research needed.
+**Research flag:** Standard patterns (command dispatch, Rich Table rendering). Skip research-phase.
 
----
+### Phase 3: Pending Input System (Human-in-the-Loop Gates)
 
-### Phase 4: Tool Call Classification + Remaining Formatters
-
-**Rationale:** Depends on Phase 2 (formatters can consume tool metadata) but independent of Phase 3 (classification enriches metadata, not display). Delivers DebugView, RawView, AISelfView for view mode cycling. Includes Ctrl+V keybinding and toolbar.
+**Rationale:** Input gates are the hardest feature and core differentiator. Building after registry/commands means infrastructure for state transitions, event emission, command dispatch already exists. Input system plugs into proven primitives.
 
 **Delivers:**
-- classify_response() pure function
-- ResponseClassification dataclass (text, tools list, code blocks, has_code)
-- AI.__call__() integration passing tools in metadata
-- DebugView, RawView, AISelfView formatters
-- ViewMode enum, VIEW_CYCLE, Ctrl+V keybinding
-- View mode toolbar widget
+- `CortexPrompt` class: asyncio.Future + value slot + schema info
+- Engine integration: detect input bridge in dep resolution, transition to WAITING state
+- `@gid <value>` input routing in GRAPH mode (with implicit routing when single pending graph)
+- Toolbar pending badge widget (`make_pending_widget()`)
+- Input schema display in `/graphs` output (field name, type, description from Pydantic)
+- `input_requested` event to `[graph]` channel with question text
 
-**Addresses:**
-- FEATURES.md differentiator: "View registry with debug toggle"
-- FEATURES.md differentiator: "AI self-view (structured feedback)"
-- Architecture component: tool call classification
+**Addresses features:** Pending Input System, Pending Input Notification UX, Input Schema Display
 
-**Avoids:**
-- Pitfall #9 (stale fewshot) via minimal behavior-focused examples
-- Pitfall #11 (exposing internal state) via curated summary in cross-AI view
+**Avoids pitfalls:** #1 (input gate deadlock — Future-based, not stdin), #5 (Event race — per-request Futures, not shared), #8 (cancellation during deps — fresh dep_cache per run)
 
-**Research flag:** Novel classification logic. AST-based import detection straightforward but needs test coverage. Standard implementation, no research needed.
+**Research flag:** Novel composition of existing patterns (Future + Prompt protocol + dep_cache). Standard asyncio but unique to this codebase. Suggest `/gsd:research-phase` focused on dep injection and concurrent prompt routing.
 
----
+### Phase 4: Observability & Polish
 
-### Phase 5: AI Prompt Refinement (Empirical)
-
-**Rationale:** Prompt changes are behavioral, not structural. Test empirically after infrastructure is in place. Iterate based on observed AI response quality with real usage.
+**Rationale:** After core functionality (registry, commands, input gates) works, layer on enhanced observability using Python 3.14's new introspection APIs and Rich formatting.
 
 **Delivers:**
-- Updated ai_prompt.md with tool conventions section
-- "1 fence per response" guidance for cleaner feedback
-- Response structure recommendations
-- Empirical testing against UAT cases
-- Iteration based on AI behavior
+- Graph Debug View with node timings, dep durations, LM call times
+- `/inspect <id>` with Rich Tree rendering (upgrade from basic `/trace`)
+- `asyncio.capture_call_graph()` integration for debugging stuck graphs
+- Per-graph output policy (visible/quiet/silent)
+- Cross-mode `!<id>` shortcut for quick input responses
+- Memory metrics (RSS delta per graph run via resource.getrusage)
 
-**Addresses:**
-- FEATURES.md context: ensuring prompt hardening doesn't break helpful code generation
-- Architecture component: structured response patterns for cleaner parsing
+**Addresses features:** Graph Debug Views (full), Inspect Command (enhanced), Cross-Mode Input Shortcut
 
-**Avoids:**
-- Pitfall #2 (over-constraining) via positive framing and iterative testing
+**Avoids pitfalls:** #6 (memory leak — archive completed graphs), #7 (SessionStore contention — batch commits), #9 (print interleaving — single print calls)
 
-**Research flag:** Behavioral tuning. Requires empirical observation. Not suitable for upfront research; handle iteratively during execution.
-
----
+**Research flag:** Python 3.14 `capture_call_graph` API is new (verified in docs). Standard patterns otherwise. Skip research-phase, consult docs during implementation.
 
 ### Phase Ordering Rationale
 
-- **Phases 1 and 2 are parallel-safe** — prompt hardening has zero code dependencies, framework refactor doesn't touch AI logic. Could execute concurrently if resources available.
-- **Phase 3 depends on Phase 2** — UserView needs formatter infrastructure. Building framework first prevents display code rewrites.
-- **Phase 4 depends on Phase 2, independent of Phase 3** — Classification uses formatter metadata, doesn't care about Panel rendering.
-- **Phase 5 is empirical** — Needs working system to observe AI behavior. Must come after Phases 1-4 are integrated.
-- **Critical path: 2 -> 3** — Framework enables framing. Longest dependency chain.
-- **Highest value: 1, 3** — Fix visible defects (hallucinated tools, redundant output). Deliver these first for immediate user benefit.
+- **Foundation first (Phase 1):** Registry and engine are dependencies for everything else. Can't build commands without registry to query, can't build input gates without engine to emit events.
+- **Commands before input gates (Phase 2):** Input gates are the hardest problem (Future suspension, routing, schema extraction). Building commands first proves the registry/engine work for simpler cases (graphs without input gates).
+- **Input gates third (Phase 3):** Once registry, events, commands exist, input gates are "just" a Future-based Prompt implementation + routing logic. The infrastructure supports it.
+- **Observability last (Phase 4):** Enhanced views, metrics, debugging tools are polish on a working system. Users can run graphs, manage them, respond to input gates without these. Nice-to-have, not blocking.
+
+This avoids pitfalls by tackling the hardest integration point (input gates + event loop + stdin contention) only after simpler infrastructure is proven. Each phase is independently testable and deliverable.
 
 ### Research Flags
 
-**Phases needing deeper research:** None. All patterns are standard or directly documented:
-- Prompt hardening: Anthropic multishot guide (official)
-- Tool interception: Regex on known XML patterns (langchain-aws issue #521)
-- View framework: Strategy pattern + existing ANSI bridge
-- Rich rendering: Panel/Syntax API documented, tested locally
-- Classification: Pure function, AST stdlib usage
+Phases needing deeper research during planning:
+- **Phase 3 (Pending Input System):** Novel composition — Future-based prompt + dep_cache injection + concurrent routing. Standard primitives but unique integration. Suggest focused research on: dep injection patterns for graph-scoped resources, asyncio.Future suspension semantics under cancellation, prompt_toolkit output from background tasks.
 
-**Phases with standard patterns:**
-- **All phases** — Every component builds on proven primitives (Rich, prompt_toolkit, stdlib) or documented patterns (fewshot, strategy, metadata-driven rendering). No novel integration requiring dedicated research-phase.
-
-**Validation during planning:**
-- Phase 2 (view framework) may need planning review to verify formatter interface accommodates all view types before building concrete formatters.
-- Phase 5 (prompt refinement) is inherently empirical; planning should define testing criteria (which UAT cases must pass) not prescriptive prompt text.
+Phases with standard patterns (skip research-phase):
+- **Phase 1 (Foundation):** asyncio.TaskGroup, dataclasses, perf_counter_ns, TaskManager integration — all well-documented stdlib patterns
+- **Phase 2 (GRAPH Mode Commands):** String dispatch, Rich Table rendering, registry query methods — established patterns in existing codebase
+- **Phase 4 (Observability):** capture_call_graph API is new but documented, Rich formatting is proven, metrics are dataclass + timing — standard
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All imports verified against installed packages via runtime check. Rich Panel/Syntax/Group tested locally. ANSI bridge proven in production (channels.py). No new dependencies needed. |
-| Features | HIGH | Table stakes derived from v4.0 UAT failures (first-party evidence). Differentiators based on existing channel/router architecture. Anti-features grounded in scope constraints (streaming = API migration, bash = security). |
-| Architecture | HIGH | Direct codebase analysis of channels.py, ai.py, shell.py. Formatter pattern fits existing design (Channel already has visibility, markdown, color swappable attributes). Rich-to-prompt_toolkit bridge exists and works. |
-| Pitfalls | HIGH | 7 of 12 pitfalls have first-party evidence from v4.0 UAT failures or codebase analysis. ANSI contamination, patch_stdout bypass, width desync documented in Rich/prompt_toolkit issue trackers. Over-constraining grounded in v4.0 prompt calibration history. |
+| Stack | HIGH | All recommendations verified against Python 3.14.3 docs, existing pyproject.toml, installed packages. Zero dependencies inferred, all verified. |
+| Features | HIGH | LangGraph, Prefect, Temporal, CrewAI patterns researched via WebSearch + official docs. Table stakes vs differentiators derived from ecosystem comparison. |
+| Architecture | HIGH | Direct codebase analysis of all integration points (TaskManager, ChannelRouter, ViewFormatter, Graph.arun(), resolver). dep_cache injection verified via code trace. |
+| Pitfalls | HIGH | Input gate deadlock traced through prompt.py + shell.py source. Subprocess orphan confirmed via TaskManager.revoke() + lm.py analysis. Event loop starvation verified via Graph.arun() loop structure. |
 
 **Overall confidence:** HIGH
 
-All research grounded in official documentation (Anthropic, Rich, prompt_toolkit), verified codebase patterns (channels.py render_markdown, AI eval loop), or first-party failure evidence (v4.0 UAT-2 tests 2 and 5). No speculative designs or unproven integrations.
+All four research areas grounded in verifiable sources: official Python docs, installed package versions, direct codebase inspection, documented ecosystem patterns. No speculative recommendations.
 
 ### Gaps to Address
 
-**Prompt hardening calibration:** Exact wording of no-tools constraint and fewshot examples requires empirical tuning. Research provides pattern (Anthropic multishot guide), but specific text must be validated against AI behavior. Handle iteratively in Phase 5 with defined test criteria (UAT-2 tests 1, 2, 5 must all pass).
+**Optimal LM call concurrency limit:** STACK.md recommends `asyncio.Semaphore` with `max_concurrent_lm_calls` but notes empirical tuning needed. Claude CLI backend latency characteristics unknown. **Mitigation:** Start with conservative limit (3), expose as runtime config, adjust based on observed behavior.
 
-**View formatter interface completeness:** Research proposes `render(channel_name, color, content, metadata)` signature. During Phase 2 planning, verify this accommodates all known view types (user, debug, raw, AI-self). If AISelfView needs conversation history context beyond single write, interface may need session reference. Resolve in planning review before building concrete formatters.
+**dep_cache injection thread safety under high concurrency:** Architecture verified via code trace that dep_cache is per-run (local variable in arun(), graph.py:308). But with 10+ graphs, race conditions possible if dep functions have shared mutable state. **Mitigation:** Document that dep functions must be stateless or return new instances. Test with 20+ concurrent graphs.
 
-**Tool call regex false positives:** TOOL_CALL_RE pattern tested against 4 input cases but not exhaustive AI output corpus. Research provides structural matching strategy (require full `<invoke name="...">` envelope, exclude code fences). Phase 1 execution should include comprehensive fixture testing (XML in docstrings, HTML processing code, Rich markup) before declaring regex production-ready.
+**SessionStore write throughput at scale:** PITFALLS.md identifies synchronous commits as bottleneck. Batch commit mitigation proposed but not validated. **Mitigation:** Instrument store.record() during Phase 1 testing, implement batching if cumulative time exceeds 50ms/second.
 
-**Cross-AI view curation:** Research identifies anti-pitfall #11 (don't expose raw internal state to receiving AI). Cross-AI view mentioned in multi-view concept but not spec'd in detail. If v5.0 includes cross-session memory, define curated summary format during Phase 4 planning. If deferred to v6.0, document explicitly in anti-features.
+**Input gate timeout policy:** Prevention for Pitfall #1 suggests `asyncio.wait_for(gate_event.wait(), timeout=300)`. Correct timeout value unknown — depends on use case (quick confirmation vs long-form input). **Mitigation:** Make timeout configurable per graph or per gate, default to 5 minutes, log timeouts as warnings not errors.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- **Codebase analysis:** bae/repl/channels.py (render_markdown ANSI bridge, Channel._display), bae/repl/ai.py (eval loop, _send CLI flags, extract_code), bae/repl/ai_prompt.md (current prompt), .planning/phases/20-ai-eval-loop/20-UAT-2.md (v4.0 failure evidence)
-- **Anthropic official:** [Multishot prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/multishot-prompting) (fewshot technique), [Reduce hallucinations](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations) (constraint calibration)
-- **Rich library:** [Panel docs](https://rich.readthedocs.io/en/stable/panel.html), [Syntax docs](https://rich.readthedocs.io/en/stable/syntax.html), [Group docs](https://rich.readthedocs.io/en/stable/group.html), [Console API](https://rich.readthedocs.io/en/stable/console.html) (StringIO capture), [FAQ](https://github.com/textualize/rich/blob/master/FAQ.md) (ANSI contamination warning)
-- **Claude CLI:** [CLI reference](https://code.claude.com/docs/en/cli-reference) (--tools "", --strict-mcp-config, --output-format flags)
-- **Local testing:** Rich 14.3.2 Panel/Syntax rendering verified via uv run execution (code + output grouping, 1133 chars ANSI output)
+- [Python 3.14 What's New](https://docs.python.org/3/whatsnew/3.14.html) — asyncio TaskGroup improvements, introspection APIs
+- [asyncio Call Graph Introspection](https://docs.python.org/3/library/asyncio-graph.html) — capture_call_graph, format_call_graph, print_call_graph API
+- [asyncio Tasks](https://docs.python.org/3/library/asyncio-task.html) — TaskGroup, timeout, Future, Event, Queue, Semaphore
+- [prompt_toolkit 3.0.52 docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/reference.html) — patch_stdout, print_formatted_text, refresh_interval
+- [Rich Tables](https://rich.readthedocs.io/en/stable/tables.html) — Table API for metrics rendering
+- Direct codebase analysis: `bae/graph.py`, `bae/repl/tasks.py`, `bae/repl/channels.py`, `bae/repl/views.py`, `bae/repl/shell.py`, `bae/repl/toolbar.py`, `bae/resolver.py`, `bae/work/prompt.py` (all integration points verified)
 
 ### Secondary (MEDIUM confidence)
-- **prompt_toolkit:** [Issue #1346](https://github.com/prompt-toolkit/python-prompt-toolkit/issues/1346) (patch_stdout behavior with Rich), [ANSI class reference](https://python-prompt-toolkit.readthedocs.io/en/master/pages/reference.html)
-- **Rich integration:** [Discussions #936](https://github.com/Textualize/rich/discussions/936) (Rich+prompt_toolkit pattern), [Issue #3349](https://github.com/Textualize/rich/issues/3349) (ANSI escape width calculations), [Discussions #2648](https://github.com/Textualize/rich/discussions/2648) (ANSI bridge pattern)
-- **Tool call format:** [langchain-aws #521](https://github.com/langchain-ai/langchain-aws/issues/521) (Claude XML tool call patterns: function_calls, invoke, antml_invoke)
-- **LLM feedback loops:** [EmergentMind research](https://www.emergentmind.com/topics/llm-driven-feedback-loops), [LLMLOOP paper](https://valerio-terragni.github.io/assets/pdf/ravi-icsme-2025.pdf) (correction amplification)
-
-### Tertiary (inference from codebase)
-- **v4.0 calibration history:** .planning/phases/20-ai-eval-loop/20-04-PLAN.md (prompt rewrite from "always code" to "code when needed" balance), 20-UAT.md (tests 1, 3, 6 runaway eval loop)
-- **Metadata-driven rendering:** Existing code uses metadata["type"] in channels.py for label construction — view framework extends this pattern
-- **Strategy pattern fitness:** Channel already has swappable attributes (visible, markdown, color) — formatter follows existing design
+- [LangGraph Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) — interrupt()/Command(resume=) pattern
+- [LangGraph Streaming](https://docs.langchain.com/oss/python/langgraph/streaming) — Event streaming modes (values, updates, debug)
+- [Prefect Interactive Workflows](https://docs.prefect.io/v3/advanced/interactive) — pause_flow_run(wait_for_input=PydanticModel)
+- [Temporal Signals](https://james-carr.org/posts/2026-02-03-temporal-process-manager/) — Signal-based wait patterns
+- [SQLite WAL docs](https://sqlite.org/wal.html) — Concurrent read/write behavior
+- [CPython #88050](https://github.com/python/cpython/issues/88050) — Subprocess orphans on task cancellation
+- [prompt-toolkit #1866](https://github.com/prompt-toolkit/python-prompt-toolkit/issues/1866) — Thread safety of print_formatted_text
+- [Trio #637](https://github.com/python-trio/trio/issues/637) — Event.clear() race conditions
 
 ---
-*Research completed: 2026-02-14*
+*Research completed: 2026-02-15*
 *Ready for roadmap: yes*

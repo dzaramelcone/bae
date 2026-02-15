@@ -1,835 +1,836 @@
-# Architecture: v5.0 Multi-View Stream Framework
+# Architecture: Graph Runtime in Cortex
 
-**Domain:** Multi-view display, tool call interception, execution framing for async REPL
-**Researched:** 2026-02-14
-**Confidence:** HIGH (direct codebase analysis + verified Rich Panel/Syntax API + existing rendering patterns)
+**Domain:** Concurrent graph execution engine integrated with async REPL
+**Researched:** 2026-02-15
+**Confidence:** HIGH (direct codebase analysis, all integration points verified against existing source)
 
-## Existing Architecture (What v5.0 Extends)
+## Existing Architecture (What We Build On)
 
-### Current Display Pipeline
-
-```
-AI.__call__()
-  |
-  +-- _send(prompt) --> Claude CLI subprocess --> raw text response
-  |
-  +-- router.write("ai", response, metadata={"type": "response", "label": "1"})
-  |     |
-  |     +-- Channel.write()
-  |           +-- store.record(...)
-  |           +-- _buffer.append(content)
-  |           +-- if visible: _display(content, metadata)
-  |                 |
-  |                 +-- [markdown=True]:  print label, then render_markdown() -> ANSI
-  |                 +-- [markdown=False]: line-by-line with color-coded prefix
-  |
-  +-- extract_code(response) --> list[str] of code blocks
-  |
-  +-- for code in blocks:
-  |     +-- async_exec(code, namespace) --> (result, captured)
-  |     +-- router.write("py", code, metadata={"type": "ai_exec"})
-  |     +-- router.write("py", output, metadata={"type": "ai_exec_result"})
-  |
-  +-- feedback = join(results) --> loop back to _send()
-```
-
-### Current Component Map (Relevant to v5.0)
-
-| Component | Location | Role in v5.0 |
-|-----------|----------|-------------|
-| `Channel._display()` | channels.py:76-99 | **Modified** -- dispatch to view formatters |
-| `Channel.write()` | channels.py:59-74 | **Unchanged** -- record + buffer + conditional display |
-| `ChannelRouter.write()` | channels.py:122-137 | **Unchanged** -- dispatch to channel |
-| `render_markdown()` | channels.py:30-40 | **Extended** -- one formatter among many |
-| `AI.__call__()` | ai.py:71-125 | **Modified** -- add tool call detection step |
-| `AI.extract_code()` | ai.py:199-202 | **Unchanged** -- used by tool call detector |
-| `ai_prompt.md` | ai_prompt.md | **Modified** -- prompt hardening |
-| `CortexShell.__init__()` | shell.py:209-255 | **Modified** -- add view mode state |
-
-### Key Constraint: prompt_toolkit + Rich Bridge
-
-The codebase already uses the Rich-to-prompt_toolkit bridge pattern. `render_markdown()` captures Rich output to StringIO with `force_terminal=True`, then `print_formatted_text(ANSI(...))` renders it. All new formatters MUST use this same bridge. No direct `Console.print()` to stdout -- everything goes through prompt_toolkit for `patch_stdout` compatibility.
-
-## v5.0 Component Architecture
-
-### New and Modified Components
+### Current Component Map
 
 ```
-bae/repl/
-  channels.py     MODIFIED  -- ViewFormatter protocol, _display dispatches to formatter
-  views.py        NEW       -- Concrete view formatters (user, debug, raw, ai-self)
-  ai.py           MODIFIED  -- tool call detection between _send() and extract_code()
-  ai_prompt.md    MODIFIED  -- hardened prompt with tool call conventions
-  shell.py        MODIFIED  -- view mode state, debug toggle keybinding
+bae/graph.py         Graph class with arun() loop, type-hint topology
+bae/node.py          Node base (Pydantic), __call__ routing
+bae/resolver.py      Dep/Recall field resolution, topo-sorted DAG
+bae/result.py        GraphResult(node, trace)
+bae/markers.py       Dep, Recall, Effect annotations
+bae/lm.py            LM protocol, ClaudeCLIBackend
+bae/work/prompt.py   Prompt protocol, TerminalPrompt, gate deps
+
+bae/repl/shell.py    CortexShell: 4 modes, prompt_toolkit REPL
+bae/repl/tasks.py    TaskManager: asyncio task lifecycle
+bae/repl/channels.py ChannelRouter: labeled I/O, ViewFormatter protocol
+bae/repl/views.py    UserView, DebugView, AISelfView formatters
+bae/repl/ai.py       AI agent with eval loop
+bae/repl/store.py    SessionStore (SQLite+FTS5)
+bae/repl/toolbar.py  ToolbarConfig, named widgets
+bae/repl/modes.py    Mode enum (NL, PY, GRAPH, BASH)
+bae/repl/exec.py     async_exec with top-level await
+bae/repl/namespace.py  Seed namespace, NsInspector
 ```
+
+### Current Graph-REPL Integration (Stub)
+
+Graph mode exists but is a stub. The existing integration point in `shell.py`:
+
+```python
+# shell.py lines 333-351
+async def _run_graph(self, text: str) -> None:
+    graph = self.namespace.get("graph")
+    if not graph:
+        self.router.write("graph", "(Graph mode stub) Not yet implemented.", mode="GRAPH")
+        return
+    try:
+        result = await channel_arun(graph, self.router, text=text)
+        if result and result.trace:
+            self.namespace["_trace"] = result.trace
+    except asyncio.CancelledError:
+        self.router.write("debug", "cancelled graph task", mode="DEBUG")
+    except Exception as exc:
+        trace = getattr(exc, "trace", None)
+        if trace:
+            self.namespace["_trace"] = trace
+        tb = traceback.format_exc()
+        self.router.write("graph", tb.rstrip("\n"), mode="GRAPH", metadata={"type": "error"})
+```
+
+And `channel_arun` captures graph logger output and routes through `[graph]` channel:
+
+```python
+# shell.py lines 468-488
+async def channel_arun(graph, router, *, lm=None, max_iters=10, **kwargs):
+    # Captures bae.graph logger -> [graph] channel
+    # Writes terminal node repr as result
+```
+
+### Current Input Gate Mechanism
+
+`bae/work/prompt.py` defines the `Prompt` protocol with `ask()` and `confirm()`. `TerminalPrompt` blocks on `input()` via `run_in_executor`. Graphs use `PromptDep = Annotated[Prompt, Dep(get_prompt)]` to inject the prompt callback. Gate deps like `ContinueGate = Annotated[bool, Dep(confirm_continue)]` wrap confirm calls.
+
+**Critical observation:** `TerminalPrompt.ask()` calls `input()` in an executor, which blocks waiting for stdin. This works standalone but **collides with cortex** because cortex owns stdin via `prompt_toolkit.PromptSession.prompt_async()`. Two things cannot read stdin at once.
+
+### Key Constraints
+
+1. **prompt_toolkit owns stdin.** All user input must flow through `prompt_async()`. Background tasks cannot call `input()`.
+2. **patch_stdout context.** All terminal output must go through `print_formatted_text()` for prompt compatibility.
+3. **TaskManager is fire-and-forget.** Tasks are submitted, tracked, and cancellable. No built-in mechanism for task-to-prompt communication.
+4. **Graph.arun() is a blocking loop.** It runs node-by-node sequentially. When a node's dep calls `prompt.ask()`, the entire graph blocks waiting for user response.
+
+## Architecture: Graph Runtime Integration
+
+### Design Principle
+
+The graph runtime is **not a new subsystem** -- it is the graph's `arun()` adapted to cortex's existing primitives. The new components are:
+
+1. **GraphRegistry** -- tracks graphs and their running instances (like `_ai_sessions` but for graphs)
+2. **CortexPrompt** -- a Prompt implementation that suspends the graph via asyncio.Future and creates a pending input notification
+3. **GraphRunner** -- wraps a single graph execution, bridging channels and input gates
+4. **Toolbar badge** -- pending input count widget
 
 ### Component Diagram
 
 ```
-                        User Input
-                            |
-                            v
-                     AI.__call__()
-                            |
-                  +---------+---------+
-                  |                   |
-              _send()            [eval loop]
-                  |                   |
-                  v                   v
-          raw response        extract_code()
-                  |                   |
-                  v                   |
-         detect_tools()    <--- NEW   |
-          (classify response          |
-           content blocks)            |
-                  |                   |
-                  v                   v
-          router.write("ai", ...)   router.write("py", ...)
-                  |                   |
-                  v                   v
-           Channel.write()     Channel.write()
-                  |                   |
-                  v                   v
-           Channel._display()  Channel._display()
-                  |                   |
-                  v                   v
-        active_formatter.render()   active_formatter.render()
-           |         |                    |
-           v         v                    v
-      UserView   DebugView          UserView (panels)
-      (panels)   (raw + meta)       (framed exec)
+                   User types in GRAPH mode
+                           |
+                           v
+                    CortexShell._dispatch()
+                           |
+                           v
+                    _run_graph(text)
+                           |
+                    +------+------+
+                    |             |
+              (launch cmd)   (respond cmd)
+                    |             |
+                    v             v
+              GraphRegistry   GraphRegistry
+              .launch(name)   .respond(gid, text)
+                    |             |
+                    v             v
+              GraphRunner     runner._pending_future
+              (new task)      .set_result(text)
+                    |             |
+                    v             v
+              graph.arun()    node resumes
+                    |             execution
+                    v
+              Node.__call__()
+                    |
+                    v
+              prompt.ask(question)
+                    |
+                    v
+              CortexPrompt.ask()
+                    |
+                    +-- creates asyncio.Future
+                    +-- writes notification to [graph] channel
+                    +-- increments pending count (toolbar badge)
+                    +-- awaits Future (graph suspends here)
+                    |
+                    v
+              [user sees notification, types response]
+                    |
+                    v
+              GraphRegistry.respond(gid, text)
+                    |
+                    v
+              Future.set_result(text)
+                    |
+                    v
+              CortexPrompt.ask() returns PromptResult
+                    |
+                    v
+              node continues execution
 ```
-
-## Component Detail
-
-### 1. ViewFormatter Protocol (channels.py)
-
-A ViewFormatter transforms channel content + metadata into terminal output. The Channel holds a reference to the active formatter and delegates `_display()` to it.
-
-**Why a protocol, not inheritance:** Formatters are swappable at runtime (debug toggle). A Channel does not change type -- its formatter changes. This is composition over inheritance.
-
-```python
-from typing import Protocol
-
-class ViewFormatter(Protocol):
-    """Renders channel content to terminal."""
-
-    def render(
-        self,
-        channel_name: str,
-        color: str,
-        content: str,
-        *,
-        metadata: dict | None = None,
-    ) -> None:
-        """Format and display content."""
-        ...
-```
-
-**Integration point:** `Channel._display()` becomes a one-liner that delegates to the formatter.
-
-```python
-# channels.py -- modified Channel._display()
-def _display(self, content: str, *, metadata: dict | None = None) -> None:
-    self._formatter.render(self.name, self.color, content, metadata=metadata)
-```
-
-**Channel gains a `_formatter` field:**
-
-```python
-@dataclass
-class Channel:
-    name: str
-    color: str
-    visible: bool = True
-    markdown: bool = False
-    store: SessionStore | None = None
-    _formatter: ViewFormatter | None = field(default=None, repr=False)
-    _buffer: list[str] = field(default_factory=list, repr=False)
-```
-
-When `_formatter is None`, the current `_display()` logic runs as-is (backward compatible). When set, it delegates entirely. This means v5.0 formatters are opt-in per channel -- you can set a formatter on the `ai` and `py` channels while leaving `bash`, `graph`, and `debug` on their current display path.
-
-### 2. Concrete View Formatters (views.py -- NEW FILE)
-
-Four formatters, one active at a time per channel. All use the Rich-to-prompt_toolkit bridge.
-
-#### UserView (default)
-
-The user-facing view. Uses Rich Panels for framed display of AI responses and execution blocks.
-
-```python
-class UserView:
-    """Framed panels for user-facing display."""
-
-    def render(self, channel_name, color, content, *, metadata=None):
-        meta = metadata or {}
-        content_type = meta.get("type", "")
-
-        if content_type == "response":
-            # AI response: framed panel with markdown rendering
-            self._render_ai_response(channel_name, color, content, meta)
-        elif content_type == "ai_exec":
-            # Code the AI is executing: syntax-highlighted panel
-            self._render_exec_code(channel_name, color, content, meta)
-        elif content_type == "ai_exec_result":
-            # Execution output: output panel
-            self._render_exec_output(channel_name, color, content, meta)
-        else:
-            # Fallback: prefixed lines (current behavior)
-            self._render_prefixed(channel_name, color, content, meta)
-```
-
-**AI response rendering (framed panel):**
-
-```python
-from rich.panel import Panel
-from rich.markdown import Markdown
-from rich import box
-
-def _render_ai_response(self, channel_name, color, content, meta):
-    label = meta.get("label", "")
-    title = f"{channel_name}:{label}" if label else channel_name
-
-    panel = Panel(
-        Markdown(content),
-        title=f"[bold]{title}[/]",
-        border_style=color,
-        box=box.ROUNDED,
-        padding=(0, 1),
-    )
-    ansi = _rich_to_ansi(panel)
-    print_formatted_text(ANSI(ansi))
-```
-
-**Execution code rendering (syntax-highlighted panel):**
-
-```python
-from rich.syntax import Syntax
-
-def _render_exec_code(self, channel_name, color, content, meta):
-    label = meta.get("label", "")
-    title = f"{channel_name}:{label}" if label else channel_name
-
-    panel = Panel(
-        Syntax(content, "python", theme="monokai"),
-        title=f"[bold]{title}[/]",
-        subtitle="[dim]exec[/]",
-        border_style="dim",
-        box=box.ROUNDED,
-        padding=(0, 1),
-    )
-    ansi = _rich_to_ansi(panel)
-    print_formatted_text(ANSI(ansi))
-```
-
-**Execution output rendering:**
-
-```python
-def _render_exec_output(self, channel_name, color, content, meta):
-    label = meta.get("label", "")
-    title = f"{channel_name}:{label}" if label else channel_name
-
-    panel = Panel(
-        content,
-        title=f"[bold]{title}[/]",
-        subtitle="[dim]output[/]",
-        border_style="dim green" if "Error" not in content else "dim red",
-        box=box.ROUNDED,
-        padding=(0, 1),
-    )
-    ansi = _rich_to_ansi(panel)
-    print_formatted_text(ANSI(ansi))
-```
-
-#### DebugView
-
-Shows raw content with full metadata. Used during development or when debugging AI behavior.
-
-```python
-class DebugView:
-    """Raw content with metadata for debugging."""
-
-    def render(self, channel_name, color, content, *, metadata=None):
-        meta = metadata or {}
-        # Header with all metadata
-        header = f"[{channel_name}] type={meta.get('type','?')} label={meta.get('label','?')}"
-        _print_prefixed(header, color)
-        # Raw content, no markdown rendering
-        for line in content.splitlines():
-            _print_prefixed(f"  {line}", "#808080")
-```
-
-#### RawView
-
-No formatting at all. Content as-is. Useful for piping or copy-paste.
-
-```python
-class RawView:
-    """Unformatted content output."""
-
-    def render(self, channel_name, color, content, *, metadata=None):
-        print_formatted_text(FormattedText([("", content)]))
-```
-
-#### AISelfView
-
-What the AI "sees" -- shows the prompts, feedback, context injections. Renders the content the AI receives, not what it produces.
-
-```python
-class AISelfView:
-    """Shows AI perspective: prompts sent, feedback received."""
-
-    def render(self, channel_name, color, content, *, metadata=None):
-        meta = metadata or {}
-        content_type = meta.get("type", "")
-
-        if content_type in ("prompt", "feedback", "context"):
-            panel = Panel(
-                content,
-                title=f"[dim]{content_type}[/]",
-                border_style="dim yellow",
-                box=box.SIMPLE,
-                padding=(0, 1),
-            )
-            ansi = _rich_to_ansi(panel)
-            print_formatted_text(ANSI(ansi))
-        else:
-            # Non-prompt content is dimmed
-            _print_prefixed(content, "#555555")
-```
-
-**Note:** AISelfView requires new metadata types (`"prompt"`, `"feedback"`, `"context"`) to be emitted by `AI.__call__()`. This is part of the AI modifications.
-
-#### Shared Helper
-
-```python
-def _rich_to_ansi(renderable) -> str:
-    """Render any Rich renderable to ANSI string for prompt_toolkit."""
-    buf = StringIO()
-    console = Console(
-        file=buf,
-        width=os.get_terminal_size().columns if hasattr(os, 'get_terminal_size') else 80,
-        force_terminal=True,
-    )
-    console.print(renderable)
-    return buf.getvalue()
-```
-
-This is an extracted generalization of the existing `render_markdown()` function in channels.py. The existing function remains as a convenience but can internally call `_rich_to_ansi(Markdown(text, ...))`.
-
-### 3. Tool Call Detection (ai.py -- MODIFIED)
-
-**Where in the eval loop:** Between `_send()` response and `extract_code()`.
-
-Currently the eval loop is:
-```
-response = _send(prompt)
-router.write("ai", response)
-blocks = extract_code(response)
-```
-
-v5.0 adds a classification step:
-```
-response = _send(prompt)
-classified = classify_response(response)  # NEW
-router.write("ai", classified.text, metadata={..., "tools": classified.tools})
-blocks = extract_code(response)  # unchanged -- still extracts code
-```
-
-**What `classify_response` does:**
-
-It does NOT change the response content. It annotates what kinds of "tool calls" the AI is making. In cortex, "tool calls" are not API tool_use blocks (those are disabled via `--tools ""`). They are patterns in the AI's text response:
-
-| Pattern | Tool Type | Detection |
-|---------|-----------|-----------|
-| ` ```python ... ``` ` | `code_exec` | Existing `extract_code()` regex |
-| `ns()` or `ns(obj)` | `inspect` | Substring match in code blocks |
-| `store.search(...)` | `store_query` | Substring match in code blocks |
-| `import ...` | `import` | AST parse of code blocks |
-| Prose-only response | `none` | No code blocks found |
-
-```python
-@dataclass
-class ResponseClassification:
-    """What kinds of tool calls the AI response contains."""
-    text: str                    # Original response text
-    tools: list[str]             # e.g. ["code_exec", "inspect"]
-    code_blocks: list[str]       # Extracted code (same as extract_code)
-    has_code: bool               # Convenience: len(code_blocks) > 0
-
-
-def classify_response(text: str) -> ResponseClassification:
-    """Classify the tool calls in an AI response."""
-    blocks = AI.extract_code(text)
-    tools = []
-
-    if blocks:
-        tools.append("code_exec")
-        combined = "\n".join(blocks)
-        if "ns(" in combined:
-            tools.append("inspect")
-        if "store." in combined:
-            tools.append("store_query")
-        # AST-based import detection
-        for block in blocks:
-            try:
-                tree = ast.parse(block)
-                if any(isinstance(n, (ast.Import, ast.ImportFrom)) for n in ast.walk(tree)):
-                    tools.append("import")
-                    break
-            except SyntaxError:
-                pass
-
-    return ResponseClassification(
-        text=text,
-        tools=tools,
-        code_blocks=blocks,
-        has_code=bool(blocks),
-    )
-```
-
-**Why classify before display:** The view formatter uses the tool classification to decide how to render. UserView shows a code panel for `code_exec`, a special "inspecting..." indicator for `inspect`. DebugView shows the raw tool list. Without classification, the formatter would have to re-parse the content.
-
-**Integration with eval loop:**
-
-```python
-async def __call__(self, prompt: str) -> str:
-    # ... existing context building ...
-    response = await self._send(full_prompt)
-    await asyncio.sleep(0)
-
-    classified = classify_response(response)
-
-    self._router.write("ai", response, mode="NL", metadata={
-        "type": "response",
-        "label": self._label,
-        "tools": classified.tools,      # NEW
-    })
-
-    for _ in range(self._max_eval_iters):
-        if not classified.has_code:
-            break
-
-        results = []
-        for code in classified.code_blocks:
-            # ... existing execution logic (unchanged) ...
-            pass
-
-        feedback = "\n".join(...)
-        await asyncio.sleep(0)
-        response = await self._send(feedback)
-        await asyncio.sleep(0)
-
-        classified = classify_response(response)   # Re-classify each iteration
-
-        self._router.write("ai", response, mode="NL", metadata={
-            "type": "response",
-            "label": self._label,
-            "tools": classified.tools,
-        })
-
-    return response
-```
-
-**Key design decision:** `classify_response` is a pure function, not a method on AI. It takes text, returns a dataclass. No side effects, no state, fully testable in isolation.
-
-### 4. Execution Display Framing (views.py -- UserView)
-
-The current display for AI code execution is prefixed lines:
-
-```
-[py] x = 42
-[py] print(x)
-[py] 42
-```
-
-v5.0 replaces this with framed Rich Panels:
-
-```
- ai:1 exec
- x = 42           <- syntax highlighted
- print(x)
- output
- 42
-```
-
-**Implementation:** The UserView formatter handles `ai_exec` and `ai_exec_result` metadata types with Panel rendering (shown in UserView section above).
-
-**Grouped execution display (code + output in one panel):**
-
-For the most polished experience, code and output can be grouped into a single panel using Rich's `Group` renderable:
-
-```python
-from rich.console import Group
-from rich.rule import Rule
-
-def _render_exec_grouped(self, code: str, output: str, meta: dict):
-    """Render code + output as a single framed panel."""
-    label = meta.get("label", "")
-    title = f"ai:{label}" if label else "ai"
-
-    parts = [Syntax(code, "python", theme="monokai")]
-    if output:
-        parts.append(Rule(style="dim"))
-        parts.append(Text(output))
-
-    panel = Panel(
-        Group(*parts),
-        title=f"[bold cyan]{title}[/]",
-        border_style="dim",
-        box=box.ROUNDED,
-        padding=(0, 1),
-    )
-    ansi = _rich_to_ansi(panel)
-    print_formatted_text(ANSI(ansi))
-```
-
-**Challenge:** The eval loop writes code and output as separate `router.write()` calls. To group them, the formatter needs to buffer the `ai_exec` write and wait for the corresponding `ai_exec_result` before rendering both.
-
-**Solution -- buffered exec display:**
-
-```python
-class UserView:
-    def __init__(self):
-        self._pending_exec: str | None = None
-        self._pending_meta: dict | None = None
-
-    def render(self, channel_name, color, content, *, metadata=None):
-        meta = metadata or {}
-        content_type = meta.get("type", "")
-
-        if content_type == "ai_exec":
-            # Buffer the code, wait for output
-            self._pending_exec = content
-            self._pending_meta = meta
-            return
-
-        if content_type == "ai_exec_result" and self._pending_exec is not None:
-            # Render grouped code + output
-            self._render_exec_grouped(self._pending_exec, content, self._pending_meta)
-            self._pending_exec = None
-            self._pending_meta = None
-            return
-
-        # ... other content types ...
-```
-
-This is safe because the eval loop always writes `ai_exec` immediately followed by `ai_exec_result` for the same block, synchronously within the same coroutine. No interleaving is possible.
-
-### 5. View Mode Switching (shell.py -- MODIFIED)
-
-**State:** `CortexShell` gains a `view_mode` field and a keybinding to cycle views.
-
-```python
-class ViewMode(Enum):
-    USER = "user"
-    DEBUG = "debug"
-    RAW = "raw"
-    AI_SELF = "ai_self"
-
-VIEW_CYCLE = [ViewMode.USER, ViewMode.DEBUG, ViewMode.RAW, ViewMode.AI_SELF]
-```
-
-**Keybinding:** Ctrl+V cycles view modes (mnemonic: View). On cycle, update the formatter on each channel.
-
-```python
-@kb.add("c-v")
-def cycle_view(event):
-    idx = VIEW_CYCLE.index(shell.view_mode)
-    shell.view_mode = VIEW_CYCLE[(idx + 1) % len(VIEW_CYCLE)]
-    formatter = VIEW_FORMATTERS[shell.view_mode]
-    for ch in shell.router._channels.values():
-        ch._formatter = formatter
-    shell.router.write("debug", f"view: {shell.view_mode.value}", mode="DEBUG")
-    event.app.invalidate()
-```
-
-**Toolbar indicator:** Add a view widget showing current view mode:
-
-```python
-def make_view_widget(shell) -> ToolbarWidget:
-    return lambda: [("class:toolbar.view", f" {shell.view_mode.value} ")]
-```
-
-### 6. AI Prompt Hardening (ai_prompt.md -- MODIFIED)
-
-The current prompt is 68 lines. v5.0 adds structured tool call conventions so the AI's responses are consistently parseable.
-
-**Key additions:**
-
-```markdown
-## Tool Conventions
-- Code blocks are your tools. Every fence is executed immediately.
-- Use EXACTLY ONE code fence per response when you need to act.
-- If you need multiple steps, let the eval loop iterate -- do not put multiple fences.
-- NEVER produce code you do not want executed.
-- NEVER produce code that calls ai() or ai.fill() -- you ARE the ai.
-
-## Response Structure
-When responding with code:
-1. Brief explanation of what you are doing (1-2 sentences)
-2. Single code fence
-3. No text after the fence (wait for execution result)
-
-When responding without code:
-- Answer directly in prose
-- Do NOT wrap answers in code blocks
-```
-
-**Why 1-fence-per-response:** The current eval loop handles multiple code blocks per response, but this creates ambiguity about which block produced which output. The AI gets cleaner feedback when it runs one block, sees the result, then decides the next action. The `max_eval_iters` limit ensures convergence.
-
-**Confidence:** MEDIUM. Prompt changes require empirical testing. The structure is sound but the exact wording needs iteration based on observed AI behavior.
-
-## Data Flow (v5.0)
-
-### AI Response Flow (Modified)
-
-```
-AI._send(prompt)
-     |
-     v
-  raw text response
-     |
-     v
-  classify_response(response)  ------> ResponseClassification
-     |                                    .text
-     |                                    .tools = ["code_exec", "inspect"]
-     |                                    .code_blocks = ["ns(graph)"]
-     |                                    .has_code = True
-     v
-  router.write("ai", response,
-    metadata={"type": "response",
-              "label": "1",
-              "tools": ["code_exec", "inspect"]})
-     |
-     v
-  Channel.write()
-     +-- store.record(...)              <-- tools list in metadata
-     +-- _buffer.append(...)
-     +-- if visible: _display(...)
-           |
-           v
-     _formatter.render(...)             <-- ViewFormatter dispatch
-           |
-           +-- [UserView]:  Panel(Markdown(response), title="ai:1", ...)
-           +-- [DebugView]: raw text + metadata dump
-           +-- [RawView]:   plain text
-           +-- [AISelfView]: shows prompt that was sent
-```
-
-### Execution Display Flow (Modified)
-
-```
-  for code in classified.code_blocks:
-     |
-     v
-  async_exec(code, namespace)
-     |
-     v
-  router.write("py", code, metadata={"type": "ai_exec", "label": "1"})
-     |
-     v
-  Channel._display() -> formatter.render()
-     |
-     +-- [UserView]: buffer code, wait for output
-     |
-     v
-  router.write("py", output, metadata={"type": "ai_exec_result", "label": "1"})
-     |
-     v
-  Channel._display() -> formatter.render()
-     |
-     +-- [UserView]: render grouped Panel(Syntax(code) + Rule + output)
-     +-- [DebugView]: prefixed lines with metadata
-     +-- [RawView]: plain text
-```
-
-## Patterns to Follow
-
-### Pattern 1: Formatter as Strategy
-
-**What:** ViewFormatter is the Strategy pattern. Channel delegates display to a swappable formatter object.
-**When:** Any time display behavior needs to change at runtime.
-**Why not subclass Channel:** Channels do not change type. A Channel named "ai" is always "ai" -- only its display behavior changes. Subclassing would require replacing Channel objects, breaking references held by router, store, and namespace.
-
-### Pattern 2: Rich-to-ANSI Bridge (Existing)
-
-**What:** All Rich rendering goes through `_rich_to_ansi()` then `print_formatted_text(ANSI(...))`.
-**When:** Every formatter that uses Rich renderables.
-**Why:** prompt_toolkit's `patch_stdout` requires all terminal output to go through prompt_toolkit's rendering pipeline. Direct `Console.print()` to stdout would corrupt the prompt.
-
-### Pattern 3: Metadata-Driven Rendering
-
-**What:** Formatters decide how to render based on `metadata["type"]`, not by parsing content.
-**When:** Choosing between panel styles, grouping decisions, formatting.
-**Why:** Parsing content is fragile and duplicates work. The producer (AI eval loop) already knows what kind of content it is producing. Passing that knowledge via metadata is clean and testable.
-
-### Pattern 4: Pure Classification Functions
-
-**What:** `classify_response()` is a pure function -- text in, dataclass out.
-**When:** Adding analysis steps to the eval loop.
-**Why:** Testable without mocks. No side effects. Can be unit tested with string fixtures.
-
-## Anti-Patterns to Avoid
-
-### Anti-Pattern 1: Rich Console Singleton
-
-**What:** Sharing a single `Console` object across async render calls.
-**Why bad:** Rich Console carries state (cursor position, line count, style stack). Concurrent renders from background tasks would corrupt state.
-**Instead:** Create a fresh `Console(file=StringIO(), force_terminal=True)` per render call. The `_rich_to_ansi()` helper enforces this.
-
-### Anti-Pattern 2: Channel Subclasses for Views
-
-**What:** `class AIChannel(Channel)`, `class DebugAIChannel(Channel)`, etc.
-**Why bad:** The router holds Channel references. Swapping subclasses at runtime means replacing objects in the dict, breaking any external references (namespace["channels"], store bindings).
-**Instead:** Composition. The Channel holds a formatter reference that can be swapped. The Channel identity stays stable.
-
-### Anti-Pattern 3: Parsing Content in Formatters
-
-**What:** Formatter checking `if "```python" in content` to decide rendering.
-**Why bad:** Duplicates the parsing logic from AI.extract_code(). Fragile. Breaks if markdown quoting changes.
-**Instead:** Metadata-driven. The producer tags content with `metadata["type"]` and the formatter trusts the tag.
-
-### Anti-Pattern 4: View Formatter Modifying Content
-
-**What:** Formatter that strips, transforms, or enriches the content string before passing it to Rich.
-**Why bad:** The same content is stored in the SessionStore. If formatters modify content, the stored version and displayed version diverge, breaking replay and search.
-**Instead:** Formatters render content as-is. Visual framing (panels, colors, syntax highlighting) is additive, not transformative. The content string is immutable through the pipeline.
-
-### Anti-Pattern 5: Tool Call Detection via Claude API tool_use
-
-**What:** Switching `--output-format` to JSON to get tool_use content blocks.
-**Why bad:** The AI subprocess uses `--tools ""` which disables all tools. There are no tool_use blocks in the response. Even if tools were enabled, JSON output would require parsing the entire response differently, breaking the existing text-based flow.
-**Instead:** Text-based pattern detection via `classify_response()`. The "tools" are code blocks in markdown -- they are already being detected by `extract_code()`. Classification adds semantic labels.
-
-## Integration Summary: New vs Modified vs Unchanged
 
 ### New Components
 
-| Component | File | Purpose | Depends On |
-|-----------|------|---------|------------|
-| ViewFormatter protocol | views.py | Display strategy interface | None |
-| UserView | views.py | Framed panel display | Rich Panel, Syntax, Markdown |
-| DebugView | views.py | Raw + metadata display | prompt_toolkit FormattedText |
-| RawView | views.py | Plain text display | prompt_toolkit FormattedText |
-| AISelfView | views.py | AI perspective display | Rich Panel |
-| `_rich_to_ansi()` | views.py | Rich renderable to ANSI string | Rich Console, StringIO |
-| `classify_response()` | ai.py | Tool call classification | AI.extract_code, ast |
-| ResponseClassification | ai.py | Classification result dataclass | None |
-| ViewMode enum | shell.py | View mode state | None |
+#### 1. GraphRegistry (`bae/repl/graphs.py` -- NEW)
 
-### Modified Components
+The registry tracks graph definitions and running instances. It is the graph-mode analog of `_ai_sessions` in shell.py.
 
-| Component | File | Change | Risk |
-|-----------|------|--------|------|
-| `Channel._display()` | channels.py | Delegate to `_formatter` if set, else existing logic | LOW -- backward compatible |
-| `Channel.__init__` | channels.py | Add `_formatter` field (default None) | LOW -- new field, optional |
-| `AI.__call__()` | ai.py | Add classify_response step, pass tools in metadata | LOW -- additive |
-| `ai_prompt.md` | ai_prompt.md | Add tool conventions section | MEDIUM -- behavior change |
-| `CortexShell.__init__()` | shell.py | Add view_mode state, view toolbar widget | LOW -- additive |
-| `_build_key_bindings()` | shell.py | Add Ctrl+V for view cycling | LOW -- new binding |
+```python
+@dataclass
+class RunningGraph:
+    """A single graph execution in progress."""
+    gid: str                              # short id: "g1", "g2", ...
+    graph: Graph                          # the Graph object
+    runner: GraphRunner                   # wraps the async execution
+    task: TrackedTask                     # TaskManager handle
+    prompt: CortexPrompt                  # the prompt implementation for this run
+    started: float                        # time.time()
+    name: str                             # display name (graph.start.__name__)
 
-### Unchanged Components
+class GraphRegistry:
+    """Tracks graph definitions and running instances."""
 
-| Component | Why Unchanged |
-|-----------|---------------|
-| `Channel.write()` | Recording, buffering, visibility check -- all the same |
-| `ChannelRouter` | Dispatch logic unchanged, formatters are per-channel |
-| `SessionStore` | Records content as-is, metadata already supports dicts |
-| `AI._send()` | Subprocess invocation unchanged |
-| `AI.extract_code()` | Still the core code block extractor |
-| `async_exec()` | Execution unchanged |
-| `TaskManager` | Task lifecycle unchanged |
-| `render_markdown()` | Still exists, used by UserView internally |
+    def __init__(self, router: ChannelRouter, tm: TaskManager, lm: LM):
+        self._definitions: dict[str, Graph] = {}   # name -> Graph
+        self._running: dict[str, RunningGraph] = {} # gid -> RunningGraph
+        self._next_id: int = 1
+        self._router = router
+        self._tm = tm
+        self._lm = lm
+
+    def register(self, name: str, graph: Graph) -> None:
+        """Register a graph definition by name."""
+        self._definitions[name] = graph
+
+    def launch(self, name: str, **kwargs) -> RunningGraph:
+        """Launch a registered graph. Returns the running instance."""
+        graph = self._definitions[name]
+        gid = f"g{self._next_id}"
+        self._next_id += 1
+        prompt = CortexPrompt(gid, self._router)
+        runner = GraphRunner(graph, prompt, self._router, self._lm)
+        coro = runner.run(**kwargs)
+        tt = self._tm.submit(coro, name=f"graph:{gid}:{name}", mode="graph")
+        rg = RunningGraph(
+            gid=gid, graph=graph, runner=runner,
+            task=tt, prompt=prompt, started=time.time(), name=name,
+        )
+        self._running[gid] = rg
+        return rg
+
+    def respond(self, gid: str, text: str) -> bool:
+        """Deliver user input to a suspended graph. Returns True if delivered."""
+        rg = self._running.get(gid)
+        if rg is None or not rg.prompt.is_pending:
+            return False
+        rg.prompt.deliver(text)
+        return True
+
+    def pending(self) -> list[RunningGraph]:
+        """Graphs waiting for user input."""
+        return [rg for rg in self._running.values() if rg.prompt.is_pending]
+
+    def active(self) -> list[RunningGraph]:
+        """All running graphs (pending + executing)."""
+        return [
+            rg for rg in self._running.values()
+            if rg.task.state == TaskState.RUNNING
+        ]
+
+    @property
+    def pending_count(self) -> int:
+        return len(self.pending())
+```
+
+**Why a registry and not just namespace?** Multiple graphs can run concurrently. Each needs its own `CortexPrompt` instance and its own `gid` for input routing. The registry manages this multiplexing -- `respond(gid, text)` routes input to the right graph's pending future.
+
+**Why not reuse `_ai_sessions`?** AI sessions are conversation state. Graph runs are task executions with lifecycle (start, suspend, resume, complete). Different semantics, different data.
+
+#### 2. CortexPrompt (`bae/repl/graphs.py` -- NEW, in same file)
+
+Implements the `Prompt` protocol from `bae/work/prompt.py`. Instead of blocking on `input()`, it creates an `asyncio.Future`, writes a notification to the `[graph]` channel, and awaits the future. The future is resolved when the user responds via graph mode.
+
+```python
+class CortexPrompt:
+    """Prompt implementation that suspends graph execution via asyncio.Future.
+
+    When a graph node calls prompt.ask(), this:
+    1. Creates an asyncio.Future
+    2. Writes the question to [graph] channel as a pending notification
+    3. Awaits the future (graph coroutine suspends)
+    4. Returns when deliver() is called with the user's response
+    """
+
+    def __init__(self, gid: str, router: ChannelRouter):
+        self._gid = gid
+        self._router = router
+        self._pending: asyncio.Future | None = None
+        self._pending_question: str = ""
+
+    @property
+    def is_pending(self) -> bool:
+        return self._pending is not None and not self._pending.done()
+
+    @property
+    def pending_question(self) -> str:
+        return self._pending_question if self.is_pending else ""
+
+    async def ask(
+        self,
+        question: str,
+        *,
+        choices: list[PromptChoice] | None = None,
+        multi_select: bool = False,
+    ) -> PromptResult:
+        loop = asyncio.get_event_loop()
+        self._pending = loop.create_future()
+        self._pending_question = question
+
+        # Format notification with choices
+        display = question
+        if choices:
+            for i, c in enumerate(choices, 1):
+                desc = f" -- {c.description}" if c.description else ""
+                display += f"\n  {i}. {c.label}{desc}"
+
+        self._router.write(
+            "graph", display, mode="GRAPH",
+            metadata={"type": "input_gate", "gid": self._gid},
+        )
+
+        # Graph suspends here until deliver() is called
+        text = await self._pending
+        self._pending = None
+        self._pending_question = ""
+        return PromptResult(text=text)
+
+    async def confirm(self, message: str) -> bool:
+        result = await self.ask(message)
+        return result.text.strip().lower() in ("y", "yes", "")
+
+    def deliver(self, text: str) -> None:
+        """Called by GraphRegistry.respond() to resume the graph."""
+        if self._pending is not None and not self._pending.done():
+            self._pending.set_result(text)
+```
+
+**Why asyncio.Future, not asyncio.Event?** `Event` is boolean -- it signals but carries no data. `Future` carries the user's response text as its result value. The graph needs the response content, not just a signal.
+
+**Why not asyncio.Queue?** Queue allows multiple items. A graph gate expects exactly one response per ask. Future is the right primitive -- one producer, one consumer, one value.
+
+**Thread safety:** Both the graph (awaiting the future) and the REPL input handler (calling `deliver()`) run on the same event loop. `Future.set_result()` is safe to call from the same loop. No threading concerns.
+
+#### 3. GraphRunner (`bae/repl/graphs.py` -- NEW, in same file)
+
+Wraps a single graph execution, bridging between `graph.arun()` and cortex's channel system. Handles prompt injection, channel output, error capture, and trace storage.
+
+```python
+class GraphRunner:
+    """Wraps a single graph.arun() execution for cortex integration."""
+
+    def __init__(
+        self,
+        graph: Graph,
+        prompt: CortexPrompt,
+        router: ChannelRouter,
+        lm: LM,
+    ):
+        self.graph = graph
+        self.prompt = prompt
+        self._router = router
+        self._lm = lm
+        self.trace: list[Node] | None = None
+        self.result: GraphResult | None = None
+        self.error: Exception | None = None
+
+    async def run(self, **kwargs) -> GraphResult | None:
+        """Execute the graph with cortex-integrated prompt and channel output."""
+        # Inject CortexPrompt as the prompt implementation
+        from bae.work.prompt import _prompt
+        import bae.work.prompt as prompt_mod
+        old_prompt = prompt_mod._prompt
+        prompt_mod._prompt = self.prompt
+        try:
+            self.result = await self.graph.arun(lm=self._lm, **kwargs)
+            self.trace = self.result.trace
+            if self.result and self.result.trace:
+                terminal = self.result.trace[-1]
+                self._router.write(
+                    "graph", repr(terminal), mode="GRAPH",
+                    metadata={"type": "result", "gid": self.prompt._gid},
+                )
+            return self.result
+        except asyncio.CancelledError:
+            self._router.write(
+                "debug", f"graph {self.prompt._gid} cancelled", mode="DEBUG",
+            )
+            raise
+        except Exception as exc:
+            self.error = exc
+            self.trace = getattr(exc, "trace", None)
+            self._router.write(
+                "graph", str(exc), mode="GRAPH",
+                metadata={"type": "error", "gid": self.prompt._gid},
+            )
+            raise
+        finally:
+            prompt_mod._prompt = old_prompt
+```
+
+**Why swap the module-level `_prompt`?** The `get_prompt()` function returns `prompt_mod._prompt`. All `PromptDep = Annotated[Prompt, Dep(get_prompt)]` annotations resolve through this. By swapping the module-level singleton before `arun()` and restoring after, all nodes in the graph transparently use `CortexPrompt` without any changes to node code or the Dep resolution system.
+
+**Why not pass prompt through kwargs?** `graph.arun()` passes kwargs as start node fields. Prompt injection happens at the dep resolution layer, not the field layer. Nodes don't have a `prompt: Prompt` plain field -- they have `prompt: PromptDep` which resolves via `Dep(get_prompt)`. The dep system calls `get_prompt()` which reads the module global.
+
+**Concern: concurrent graphs sharing the module global.** If two graphs run simultaneously, they both swap `_prompt`. Solution: each `GraphRunner.run()` sets `_prompt` to its own `CortexPrompt` instance. Since `arun()` resolves deps at each node step, and we swap before calling `arun()`, the prompt is correct for the duration. However, if two graphs interleave node resolutions, they could read each other's prompt. This is a real concern addressed in Pitfalls.
+
+**Better approach: dep_cache injection.** The graph's `arun()` already maintains a `dep_cache` dict. If we add the prompt to the dep_cache keyed by `get_prompt`, it bypasses the module global entirely. This requires a small change to `Graph.arun()` to accept an initial dep_cache:
+
+```python
+# graph.py arun() modification
+async def arun(self, *, lm=None, max_iters=10, dep_cache=None, **kwargs):
+    ...
+    dep_cache_internal: dict = {LM_KEY: lm}
+    if dep_cache:
+        dep_cache_internal.update(dep_cache)
+    ...
+```
+
+Then `GraphRunner` injects prompt via dep_cache:
+
+```python
+from bae.work.prompt import get_prompt
+
+dep_cache = {get_prompt: self.prompt}
+self.result = await self.graph.arun(lm=self._lm, dep_cache=dep_cache, **kwargs)
+```
+
+This is clean, concurrent-safe, and requires a one-line change to `graph.py`. **Recommended approach.**
+
+#### 4. Graph Mode Input Handling (`shell.py` -- MODIFIED)
+
+Graph mode input needs to route between graph commands and graph input responses. The dispatch uses simple prefix conventions:
+
+```python
+async def _run_graph(self, text: str) -> None:
+    """GRAPH mode: graph management and input response."""
+
+    # Command dispatch
+    if text.startswith("/"):
+        await self._graph_command(text)
+        return
+
+    # Input response: route to graph with pending input
+    # Format: @gid response  OR  just response (routes to only pending graph)
+    if text.startswith("@"):
+        parts = text[1:].split(" ", 1)
+        gid = parts[0]
+        response = parts[1] if len(parts) > 1 else ""
+        if self.graphs.respond(gid, response):
+            return
+        self.router.write("graph", f"no pending input for {gid}", mode="GRAPH")
+        return
+
+    # Single pending graph: route input directly
+    pending = self.graphs.pending()
+    if len(pending) == 1:
+        self.graphs.respond(pending[0].gid, text)
+        return
+
+    # Multiple pending: require @gid prefix
+    if len(pending) > 1:
+        labels = ", ".join(f"@{rg.gid}" for rg in pending)
+        self.router.write(
+            "graph", f"multiple graphs waiting. prefix with: {labels}",
+            mode="GRAPH",
+        )
+        return
+
+    # No pending graphs, no command: treat as launch
+    self.router.write("graph", "no graphs running. use /run <name>", mode="GRAPH")
+
+async def _graph_command(self, text: str) -> None:
+    """Handle /commands in graph mode."""
+    parts = text.split()
+    cmd = parts[0]
+
+    if cmd == "/run" and len(parts) >= 2:
+        name = parts[1]
+        kwargs_text = " ".join(parts[2:]) if len(parts) > 2 else ""
+        # Parse kwargs from text (simple key=value pairs)
+        kwargs = _parse_graph_kwargs(kwargs_text) if kwargs_text else {}
+        try:
+            rg = self.graphs.launch(name, **kwargs)
+            self.router.write(
+                "graph", f"launched {rg.gid} ({rg.name})",
+                mode="GRAPH", metadata={"type": "lifecycle", "gid": rg.gid},
+            )
+        except KeyError:
+            self.router.write("graph", f"unknown graph: {name}", mode="GRAPH")
+
+    elif cmd == "/graphs":
+        active = self.graphs.active()
+        if not active:
+            self.router.write("graph", "no graphs running", mode="GRAPH")
+        else:
+            for rg in active:
+                status = "waiting" if rg.prompt.is_pending else "running"
+                q = f": {rg.prompt.pending_question[:60]}" if rg.prompt.is_pending else ""
+                self.router.write(
+                    "graph", f"  {rg.gid} {rg.name} [{status}]{q}",
+                    mode="GRAPH",
+                )
+
+    elif cmd == "/kill" and len(parts) >= 2:
+        gid = parts[1]
+        # Cancel via TaskManager
+        rg = self.graphs._running.get(gid)
+        if rg:
+            self.graphs._tm.revoke(rg.task.task_id)
+
+    elif cmd == "/trace" and len(parts) >= 2:
+        gid = parts[1]
+        rg = self.graphs._running.get(gid)
+        if rg and rg.runner.trace:
+            for i, node in enumerate(rg.runner.trace):
+                self.router.write(
+                    "graph", f"  {i+1}. {type(node).__name__}",
+                    mode="GRAPH", metadata={"type": "trace"},
+                )
+```
+
+**Why /commands?** Graph mode serves two purposes: managing graphs and responding to input gates. The `/` prefix disambiguates management commands from input responses. This matches common REPL conventions (IRC `/join`, Redis `CLI commands`).
+
+**Why @gid for input routing?** With 10+ concurrent graphs, the user needs to address specific graphs. `@g1 yes` is terse and unambiguous. When only one graph is pending, the prefix is optional -- bare text goes to the only pending graph.
+
+#### 5. Toolbar Badge (`toolbar.py` -- MODIFIED)
+
+A pending input count on the toolbar, visible in all modes (not just graph mode). This is "shush mode" -- the user sees `2 pending` while working in NL or PY mode, knowing graphs are waiting.
+
+```python
+def make_pending_widget(shell) -> ToolbarWidget:
+    """Built-in widget: pending graph input count (hidden when zero)."""
+    def widget():
+        n = shell.graphs.pending_count
+        if n == 0:
+            return []
+        return [("class:toolbar.pending", f" {n} pending ")]
+    return widget
+```
+
+Registered in `CortexShell.__init__()`:
+
+```python
+self.toolbar.add("pending", make_pending_widget(self))
+```
+
+Style:
+
+```python
+"toolbar.pending": "fg:ansimagenta bold",
+```
+
+#### 6. Graph Channel Metadata Types
+
+The `[graph]` channel already exists in `CHANNEL_DEFAULTS`. The new metadata types flowing through it:
+
+| Metadata Type | When | Content |
+|---------------|------|---------|
+| `input_gate` | Node calls prompt.ask() | The question text with choices |
+| `result` | Graph completes normally | Terminal node repr |
+| `error` | Graph raises exception | Error message |
+| `lifecycle` | Graph launched/completed/cancelled | Status message |
+| `trace` | User requests /trace | Node name list |
+| `log` | Graph logger output (existing) | Debug log lines |
+
+Metadata includes `gid` for all graph-specific writes, enabling view formatters to scope rendering per graph.
+
+### Integration with Existing View System
+
+The existing `UserView`, `DebugView`, and `AISelfView` formatters render based on `metadata["type"]`. Graph writes flow through the same pipeline:
+
+```
+CortexPrompt.ask()
+    |
+    v
+router.write("graph", question, metadata={"type": "input_gate", "gid": "g1"})
+    |
+    v
+Channel("graph").write(...)
+    |
+    v
+Channel._display(...)
+    |
+    v
+active_formatter.render("graph", "#ffaf87", question, metadata={...})
+    |
+    +-- UserView: render question with visual indicator (waiting icon)
+    +-- DebugView: raw content with all metadata
+    +-- AISelfView: graph-perspective tags
+```
+
+**UserView additions for graph:**
+
+```python
+# In UserView.render(), add graph-specific handling:
+if content_type == "input_gate":
+    gid = meta.get("gid", "?")
+    self._render_prefixed(channel_name, color, f"[{gid}] {content}", meta)
+    return
+```
+
+Minimal -- the existing `_render_prefixed` handles it. No new Rich panels needed for graph output. Graph I/O is text, not code execution.
+
+## Data Flow
+
+### Graph Launch Flow
+
+```
+User: /run new_project
+    |
+    v
+_graph_command("/run new_project")
+    |
+    v
+graphs.launch("new_project")
+    |
+    v
+GraphRegistry:
+    1. Create CortexPrompt(gid="g1", router)
+    2. Create GraphRunner(graph, prompt, router, lm)
+    3. dep_cache = {get_prompt: prompt}
+    4. coro = runner.run(dep_cache=dep_cache)
+    5. tm.submit(coro, name="graph:g1:new_project", mode="graph")
+    |
+    v
+[graph] launched g1 (new_project)
+```
+
+### Input Gate Suspension Flow
+
+```
+graph.arun() executing...
+    |
+    v
+Node: AgreeOnProblem.__call__()
+    |
+    v
+self.prompt.ask("What is the problem?")
+    |  (self.prompt resolves to CortexPrompt via Dep)
+    v
+CortexPrompt.ask():
+    1. self._pending = loop.create_future()
+    2. router.write("graph", "What is the problem?",
+                    metadata={"type": "input_gate", "gid": "g1"})
+    3. toolbar badge: 1 pending
+    4. await self._pending    <-- graph suspends here
+    |
+    v
+[user sees notification, switches to graph mode or already in it]
+    |
+    v
+User types: "Users can't find the search button"
+    |
+    v
+_run_graph("Users can't find the search button")
+    |
+    v
+graphs.respond("g1", "Users can't find the search button")
+    |
+    v
+CortexPrompt._pending.set_result("Users can't find the search button")
+    |
+    v
+CortexPrompt.ask() returns PromptResult(text="Users can't find...")
+    |
+    v
+AgreeOnProblem continues execution
+    |
+    v
+toolbar badge: 0 pending
+```
+
+### Concurrent Graph Flow (10+ graphs)
+
+```
+graphs.launch("project_a")  -> g1
+graphs.launch("project_b")  -> g2
+graphs.launch("project_c")  -> g3
+    |
+    v
+All three run as separate asyncio tasks via TaskManager.
+Each has its own CortexPrompt, its own dep_cache, its own trace.
+    |
+    v
+g1 hits input gate -> toolbar: 1 pending
+g3 hits input gate -> toolbar: 2 pending
+g2 still running   -> toolbar shows "3 tasks" (existing widget)
+    |
+    v
+User in GRAPH mode:
+    /graphs
+    [graph]   g1 new_project [waiting]: What is the problem?
+    [graph]   g2 quick [running]
+    [graph]   g3 plan_phase [waiting]: Approve requirements?
+    |
+    v
+User: @g3 yes              -> routes to g3, g3 resumes
+User: The search UX sucks  -> only g1 pending, routes to g1
+```
+
+## Modified Components Summary
+
+### New Files
+
+| File | Component | Purpose |
+|------|-----------|---------|
+| `bae/repl/graphs.py` | CortexPrompt | Prompt implementation using asyncio.Future |
+| `bae/repl/graphs.py` | GraphRunner | Wraps graph.arun() for cortex integration |
+| `bae/repl/graphs.py` | GraphRegistry | Tracks definitions and running instances |
+| `bae/repl/graphs.py` | RunningGraph | Dataclass for a running graph instance |
+
+### Modified Files
+
+| File | Change | Risk |
+|------|--------|------|
+| `bae/graph.py` | Add `dep_cache` param to `arun()` | LOW -- additive, backward compatible |
+| `bae/repl/shell.py` | Replace `_run_graph` stub, add GraphRegistry to `__init__`, add pending widget | MEDIUM -- new control flow |
+| `bae/repl/toolbar.py` | Add `make_pending_widget()` | LOW -- new function |
+| `bae/repl/views.py` | Add `input_gate` rendering in UserView | LOW -- additive case |
+
+### Unchanged Files
+
+| File | Why Unchanged |
+|------|---------------|
+| `bae/node.py` | Nodes don't know about cortex |
+| `bae/resolver.py` | Dep resolution unchanged, dep_cache injection handles routing |
+| `bae/markers.py` | Dep, Recall, Effect unchanged |
+| `bae/result.py` | GraphResult unchanged |
+| `bae/lm.py` | LM protocol unchanged |
+| `bae/work/prompt.py` | Prompt protocol unchanged, TerminalPrompt unchanged |
+| `bae/work/new_project.py` | Graph definitions unchanged |
+| `bae/repl/channels.py` | Channel system unchanged |
+| `bae/repl/tasks.py` | TaskManager unchanged, used as-is |
+| `bae/repl/store.py` | SessionStore unchanged |
+| `bae/repl/ai.py` | AI agent unchanged |
+| `bae/repl/modes.py` | Mode enum unchanged |
+
+## Patterns to Follow
+
+### Pattern 1: dep_cache Injection for Prompt Routing
+
+**What:** Pass a pre-populated `dep_cache` to `graph.arun()` that maps `get_prompt` to the cortex-specific `CortexPrompt` instance.
+
+**When:** Any time a graph runs inside cortex.
+
+**Why:** The dep resolution system already checks `dep_cache` before calling dep functions. By pre-seeding the cache, `get_prompt` never runs -- the cached `CortexPrompt` is returned directly. This avoids module-global mutation and is safe for concurrent graphs.
+
+```python
+from bae.work.prompt import get_prompt
+
+dep_cache = {get_prompt: cortex_prompt}
+await graph.arun(dep_cache=dep_cache, **kwargs)
+```
+
+### Pattern 2: Future-Based Suspension
+
+**What:** Use `asyncio.Future` to suspend graph execution at input gates.
+
+**When:** A graph node needs user input inside cortex.
+
+**Why:** The graph's `arun()` loop is a single coroutine. When it awaits a future, the entire graph suspends but the event loop continues. Other graphs, AI sessions, and the REPL prompt all keep running. When the future resolves, the graph resumes exactly where it left off.
+
+**Not Event, not Queue:** Future carries exactly one result value (the user's text response). Event is boolean. Queue allows multiple items. Future matches the "one question, one answer" semantics of `prompt.ask()`.
+
+### Pattern 3: Registry for Multiplexed State
+
+**What:** Use a registry (GraphRegistry) to track multiple running instances of the same type of object (graphs), each with independent state.
+
+**When:** Multiple concurrent graphs need independent prompts, traces, and lifecycle.
+
+**Why:** This is the same pattern as `_ai_sessions` in `shell.py` -- a dict keyed by identifier, with factory methods for creation and lookup methods for access. The registry owns the lifecycle: create, track, clean up.
+
+### Pattern 4: Prefix-Based Input Routing
+
+**What:** Use `@gid` prefix to route user input to a specific graph, with implicit routing when only one graph is pending.
+
+**When:** User responds to graph input gates in graph mode.
+
+**Why:** Terse, familiar (IRC/Slack @mentions), and the single-pending optimization means most of the time the user just types the answer without any prefix.
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: Module-Global Prompt Swap
+
+**What:** Setting `bae.work.prompt._prompt = cortex_prompt` before `arun()` and restoring after.
+
+**Why bad:** Not concurrent-safe. If two graphs run simultaneously, they overwrite each other's prompt. Race condition: graph A swaps prompt, graph B swaps prompt, graph A's nodes resolve graph B's prompt.
+
+**Instead:** dep_cache injection. Each graph gets its own dep_cache with its own prompt instance. No shared mutable state.
+
+### Anti-Pattern 2: Synchronous Input in Background Tasks
+
+**What:** Calling `input()` from a background asyncio task.
+
+**Why bad:** prompt_toolkit owns stdin via `prompt_async()`. A concurrent `input()` call either blocks forever (stdin already consumed) or corrupts the prompt display.
+
+**Instead:** CortexPrompt creates a Future, writes a notification, and awaits the Future. The REPL's `prompt_async()` loop reads user input and calls `deliver()` on the Future.
+
+### Anti-Pattern 3: Graph Mode as Full-Screen TUI
+
+**What:** Switching to a different screen/layout when entering graph mode.
+
+**Why bad:** Violates the cortex principle of "minimal TUI -- no screen transitions." Users expect the scrollback-based REPL to persist. Full-screen mode loses scrollback context and creates jarring transitions.
+
+**Instead:** Graph notifications appear inline in scrollback via `[graph]` channel. Toolbar badge shows pending count. Graph management is via /commands. No mode transitions beyond Shift+Tab.
+
+### Anti-Pattern 4: Custom Event Loop for Graph Execution
+
+**What:** Running graphs in a separate event loop or thread.
+
+**Why bad:** Cross-loop Future resolution is undefined. The asyncio.Future must be created and resolved on the same event loop. A separate loop would require thread-safe primitives (threading.Event, queue.Queue) and lose async composability.
+
+**Instead:** Graphs run as regular asyncio tasks on the same event loop as cortex. TaskManager.submit() handles this. The event loop multiplexes graph execution, AI sessions, and REPL input naturally.
+
+### Anti-Pattern 5: Polling for Input
+
+**What:** Graph execution loop periodically checking "is there input available?"
+
+**Why bad:** Wastes CPU. Creates latency (input sits unprocessed until next poll). Complicates the clean suspension semantics.
+
+**Instead:** Future-based suspension. Zero CPU while waiting. Instant resumption when input arrives.
+
+## Scalability Considerations
+
+| Concern | At 1 graph | At 10 graphs | At 50+ graphs |
+|---------|------------|--------------|---------------|
+| Memory | Negligible | ~10 traces in memory | Consider trace trimming |
+| Event loop | No contention | Low contention (graphs mostly await LM calls) | LM call queuing needed |
+| Input routing | Implicit (no @gid needed) | @gid prefix required | /graphs listing + @gid |
+| Toolbar | "1 pending" | "5 pending" | Badge is sufficient, no per-graph breakdown |
+| TaskManager | Standard tracking | Standard tracking | May need task pagination (already exists) |
+
+The 10-graph target is well within asyncio's capacity. Each graph spends most of its time awaiting LM subprocess calls (`ClaudeCLIBackend._run_cli_json`), not doing CPU work. The event loop handles this naturally.
 
 ## Suggested Build Order
 
-### Phase A: View Formatter Infrastructure
+### Phase 1: dep_cache Injection
 
-**Build:** ViewFormatter protocol, `_rich_to_ansi()` helper, Channel `_formatter` field, `_display()` delegation.
-
-**Why first:** All other features depend on the formatter dispatch. Without it, new rendering has nowhere to plug in.
+Add `dep_cache` parameter to `Graph.arun()`. One-line change. Unlocks concurrent prompt injection.
 
 **Deliverables:**
-- `views.py` with ViewFormatter protocol and `_rich_to_ansi()`
-- Modified `Channel` with `_formatter` field and delegation in `_display()`
-- Tests: formatter protocol, delegation, backward compatibility when `_formatter is None`
+- Modified `graph.py`: `arun()` accepts optional `dep_cache` dict
+- Tests: `arun(dep_cache={get_prompt: mock_prompt})` uses injected prompt
 
-**Validation:** Existing tests pass unchanged (no formatter set = old behavior).
+### Phase 2: CortexPrompt + GraphRunner
 
-### Phase B: UserView -- Execution Framing
-
-**Build:** UserView formatter with Panel rendering for `ai_exec`, `ai_exec_result`, and `response` types. Buffered exec grouping.
-
-**Why second:** This is the highest-visibility change. Users immediately see the difference. The existing eval loop already produces the right metadata types.
+Build the Future-based prompt and the runner wrapper. Test in isolation (no shell integration yet).
 
 **Deliverables:**
-- UserView class in views.py
-- Panel rendering for response, exec, and exec_result
-- Buffered exec grouping (code + output in one panel)
-- Tests: each render path, buffer flush, error output styling
+- `bae/repl/graphs.py` with CortexPrompt, GraphRunner, RunningGraph
+- Tests: CortexPrompt.ask() suspends, deliver() resumes, confirm() works
+- Tests: GraphRunner.run() executes a simple graph with CortexPrompt
 
-**Validation:** Set `_formatter = UserView()` on `ai` and `py` channels. Run AI conversation. Panels render correctly.
+### Phase 3: GraphRegistry + Shell Integration
 
-### Phase C: Tool Call Detection
-
-**Build:** `classify_response()`, ResponseClassification dataclass, integration into `AI.__call__()`.
-
-**Why third:** Depends on Phase A (formatters can use tool metadata). Independent of Phase B (classification is metadata enrichment, not display).
+Wire GraphRegistry into CortexShell. Replace `_run_graph` stub. Add /commands.
 
 **Deliverables:**
-- `classify_response()` pure function
-- ResponseClassification dataclass
-- AI.__call__() modified to classify and pass tools in metadata
-- Tests: classification of various response types (code, inspect, import, prose)
+- GraphRegistry class in graphs.py
+- Modified shell.py: `_run_graph()` with command dispatch and input routing
+- Toolbar pending widget
+- Tests: launch, respond, /graphs, /kill, @gid routing
 
-**Validation:** AI responses include `tools` in metadata. DebugView shows tool list.
+### Phase 4: Graph Observability
 
-### Phase D: View Mode Switching + Remaining Formatters
-
-**Build:** ViewMode enum, Ctrl+V keybinding, DebugView, RawView, AISelfView, toolbar widget.
-
-**Why last:** Requires all formatters (Phase B), tool metadata (Phase C), and formatter infrastructure (Phase A) to be in place. Multiple views are the user-facing integration of all previous phases.
+Add /trace command, lifecycle metadata, DebugView rendering for graph events.
 
 **Deliverables:**
-- ViewMode enum and VIEW_CYCLE
-- Ctrl+V keybinding in shell.py
-- DebugView, RawView, AISelfView formatters
-- View mode toolbar widget
-- Tests: mode cycling, formatter swapping, each formatter renders correctly
-
-**Validation:** Ctrl+V cycles through views. Each view shows the same content differently.
-
-### Phase E: AI Prompt Hardening
-
-**Build:** Updated ai_prompt.md with tool conventions.
-
-**Why separate:** Prompt changes are behavioral, not structural. They should be tested empirically after the infrastructure is in place.
-
-**Deliverables:**
-- Updated ai_prompt.md
-- Empirical testing of AI response quality
-- Iteration based on observed behavior
-
-**Validation:** AI produces single code fences per response. AI does not produce unwanted code blocks.
+- /trace command shows node execution history
+- Lifecycle events (launched, completed, failed, cancelled) logged to [graph] channel
+- UserView renders input_gate with visual indicator
+- Completed graphs cleaned up from registry
 
 ## Sources
 
-### Primary (HIGH confidence)
-- Rich Panel docs: https://rich.readthedocs.io/en/stable/panel.html
-- Rich Syntax docs: https://rich.readthedocs.io/en/stable/syntax.html
-- Rich Group docs: https://rich.readthedocs.io/en/stable/group.html
-- Rich Box styles: https://rich.readthedocs.io/en/stable/appendix/box.html
-- Rich Console API (StringIO capture): https://rich.readthedocs.io/en/stable/console.html
-- prompt_toolkit ANSI class: https://python-prompt-toolkit.readthedocs.io/en/master/pages/reference.html
-- Direct codebase analysis: channels.py, ai.py, shell.py, views of all existing test files
-- Verified Rich Panel rendering via local `uv run` execution (code + output grouping)
-
-### Secondary (MEDIUM confidence)
-- Rich+prompt_toolkit integration discussion: https://github.com/Textualize/rich/discussions/936
-- prompt_toolkit patch_stdout behavior: https://github.com/prompt-toolkit/python-prompt-toolkit/issues/1346
-- Claude CLI reference (--tools, --output-format): https://code.claude.com/docs/en/cli-reference
+- Direct codebase analysis of all files listed in component map (HIGH confidence)
+- `asyncio.Future` semantics: Python 3.12+ stdlib docs (HIGH confidence)
+- `prompt_toolkit.patch_stdout` behavior: verified in existing codebase usage (HIGH confidence)
+- Dep resolution via `dep_cache`: traced through `resolver.py` `resolve_fields()` -> `_resolve_one()` -> cache lookup (HIGH confidence)
+- Concurrent asyncio task patterns: standard asyncio patterns, verified against `TaskManager` implementation (HIGH confidence)
 
 ---
-*Architecture research: 2026-02-14 -- v5.0 multi-view stream framework*
+*Architecture research: 2026-02-15 -- Graph runtime in cortex*
