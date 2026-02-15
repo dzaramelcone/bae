@@ -15,7 +15,8 @@ import traceback
 from collections.abc import Awaitable, Callable
 from io import StringIO
 
-from bae.repl.exec import async_exec
+
+
 
 _EXEC_BLOCK_RE = re.compile(
     r"<run>\s*\n?(.*?)\n?\s*</run>",
@@ -73,6 +74,8 @@ async def agent_loop(
             break
 
         # Execute the block
+        from bae.repl.exec import async_exec
+
         output = ""
         try:
             result, captured = await async_exec(code, namespace)

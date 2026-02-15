@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from bae.agent import _agent_namespace, agent_loop, extract_executable
+from bae.lm import AgenticBackend
 
 
 # --- extract_executable ---
@@ -119,3 +121,90 @@ def test_agent_namespace_fresh():
     # Fresh dicts -- no shared state
     ns1["_test_marker"] = True
     assert "_test_marker" not in ns2
+
+
+# --- AgenticBackend ---
+
+
+class TestAgenticBackend:
+    """Tests for AgenticBackend LM implementation."""
+
+    @pytest.mark.asyncio
+    async def test_delegates_choose_type(self):
+        """choose_type delegates to wrapped ClaudeCLIBackend."""
+        backend = AgenticBackend()
+        sentinel = MagicMock()
+        backend._cli = MagicMock()
+        backend._cli.choose_type = AsyncMock(return_value=sentinel)
+
+        result = await backend.choose_type(["A", "B"], {"ctx": "val"})
+
+        backend._cli.choose_type.assert_called_once_with(["A", "B"], {"ctx": "val"})
+        assert result is sentinel
+
+    @pytest.mark.asyncio
+    async def test_delegates_make(self):
+        """make delegates to wrapped ClaudeCLIBackend."""
+        backend = AgenticBackend()
+        sentinel = MagicMock()
+        backend._cli = MagicMock()
+        backend._cli.make = AsyncMock(return_value=sentinel)
+
+        node = MagicMock()
+        target = MagicMock()
+        result = await backend.make(node, target)
+
+        backend._cli.make.assert_called_once_with(node, target)
+        assert result is sentinel
+
+    @pytest.mark.asyncio
+    async def test_delegates_decide(self):
+        """decide delegates to wrapped ClaudeCLIBackend."""
+        backend = AgenticBackend()
+        sentinel = MagicMock()
+        backend._cli = MagicMock()
+        backend._cli.decide = AsyncMock(return_value=sentinel)
+
+        node = MagicMock()
+        result = await backend.decide(node)
+
+        backend._cli.decide.assert_called_once_with(node)
+        assert result is sentinel
+
+    @pytest.mark.asyncio
+    async def test_fill_two_phase(self):
+        """fill calls agent_loop for research, then structured extraction."""
+        from bae.node import Node
+
+        class TestTarget(Node):
+            answer: str
+
+            async def __call__(self) -> None:
+                ...
+
+        backend = AgenticBackend(max_iters=3)
+        backend._cli = MagicMock()
+        backend._cli._run_cli_json = AsyncMock(return_value={"answer": "42"})
+
+        with patch("bae.agent.agent_loop", new_callable=AsyncMock) as mock_loop:
+            mock_loop.return_value = "The answer is 42 based on research."
+            result = await backend.fill(TestTarget, {}, "TestTarget")
+
+        # agent_loop was called for research phase
+        mock_loop.assert_called_once()
+        call_kwargs = mock_loop.call_args
+        assert call_kwargs.kwargs["max_iters"] == 3
+
+        # Structured extraction was called for extraction phase
+        backend._cli._run_cli_json.assert_called_once()
+        extract_prompt = backend._cli._run_cli_json.call_args[0][0]
+        assert "research" in extract_prompt.lower()
+
+        # Result is a constructed TestTarget
+        assert isinstance(result, TestTarget)
+        assert result.answer == "42"
+
+    def test_import_from_bae(self):
+        """AgenticBackend is importable from bae top-level."""
+        from bae import AgenticBackend as AB
+        assert AB is AgenticBackend

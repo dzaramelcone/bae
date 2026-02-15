@@ -323,6 +323,84 @@ class LM(Protocol):
         ...
 
 
+class AgenticBackend:
+    """LM backend with multi-turn tool use during fill().
+
+    Two-phase fill: agent_loop runs <run> blocks for research,
+    then structured extraction produces typed output.
+    Delegates choose_type/make/decide to a wrapped ClaudeCLIBackend.
+    """
+
+    def __init__(self, model: str = "claude-sonnet-4-20250514", max_iters: int = 5):
+        self.model = model
+        self.max_iters = max_iters
+        self._cli = ClaudeCLIBackend(model=model)
+
+    async def fill(
+        self,
+        target: type[T],
+        resolved: dict[str, object],
+        instruction: str,
+        source: "Node | None" = None,
+    ) -> T:
+        """Two-phase fill: agentic research, then structured extraction."""
+        import uuid
+
+        from bae.agent import _agent_namespace, _cli_send, agent_loop
+
+        session_id = str(uuid.uuid4())
+        call_count = 0
+
+        async def send(text: str) -> str:
+            nonlocal call_count
+            result = await _cli_send(
+                text, model=self.model, session_id=session_id,
+                call_count=call_count,
+            )
+            call_count += 1
+            return result
+
+        prompt = _build_fill_prompt(target, resolved, instruction, source)
+        prompt += "\n\nUse Python in <run> tags to research and gather information, then provide your answer."
+
+        namespace = _agent_namespace()
+
+        # Phase 1: Agentic research
+        final_response = await agent_loop(
+            prompt, send=send, namespace=namespace, max_iters=self.max_iters,
+        )
+
+        # Phase 2: Structured extraction
+        plain_model = _build_plain_model(target)
+        schema = transform_schema(plain_model)
+        extraction_prompt = (
+            f"Based on your research:\n\n{final_response}\n\n"
+            f"Extract the structured data for: {instruction}"
+        )
+        data = await self._cli._run_cli_json(extraction_prompt, schema)
+
+        validated = validate_plain_fields(data, target)
+        all_fields = dict(resolved)
+        all_fields.update(validated)
+        return target.model_construct(**all_fields)
+
+    async def choose_type(
+        self,
+        types: list[type["Node"]],
+        context: dict[str, object],
+    ) -> type["Node"]:
+        """Pick successor type -- delegates to CLI backend."""
+        return await self._cli.choose_type(types, context)
+
+    async def make(self, node: "Node", target: type[T]) -> T:
+        """Produce node instance -- delegates to CLI backend."""
+        return await self._cli.make(node, target)
+
+    async def decide(self, node: "Node") -> "Node | None":
+        """Decide next node -- delegates to CLI backend."""
+        return await self._cli.decide(node)
+
+
 class ClaudeCLIBackend:
     """LLM backend using Claude CLI subprocess."""
 

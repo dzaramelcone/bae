@@ -19,7 +19,7 @@ from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from bae.agent import _EXEC_BLOCK_RE, extract_executable
+from bae.agent import extract_executable
 from bae.repl.exec import async_exec
 
 if TYPE_CHECKING:
@@ -28,6 +28,11 @@ if TYPE_CHECKING:
     from bae.repl.channels import ChannelRouter
     from bae.repl.store import SessionStore
     from bae.repl.tasks import TaskManager
+
+_EXEC_BLOCK_RE = re.compile(
+    r"<run>\s*\n?(.*?)\n?\s*</run>",
+    re.DOTALL,
+)
 
 _MAX_TOOL_OUTPUT = 4000
 

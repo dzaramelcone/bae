@@ -2,7 +2,7 @@
 
 from bae.exceptions import BaeError, BaeLMError, BaeParseError, DepError, FillError, RecallError
 from bae.graph import Graph
-from bae.lm import LM, ClaudeCLIBackend
+from bae.lm import LM, AgenticBackend, ClaudeCLIBackend
 from bae.markers import Dep, Effect, Recall
 from bae.node import Node, NodeConfig
 from bae.resolver import classify_fields, resolve_fields
@@ -23,6 +23,7 @@ __all__ = [
     "resolve_fields",
     # LM backends
     "LM",
+    "AgenticBackend",
     "ClaudeCLIBackend",
     # Exceptions
     "BaeError",
