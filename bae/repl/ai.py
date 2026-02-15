@@ -19,6 +19,7 @@ from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from bae.agent import _EXEC_BLOCK_RE, extract_executable
 from bae.repl.exec import async_exec
 
 if TYPE_CHECKING:
@@ -27,11 +28,6 @@ if TYPE_CHECKING:
     from bae.repl.channels import ChannelRouter
     from bae.repl.store import SessionStore
     from bae.repl.tasks import TaskManager
-
-_EXEC_BLOCK_RE = re.compile(
-    r"<run>\s*\n?(.*?)\n?\s*</run>",
-    re.DOTALL,
-)
 
 _MAX_TOOL_OUTPUT = 4000
 
@@ -280,10 +276,7 @@ class AI:
         Returns (code, extra_count) where code is the first executable
         block or None, and extra_count is additional blocks ignored.
         """
-        matches = _EXEC_BLOCK_RE.findall(text)
-        if not matches:
-            return None, 0
-        return matches[0], len(matches) - 1
+        return extract_executable(text)
 
     def __repr__(self) -> str:
         sid = self._session_id[:8]
