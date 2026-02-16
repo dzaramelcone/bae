@@ -454,13 +454,12 @@ class TestMetaSubresource:
         assert "bae.repl.spaces.source.service" in result
 
     def test_read_symbol(self, src):
-        result = src.children()["meta"].read("DepsSubresource")
-        assert "class DepsSubresource" in result
+        result = src.children()["meta"].read("SourceResourcespace.enter")
+        assert "def enter" in result
 
     def test_nav_lists_symbols(self, src):
         result = src.children()["meta"].nav()
         assert "SourceResourcespace" in result
-        assert "DepsSubresource" in result
 
     def test_enter_shows_description(self, src):
         result = src.children()["meta"].enter()

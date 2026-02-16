@@ -1,12 +1,10 @@
 """Source resourcespace: semantic Python project interface via module paths."""
 
-from bae.repl.spaces.source.service import (
-    SourceResourcespace,
-    DepsSubresource,
-    ConfigSubresource,
-    TestsSubresource,
-    MetaSubresource,
-)
+from bae.repl.spaces.source.service import SourceResourcespace
+from bae.repl.spaces.source.deps import DepsSubresource
+from bae.repl.spaces.source.config import ConfigSubresource
+from bae.repl.spaces.source.tests import TestsSubresource
+from bae.repl.spaces.source.meta import MetaSubresource
 from bae.repl.spaces.source.models import (
     CHAR_CAP,
     _validate_module_path,
@@ -21,3 +19,11 @@ from bae.repl.spaces.source.models import (
     _hot_reload,
     _GLOB_VALID,
 )
+
+__all__ = [
+    "SourceResourcespace",
+    "DepsSubresource",
+    "ConfigSubresource",
+    "TestsSubresource",
+    "MetaSubresource",
+]
