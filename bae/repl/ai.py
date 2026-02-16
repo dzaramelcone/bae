@@ -35,7 +35,7 @@ _EXEC_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 
-from bae.repl.spaces.home.service import (
+from bae.repl.spaces.home import (
     _exec_read,
     _exec_write,
     _exec_edit_read,
