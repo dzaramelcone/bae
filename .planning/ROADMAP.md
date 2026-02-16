@@ -155,7 +155,7 @@ Plans:
 
 **Goal:** Strip tool call content from UserView and AI context history; prune everything but tool I/O and agent's last message; resource entry shows AI-native tool tags with docstring summaries
 **Depends on:** Phase 32.1
-**Plans:** 4 plans
+**Plans:** 4/4 plans complete
 
 Plans:
 - [ ] 32.2-01-PLAN.md — Reformat tool summaries to `◆ name(args) -> type` and suppress intermediate AI responses
