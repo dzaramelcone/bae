@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v7.0 Hypermedia Resourcespace -- Phase 32.1: Resourcespace Package Structure
+**Current focus:** v7.0 Hypermedia Resourcespace -- Phase 32.1.1: Subresource Packages + Shim Removal
 
 ## Current Position
 
-Phase: 32.1 of 36 (Resourcespace Package Structure)
-Plan: 2 of 2 in current phase
-Status: Complete
-Last activity: 2026-02-16 -- Completed 32.1-02 (import migration and audit)
+Phase: 32.1.1 of 36 (Subresource Packages + Shim Removal)
+Plan: 1 of 4 in current phase
+Status: In Progress
+Last activity: 2026-02-16 -- Completed 32.1.1-01 (protocol relocation and shim removal)
 
-Progress: [████████████████████████████████████████████] 100% of 32.1
+Progress: [███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 25% of 32.1.1
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 109 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 10 v7.0)
+- Total plans completed: 110 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 11 v7.0)
 - v6.0 duration: 1 day (2026-02-15)
 - v5.0 duration: 1 day (2026-02-14)
 
@@ -34,6 +34,8 @@ Progress: [███████████████████████
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 32.1.1-01: Within spaces/ package, import from view.py directly to avoid __init__.py circular dependency
+- v7.0 32.1.1-01: Protocol definition site is bae.repl.spaces.view; external code imports from bae.repl.spaces
 - v7.0 32.1-02: Tests import from bae.repl.spaces (canonical); production infrastructure keeps importing from bae.repl.resource (definition site)
 - v7.0 32.1-01: MetaSubresource._module_path points to bae.repl.spaces.source.service (canonical location after move)
 - v7.0 32.1-01: spaces/ package layout: spaces/{name}/{__init__.py, service.py, models.py, schemas.py, view.py}; old modules become thin re-export shims
@@ -92,6 +94,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32.1-02-PLAN.md (import migration and audit) -- Phase 32.1 complete
+Stopped at: Completed 32.1.1-01-PLAN.md (protocol relocation and shim removal)
 Branch: main
-Resume file: .planning/phases/32.1-resourcespace-package-structure/32.1-02-SUMMARY.md
+Resume file: .planning/phases/32.1.1-subresource-packages-shim-removal/32.1.1-01-SUMMARY.md
