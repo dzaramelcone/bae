@@ -81,7 +81,7 @@
 ### v7.0 Hypermedia Resourcespace (In Progress)
 
 - [x] **Phase 31: Resource Protocol + Navigation** - Resourcespace protocol, registry, navigation state, tool dispatch routing, output pruning (completed 2026-02-16)
-- [ ] **Phase 32: Source Resourcespace** - Project-scoped file operations proving the resourcespace pattern end-to-end
+- [x] **Phase 32: Source Resourcespace** - Project-scoped file operations proving the resourcespace pattern end-to-end (completed 2026-02-16)
 - [ ] **Phase 33: Task Resourcespace** - Persistent task CRUD with FTS search and cross-session persistence
 - [ ] **Phase 34: Memory Resourcespace** - Session history as navigable, searchable, taggable resources
 - [ ] **Phase 35: Search Resourcespace** - Federated cross-resourcespace search with navigation hyperlinks
@@ -218,7 +218,7 @@ Phases execute in numeric order: 31 -> 32 -> 33 -> 34 -> 35 -> 36
 | 29. Observability | v6.0 | 5/5 | Complete | 2026-02-15 |
 | 30. Agent Core Extraction | v6.0 | 2/2 | Complete | 2026-02-15 |
 | 31. Resource Protocol + Navigation | v7.0 | Complete    | 2026-02-16 | - |
-| 32. Source Resourcespace | v7.0 | 0/TBD | Not started | - |
+| 32. Source Resourcespace | v7.0 | Complete    | 2026-02-16 | - |
 | 33. Task Resourcespace | v7.0 | 0/TBD | Not started | - |
 | 34. Memory Resourcespace | v7.0 | 0/TBD | Not started | - |
 | 35. Search Resourcespace | v7.0 | 0/TBD | Not started | - |
