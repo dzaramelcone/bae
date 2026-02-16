@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 31-resource-protocol-navigation
 source: 31-01-SUMMARY.md, 31-02-SUMMARY.md, 31-03-SUMMARY.md
 started: 2026-02-16T15:00:00Z
@@ -57,7 +57,12 @@ skipped: 0
   reason: "User reported: terminal escape codes once again"
   severity: major
   test: 1
-  root_cause: ""
-  artifacts: []
-  missing: []
+  root_cause: "_run_py displays expression results via repr(result) (shell.py:429-431). homespace() returns a string with ANSI escape codes from _rich_to_ansi, and repr() escapes them — shows \\x1b[1mhome\\x1b[0m instead of bold rendering. All navigation functions (homespace, back, navigate) return ANSI strings that get repr'd."
+  artifacts:
+    - path: "bae/repl/shell.py"
+      issue: "_run_py uses repr() for all expression results, escaping ANSI codes"
+    - path: "bae/repl/resource.py"
+      issue: "Navigation functions return ANSI strings that need direct printing, not repr"
+  missing:
+    - "Navigation return values need a type whose __repr__ outputs raw ANSI (not escaped), or navigation functions should use a display-aware return type"
   debug_session: ""
