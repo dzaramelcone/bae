@@ -113,7 +113,7 @@ Plans:
 - [x] 27-03-PLAN.md -- param type injection for run, ls alias removal (gap closure)
 - [x] 27-04-PLAN.md -- LM timeout increase, partial trace preservation on failure, flat params (gap closure)
 - [x] 27-05-PLAN.md -- ANSI rendering fix for Rich table/text output (gap closure)
-- [ ] 27-06-PLAN.md -- stdin isolation for background graphs, inspect formatting (gap closure)
+- [x] 27-06-PLAN.md -- stdin isolation for background graphs, inspect formatting (gap closure)
 
 ### Phase 28: Input Gates
 **Goal**: Graphs can pause for human input and Dzara can respond from any mode
@@ -177,7 +177,7 @@ Plans:
 | 24. Execution Display | v5.0 | 1/1 | Complete | 2026-02-14 |
 | 25. Views Completion | v5.0 | 3/3 | Complete | 2026-02-14 |
 | 26. Engine Foundation | v6.0 | 4/4 | Complete | 2026-02-15 |
-| 27. Graph Mode | v6.0 | 6/6 | In progress | - |
+| 27. Graph Mode | v6.0 | 6/6 | Complete | 2026-02-15 |
 | 28. Input Gates | v6.0 | 0/TBD | Not started | - |
 | 29. Observability | v6.0 | 0/TBD | Not started | - |
 
