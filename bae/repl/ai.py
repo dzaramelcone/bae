@@ -123,7 +123,10 @@ class AI:
 
         response = await self._send(self._with_location(full_prompt))
         await asyncio.sleep(0)  # cancellation checkpoint
-        self._router.write("ai", response, mode="NL", metadata={"type": "response", "label": self._label})
+
+        resource_name = ""
+        if self._registry and self._registry.current:
+            resource_name = self._registry.current.name
 
         _iters = 0
         while not self._max_eval_iters or _iters < self._max_eval_iters:
@@ -132,11 +135,11 @@ class AI:
             tool_results = run_tool_calls(response, router=self._tool_router)
             if tool_results:
                 all_outputs = []
-                for tag, output in tool_results:
-                    summary = _tool_summary(tag, output)
+                for tag, output, is_error in tool_results:
+                    summary = _tool_summary(tag, output, is_error=is_error, resource=resource_name)
                     self._router.write("py", tag, mode="PY",
                         metadata={"type": "tool_translated", "label": self._label,
-                                  "tool_summary": summary})
+                                  "tool_summary": summary, "is_error": is_error})
                     all_outputs.append(output)
 
                 combined = "\n---\n".join(all_outputs)
@@ -144,8 +147,6 @@ class AI:
                 await asyncio.sleep(0)  # cancellation checkpoint
                 response = await self._send(self._with_location(feedback))
                 await asyncio.sleep(0)  # cancellation checkpoint
-                self._router.write("ai", response, mode="NL",
-                    metadata={"type": "response", "label": self._label})
                 continue
 
             # Check for <run> blocks
@@ -193,8 +194,9 @@ class AI:
             await asyncio.sleep(0)  # cancellation checkpoint
             response = await self._send(self._with_location(feedback))
             await asyncio.sleep(0)  # cancellation checkpoint
-            self._router.write("ai", response, mode="NL", metadata={"type": "response", "label": self._label})
 
+        self._router.write("ai", response, mode="NL",
+            metadata={"type": "response", "label": self._label})
         return response
 
     async def _send(self, prompt: str) -> str:
@@ -314,39 +316,61 @@ _TOOL_DISPATCH = {
 }
 
 
-def _tool_summary(tag: str, output: str) -> str:
-    """Human-readable one-liner summarizing a tool call result.
+_TOOL_HUMAN_NAMES = {"R": "read", "W": "write", "E": "edit", "G": "glob", "Grep": "grep"}
 
-    Parses the tag format <TYPE:arg> to determine tool kind,
-    then generates a concise summary (read/glob/grep get counts,
-    write/edit pass output through as-is).
+_ERROR_OUTPUT_RE = re.compile(r"^[A-Z][a-zA-Z]*Error:")
+
+
+def _is_error_output(output: str) -> bool:
+    """Check if output starts with a PascalCase error type name followed by ':'."""
+    return bool(_ERROR_OUTPUT_RE.match(output))
+
+
+def _error_type_name(output: str) -> str:
+    """Extract the error type name before the first ':'."""
+    return output.split(":", 1)[0]
+
+
+def _tool_summary(tag: str, output: str, *, is_error: bool = False, resource: str = "") -> str:
+    """Format tool call as: [resource] diamond-bullet name(args) -> type (hint).
+
+    Produces one-liner summaries like:
+      [source] ◆ read(bae.repl.ai) -> str (42 lines)
+      ◆ read(nonexistent) -> ResourceError
     """
-    # Extract TYPE and arg from <TYPE:arg>
     m = re.match(r"<(\w+):(.+?)>", tag.strip())
     if not m:
         return output
     tool_type = _TOOL_NAMES.get(m.group(1).lower(), m.group(1))
     arg = m.group(2).strip()
 
-    if tool_type == "R":
-        n = output.count("\n") + 1 if output else 0
-        return f"read {arg} ({n} lines)"
-    if tool_type == "G":
-        lines = output.splitlines()
-        n = len(lines) if output and output != "(no matches)" else 0
-        return f"glob {arg} ({n} matches)"
-    if tool_type == "Grep":
-        lines = output.splitlines()
-        n = len(lines) if output and output != "(no matches)" else 0
-        return f"grep {arg} ({n} matches)"
-    # W and E: output is already concise (e.g. "Wrote 42 chars to foo.py")
-    return output
+    name = _TOOL_HUMAN_NAMES.get(tool_type, tool_type)
+
+    # Determine return type and count hint
+    if is_error or _is_error_output(output):
+        return_type = _error_type_name(output) if _is_error_output(output) else "Error"
+        hint = ""
+    else:
+        return_type = "str"
+        if tool_type == "R":
+            n = output.count("\n") + 1 if output else 0
+            hint = f"{n} lines"
+        elif tool_type in ("G", "Grep"):
+            lines = output.splitlines()
+            n = len(lines) if output and output != "(no matches)" else 0
+            hint = f"{n} matches"
+        else:
+            hint = ""
+
+    suffix = f" ({hint})" if hint else ""
+    prefix = f"[{resource}] " if resource else ""
+    return f"{prefix}◆ {name}({arg}) -> {return_type}{suffix}"
 
 
-def run_tool_calls(text: str, *, router: ToolRouter | None = None) -> list[tuple[str, str]]:
+def run_tool_calls(text: str, *, router: ToolRouter | None = None) -> list[tuple[str, str, bool]]:
     """Detect and execute ALL tool call tags in prose.
 
-    Returns list of (description, output) pairs. Empty list if no tags found.
+    Returns list of (tag, output, is_error) triples. Empty list if no tags found.
     Skips tags inside <run>...</run> blocks or markdown fences.
 
     Accepts case-insensitive tags, full word variants (Read, Write, Edit,
@@ -425,13 +449,14 @@ def run_tool_calls(text: str, *, router: ToolRouter | None = None) -> list[tuple
 
     # Execute in order
     pending.sort(key=lambda x: x[0])
-    results: list[tuple[str, str]] = []
+    results: list[tuple[str, str, bool]] = []
     for _, tag, fn in pending:
         try:
             output = fn()
+            results.append((tag, output, False))
         except Exception as exc:
             output = f"{type(exc).__name__}: {exc}"
-        results.append((tag, output))
+            results.append((tag, output, True))
     return results
 
 

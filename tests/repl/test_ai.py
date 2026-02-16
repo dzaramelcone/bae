@@ -13,6 +13,7 @@ from bae.markers import Dep
 from bae.node import Node
 from bae.repl.ai import (
     AI, _build_context, _load_prompt, _PROMPT_FILE, run_tool_calls,
+    _tool_summary, _is_error_output, _error_type_name,
 )
 
 
@@ -537,7 +538,7 @@ class TestEvalLoop:
 
 
 class TestRunToolCalls:
-    """Tests for run_tool_calls(): detect tags, execute directly, return (tag, output) pairs."""
+    """Tests for run_tool_calls(): detect tags, execute directly, return (tag, output, is_error) triples."""
 
     @pytest.fixture
     def sample_file(self, tmp_path):
@@ -550,33 +551,37 @@ class TestRunToolCalls:
         """<R:filepath> reads the file and returns contents."""
         result = run_tool_calls(f"<R:{sample_file}>")
         assert len(result) == 1
-        tag, output = result[0]
+        tag, output, is_error = result[0]
         assert "line1" in output
         assert "line5" in output
+        assert is_error is False
 
     def test_write_tag(self, tmp_path):
         """<W:filepath>content</W> writes file and returns confirmation."""
         out = tmp_path / "out.txt"
         result = run_tool_calls(f"<W:{out}>\nhello world\n</W>")
         assert len(result) == 1
-        tag, output = result[0]
+        tag, output, is_error = result[0]
         assert "Wrote" in output
+        assert is_error is False
         assert out.read_text() == "hello world"
 
     def test_edit_read_tag(self, sample_file):
         """<E:filepath:start-end> returns numbered lines from the file."""
         result = run_tool_calls(f"<E:{sample_file}:2-4>")
         assert len(result) == 1
-        tag, output = result[0]
+        tag, output, is_error = result[0]
         assert "line2" in output
         assert "line4" in output
+        assert is_error is False
 
     def test_edit_replace_tag(self, sample_file):
         """<E:filepath:start-end>content</E> replaces lines in the file."""
         result = run_tool_calls(f"<E:{sample_file}:2-3>\nreplaced\n</E>")
         assert len(result) == 1
-        tag, output = result[0]
+        tag, output, is_error = result[0]
         assert "Replaced" in output
+        assert is_error is False
         content = sample_file.read_text()
         assert "replaced" in content
         assert "line2" not in content
@@ -585,15 +590,17 @@ class TestRunToolCalls:
         """<G:pattern> returns matching file paths."""
         result = run_tool_calls(f"<G:{sample_file.parent}/*.py>")
         assert len(result) == 1
-        tag, output = result[0]
+        tag, output, is_error = result[0]
         assert "sample.py" in output
+        assert is_error is False
 
     def test_grep_tag(self, sample_file):
         """<Grep:pattern path> searches files for matching lines."""
         result = run_tool_calls(f"<Grep:line3 {sample_file.parent}>")
         assert len(result) == 1
-        tag, output = result[0]
+        tag, output, is_error = result[0]
         assert "line3" in output
+        assert is_error is False
 
     def test_grep_with_file_path(self, sample_file):
         """<Grep:pattern filepath> restricts search to a single file."""
@@ -676,10 +683,18 @@ class TestRunToolCalls:
         assert "sample.py" in result[0][1]
 
     def test_read_missing_file(self):
-        """Read of nonexistent file returns error string."""
+        """Read of nonexistent file returns error string with is_error=True."""
         result = run_tool_calls("<R:/nonexistent/path/file.py>")
         assert len(result) == 1
-        assert "FileNotFoundError" in result[0][1] or "No such file" in result[0][1]
+        tag, output, is_error = result[0]
+        assert "FileNotFoundError" in output or "No such file" in output
+        assert is_error is True
+
+    def test_error_flag_on_exception(self):
+        """Exception during tool execution sets is_error=True."""
+        result = run_tool_calls("<R:/nonexistent/path/file.py>")
+        assert len(result) == 1
+        assert result[0][2] is True
 
 
 # --- TestEvalLoopToolCalls ---
@@ -704,7 +719,7 @@ class TestEvalLoopToolCalls:
         ]
         with patch("bae.repl.ai.run_tool_calls") as mock_run:
             mock_run.side_effect = [
-                [("<R:foo.py>", "file contents here")],
+                [("<R:foo.py>", "file contents here", False)],
                 [],
             ]
             result = await eval_ai("read foo.py")
@@ -715,7 +730,7 @@ class TestEvalLoopToolCalls:
         """Tool output fed back to AI with [Tool output] prefix."""
         eval_ai._send.side_effect = ["<R:foo.py>", "Got it."]
         with patch("bae.repl.ai.run_tool_calls") as mock_run:
-            mock_run.side_effect = [[("<R:foo.py>", "file data")], []]
+            mock_run.side_effect = [[("<R:foo.py>", "file data", False)], []]
             await eval_ai("read")
         feedback = eval_ai._send.call_args_list[1][0][0]
         assert feedback.startswith("[Tool output]")
@@ -723,10 +738,10 @@ class TestEvalLoopToolCalls:
 
     @pytest.mark.asyncio
     async def test_tool_call_metadata_type(self, eval_ai):
-        """Router writes tool_translated with tool_summary, no separate tool_result."""
+        """Router writes tool_translated with tool_summary and is_error flag."""
         eval_ai._send.side_effect = ["<R:foo.py>", "Done."]
         with patch("bae.repl.ai.run_tool_calls") as mock_run:
-            mock_run.side_effect = [[("<R:foo.py>", "output")], []]
+            mock_run.side_effect = [[("<R:foo.py>", "output", False)], []]
             await eval_ai("read")
         py_writes = [
             c for c in eval_ai._router.write.call_args_list
@@ -736,6 +751,7 @@ class TestEvalLoopToolCalls:
         meta = py_writes[0].kwargs["metadata"]
         assert meta["type"] == "tool_translated"
         assert "tool_summary" in meta
+        assert meta["is_error"] is False
 
     @pytest.mark.asyncio
     async def test_tool_call_before_run_block(self, eval_ai):
@@ -745,7 +761,7 @@ class TestEvalLoopToolCalls:
             "Done.",
         ]
         with patch("bae.repl.ai.run_tool_calls") as mock_run:
-            mock_run.side_effect = [[("<R:foo.py>", "file data")], []]
+            mock_run.side_effect = [[("<R:foo.py>", "file data", False)], []]
             with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
                 await eval_ai("read and run")
         # async_exec NOT called (tool calls take precedence)
@@ -756,7 +772,7 @@ class TestEvalLoopToolCalls:
         """Tool calls count against max_eval_iters (loop stops at limit)."""
         eval_ai._send.return_value = "<R:foo.py>"
         with patch("bae.repl.ai.run_tool_calls") as mock_run:
-            mock_run.return_value = [("<R:foo.py>", "output")]
+            mock_run.return_value = [("<R:foo.py>", "output", False)]
             await eval_ai("loop tool calls")
         # 1 initial + 3 feedback rounds (max_eval_iters=3)
         assert eval_ai._send.call_count == 4
@@ -770,7 +786,7 @@ class TestEvalLoopToolCalls:
         ]
         with patch("bae.repl.ai.run_tool_calls") as mock_run:
             mock_run.side_effect = [
-                [("<R:foo.py>", "FileNotFoundError: No such file: foo.py")],
+                [("<R:foo.py>", "FileNotFoundError: No such file: foo.py", True)],
                 [],
             ]
             result = await eval_ai("read missing")
@@ -785,7 +801,7 @@ class TestEvalLoopToolCalls:
         eval_ai._send.side_effect = ["<R:a.py>\n<R:b.py>", "Got both."]
         with patch("bae.repl.ai.run_tool_calls") as mock_run:
             mock_run.side_effect = [
-                [("<R:a.py>", "contents of a"), ("<R:b.py>", "contents of b")],
+                [("<R:a.py>", "contents of a", False), ("<R:b.py>", "contents of b", False)],
                 [],
             ]
             result = await eval_ai("read both")
@@ -795,6 +811,114 @@ class TestEvalLoopToolCalls:
         assert "contents of a" in feedback
         assert "---" in feedback
         assert "contents of b" in feedback
+
+    @pytest.mark.asyncio
+    async def test_no_intermediate_response_writes(self, eval_ai):
+        """Only one response write happens -- the final one after the loop."""
+        eval_ai._send.side_effect = ["<R:foo.py>", "Final answer."]
+        with patch("bae.repl.ai.run_tool_calls") as mock_run:
+            mock_run.side_effect = [[("<R:foo.py>", "data", False)], []]
+            await eval_ai("read")
+        ai_writes = [
+            c for c in eval_ai._router.write.call_args_list
+            if c[0][0] == "ai"
+        ]
+        assert len(ai_writes) == 1
+        assert ai_writes[0][0][1] == "Final answer."
+        assert ai_writes[0].kwargs["metadata"]["type"] == "response"
+
+    @pytest.mark.asyncio
+    async def test_error_metadata_passed_through(self, eval_ai):
+        """is_error flag from run_tool_calls propagates to router metadata."""
+        eval_ai._send.side_effect = ["<R:foo.py>", "Error noted."]
+        with patch("bae.repl.ai.run_tool_calls") as mock_run:
+            mock_run.side_effect = [
+                [("<R:foo.py>", "ResourceError: not found", True)],
+                [],
+            ]
+            await eval_ai("read missing")
+        py_writes = [
+            c for c in eval_ai._router.write.call_args_list
+            if c[0][0] == "py"
+        ]
+        assert py_writes[0].kwargs["metadata"]["is_error"] is True
+
+
+# --- TestToolSummary ---
+
+
+class TestToolSummary:
+    """Tests for _tool_summary diamond-bullet format and helpers."""
+
+    def test_read_with_lines(self):
+        """Read tag produces diamond-bullet format with line count."""
+        result = _tool_summary("<R:bae.repl.ai>", "line1\nline2\nline3", is_error=False)
+        assert result == "◆ read(bae.repl.ai) -> str (3 lines)"
+
+    def test_glob_with_matches(self):
+        """Glob tag produces diamond-bullet format with match count."""
+        result = _tool_summary("<G:bae.repl.*>", "a.py\nb.py\nc.py\nd.py\ne.py", is_error=False)
+        assert result == "◆ glob(bae.repl.*) -> str (5 matches)"
+
+    def test_grep_with_matches(self):
+        """Grep tag produces diamond-bullet format with match count."""
+        result = _tool_summary("<Grep:pattern path>", "match1\nmatch2", is_error=False)
+        assert result == "◆ grep(pattern path) -> str (2 matches)"
+
+    def test_write_passthrough(self):
+        """Write tag produces diamond-bullet format without count hint."""
+        result = _tool_summary("<W:bae.repl.new_mod>", "Wrote 42 chars", is_error=False)
+        assert result == "◆ write(bae.repl.new_mod) -> str"
+
+    def test_edit_passthrough(self):
+        """Edit tag produces diamond-bullet format without count hint."""
+        result = _tool_summary("<E:bae.repl.ai>", "Replaced lines 2-4", is_error=False)
+        assert result == "◆ edit(bae.repl.ai) -> str"
+
+    def test_error_flag(self):
+        """is_error=True with error output extracts error type name."""
+        result = _tool_summary("<R:nonexistent>", "ResourceError: not found", is_error=True)
+        assert result == "◆ read(nonexistent) -> ResourceError"
+
+    def test_error_detected_from_output(self):
+        """Error output detected by heuristic even without is_error flag."""
+        result = _tool_summary("<R:nonexistent>", "FileNotFoundError: no such file", is_error=False)
+        assert result == "◆ read(nonexistent) -> FileNotFoundError"
+
+    def test_resource_prefix(self):
+        """Non-empty resource param prepends [resource] prefix."""
+        result = _tool_summary("<R:bae.repl.ai>", "line1\nline2", is_error=False, resource="source")
+        assert result == "[source] ◆ read(bae.repl.ai) -> str (2 lines)"
+
+    def test_no_resource_prefix(self):
+        """Empty resource param produces no prefix."""
+        result = _tool_summary("<R:bae.repl.ai>", "line1", is_error=False, resource="")
+        assert result == "◆ read(bae.repl.ai) -> str (1 lines)"
+
+    def test_error_with_resource_prefix(self):
+        """Error tool call with resource prefix."""
+        result = _tool_summary("<R:bad>", "ResourceError: bad", is_error=True, resource="source")
+        assert result == "[source] ◆ read(bad) -> ResourceError"
+
+
+class TestErrorHelpers:
+    """Tests for _is_error_output and _error_type_name helpers."""
+
+    def test_is_error_output_true(self):
+        """PascalCase error pattern detected."""
+        assert _is_error_output("ResourceError: not found") is True
+        assert _is_error_output("FileNotFoundError: no such file") is True
+
+    def test_is_error_output_false(self):
+        """Normal output not flagged as error."""
+        assert _is_error_output("line1\nline2") is False
+        assert _is_error_output("Wrote 42 chars") is False
+        assert _is_error_output("") is False
+
+    def test_error_type_name(self):
+        """Extracts type name before first colon."""
+        assert _error_type_name("ResourceError: not found") == "ResourceError"
+        assert _error_type_name("FileNotFoundError: path") == "FileNotFoundError"
 
 
 # --- TestAsyncStdoutCapture ---
