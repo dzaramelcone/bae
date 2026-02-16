@@ -543,6 +543,23 @@ def graph(start: type[Node]):
             model_kwargs = {f: kwargs.pop(f) for f in sub_fields if f in kwargs}
             arun_kwargs[orig_name] = model_cls(**model_kwargs)
         arun_kwargs.update(kwargs)
+
+        # Auto-register with engine when running inside cortex
+        if lm is None and dep_cache is None:
+            from bae.repl.engine import _graph_ctx
+
+            ctx = _graph_ctx.get(None)
+            if ctx is not None:
+                engine, tm, ctx_lm, notify = ctx
+                coro = g.arun(lm=ctx_lm, dep_cache=dep_cache, **arun_kwargs)
+                run = engine.submit_coro(
+                    coro, tm, name=start.__name__, notify=notify,
+                )
+                await run._done.wait()
+                if run.error:
+                    raise RuntimeError(run.error)
+                return run.result
+
         return await g.arun(lm=lm, dep_cache=dep_cache, **arun_kwargs)
 
     wrapper.__signature__ = inspect.Signature(params)

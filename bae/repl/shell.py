@@ -255,6 +255,12 @@ class CortexShell:
         self.namespace["toolbar"] = self.toolbar
         self.completer = NamespaceCompleter(self.namespace)
 
+        # Set graph context for auto-registration
+        from bae.repl.engine import _graph_ctx
+        from bae.repl.graph_commands import _make_notify
+
+        _graph_ctx.set((self.engine, self.tm, self._lm, _make_notify(self)))
+
         kb = _build_key_bindings(self)
         self.session = PromptSession(
             message=self._prompt,

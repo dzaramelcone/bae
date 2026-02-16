@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import enum
 import logging
 import resource
@@ -14,6 +15,11 @@ from typing import TYPE_CHECKING
 
 from bae.lm import LM
 from bae.resolver import DEP_TIMING_KEY, GATE_HOOK_KEY, LM_KEY, _engine_dep_cache
+
+# Contextvar for auto-registration: (engine, tm, lm, notify)
+_graph_ctx: contextvars.ContextVar[tuple | None] = contextvars.ContextVar(
+    "_graph_ctx", default=None
+)
 
 _graph_logger = logging.getLogger("bae.graph")
 
@@ -87,6 +93,7 @@ class GraphRun:
     dep_timings: list[tuple[str, float]] = field(default_factory=list)
     rss_delta_bytes: int = 0
     policy: OutputPolicy = OutputPolicy.NORMAL
+    _done: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 @dataclass
@@ -377,6 +384,7 @@ class GraphRegistry:
     def _archive(self, run: GraphRun) -> None:
         self._runs.pop(run.run_id, None)
         self._completed.append(run)
+        run._done.set()
 
     # ── Gate lifecycle ───────────────────────────────────────────────────
 
