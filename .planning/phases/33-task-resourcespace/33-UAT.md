@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 33-task-resourcespace
 source: 33-01-SUMMARY.md, 33-02-SUMMARY.md
 started: 2026-02-16T23:45:00Z
@@ -77,25 +77,39 @@ skipped: 0
   reason: "User reported: uuid is too many tokens - ideally just do like base 36 encoded ints for them so theyre short, url friendly, token friendly and database friendly"
   severity: major
   test: 2
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "TaskStore.create() at models.py:115 generates IDs with str(uuid.uuid7()) producing 36-char strings. Schema uses TEXT PK. Change to INTEGER PRIMARY KEY AUTOINCREMENT + base36 encode for display."
+  artifacts:
+    - path: "bae/repl/spaces/tasks/models.py"
+      issue: "uuid7 ID generation at line 115, TEXT PK schema at line 13, all FK references use TEXT"
+  missing:
+    - "Change schema from TEXT to INTEGER AUTOINCREMENT for task IDs"
+    - "Add base36 encode/decode utility for external display"
+    - "Update all FK references from TEXT to INTEGER"
+  debug_session: ".planning/debug/task-id-uuid7-to-base36.md"
 - truth: "update(task_id, status='in_progress') works with positional task_id and keyword fields"
   status: failed
   reason: "User reported: update('id', 'in_progress') fails with 'Cannot update field kwargs'; update('id', status='in_progress') fails with pydantic validation 'Field required'; only update(task_id='id', status='in_progress') works"
   severity: major
   test: 5
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "_build_validator() in bae/repl/tools.py doesn't handle VAR_KEYWORD parameters. Creates literal 'kwargs' pydantic field instead of allowing arbitrary extra fields. Need to skip VAR_KEYWORD params and set extra='allow' on model."
+  artifacts:
+    - path: "bae/repl/tools.py"
+      issue: "_build_validator() lines 39-47 doesn't check param.kind, treats **kwargs as regular param"
+    - path: "bae/repl/spaces/tasks/service.py"
+      issue: "update() uses **kwargs signature"
+  missing:
+    - "Skip VAR_KEYWORD parameters in _build_validator() field dict"
+    - "Set pydantic model extra='allow' when VAR_KEYWORD param exists"
+  debug_session: ".planning/debug/update-kwargs-pydantic.md"
 - truth: "Task listing shows IDs so users can reference tasks in done(), update(), read(id)"
   status: failed
   reason: "User reported: read() listing doesn't show task IDs — no way to get the ID needed for done(), update(), read(id). format_task_row only shows status | priority | title | tags. Fundamental UX blocker."
   severity: blocker
   test: 6
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "format_task_row() in view.py deliberately only formats status | priority | title | tags. ID is available in task dict but omitted from list output."
+  artifacts:
+    - path: "bae/repl/spaces/tasks/view.py"
+      issue: "format_task_row() lines 21-32 omits task['id'] from output"
+  missing:
+    - "Add ID to beginning of format_task_row output"
+  debug_session: ".planning/debug/task-ids-missing-in-list.md"
