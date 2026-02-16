@@ -82,7 +82,7 @@ Recent:
 - Resource navigation: track which resources agent session has entered, show condensed re-entry info ("left a → reentered b") instead of full entry display on revisit
 - Tool discoverability: entry banner should clarify tools are top-level functions (not methods on resource handle); `source.read("bae")` feels natural but fails — consider making ResourceHandle forward tool calls
 - ns() should show tool functions (read, glob, grep, etc.) alongside namespace objects (engine, toolbar)
-- grep error guidance: "too many matches" suggests narrowing to broader path — guidance should suggest narrowing to a more specific submodule
+- grep overhaul: (1) exact module targeting — `grep("pat", "bae.foo.service")` should search that one file, not `bae.foo.service.*` children; (2) raise match cap or paginate — 50 is too tight for exploratory queries like `def \w+`; (3) error guidance suggests broader path instead of narrower pattern — invert; (4) verbose `module:line: content` prefix eats budget — consider hierarchical grouping by module; (5) overall needs more display space
 - write() discoverability: no hint that bare name creates subresource vs dotted path creates module; consider `write --help` or better entry docs
 - Navigation error consistency: sometimes "Try: source()", sometimes method suggestions; `source.read()` gives dead-end "No resource" error
 - Error type in tool summary: show specific exception class name (ResourceError) not generic "Error" — use __class__.__name__
