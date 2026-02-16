@@ -131,7 +131,7 @@ a mode parameter or callback.
 | `bae/repl/namespace.py` | 177 | Clean introspection, well-factored methods |
 | `bae/repl/store.py` | 163 | Clean SQLite, FTS5, proper schema |
 | `bae/repl/tasks.py` | 102 | Clean TaskManager, correct process group handling |
-| `bae/repl/toolbar.py` | 162 | Well-structured widget system |
+| `bae/repl/toolbar.py` | 162 | Well-structured; bare `except Exception:` on line 61 is intentional (widget render must not crash toolbar) |
 
 ### Files with findings
 
