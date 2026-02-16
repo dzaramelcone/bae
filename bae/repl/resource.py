@@ -16,6 +16,18 @@ from rich.tree import Tree
 from bae.repl.views import _rich_to_ansi
 
 
+class NavResult(str):
+    """String whose repr() outputs raw content, preserving ANSI rendering.
+
+    _run_py displays expression results via repr(result). Normal str repr
+    escapes ANSI codes (\\x1b becomes \\\\x1b). NavResult.__repr__ returns
+    self so ANSI passes through to the terminal.
+    """
+
+    def __repr__(self) -> str:
+        return str(self)
+
+
 MAX_STACK_DEPTH = 20
 
 
@@ -125,14 +137,14 @@ class ResourceRegistry:
             if len(self._stack) > MAX_STACK_DEPTH:
                 self._stack = self._stack[-MAX_STACK_DEPTH:]
 
-        return transition + self._entry_display(resolved)
+        return NavResult(transition + self._entry_display(resolved))
 
     def back(self) -> str:
         """Pop navigation stack. Returns entry display of parent or root nav."""
         if self._stack:
             self._stack.pop()
         if self._stack:
-            return self._entry_display(self._stack[-1])
+            return NavResult(self._entry_display(self._stack[-1]))
         return self._root_nav()
 
     def homespace(self) -> str:
@@ -173,7 +185,7 @@ class ResourceRegistry:
                     remaining = len(grandkids)
                     branch_child.add(f"+{remaining} more")
 
-        return _rich_to_ansi(tree).rstrip()
+        return NavResult(_rich_to_ansi(tree).rstrip())
 
     def _entry_display(self, space: Resourcespace) -> str:
         """Breadcrumb + description + state + functions table + Advanced hints."""
@@ -246,7 +258,7 @@ def format_unsupported_error(space: Resourcespace, tool: str) -> str:
         f"{space.name} does not support {tool}.",
         hints=hints,
     )
-    return str(err)
+    return NavResult(str(err))
 
 
 def format_nav_error(target: str, registry: ResourceRegistry) -> str:
@@ -262,4 +274,4 @@ def format_nav_error(target: str, registry: ResourceRegistry) -> str:
         )
     else:
         err = ResourceError(f"No resource '{target}'.")
-    return str(err)
+    return NavResult(str(err))

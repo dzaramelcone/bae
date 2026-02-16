@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from bae.repl.resource import (
+    NavResult,
     ResourceError,
     ResourceHandle,
     ResourceRegistry,
@@ -339,3 +340,52 @@ class TestErrors:
         s = str(err)
         assert "something broke" in s
         assert "@source()" in s
+
+
+# ---------------------------------------------------------------------------
+# NavResult repr preserves ANSI
+# ---------------------------------------------------------------------------
+
+class TestNavResult:
+    def test_nav_result_repr_preserves_ansi(self):
+        """repr() on NavResult returns raw string, not escaped."""
+        ansi = "\x1b[1mhome\x1b[0m"
+        nr = NavResult(ansi)
+        assert repr(nr) == ansi  # not "\\x1b[1mhome\\x1b[0m"
+
+    def test_nav_result_is_str(self):
+        nr = NavResult("hello")
+        assert isinstance(nr, str)
+
+    def test_homespace_returns_nav_result(self):
+        reg = ResourceRegistry()
+        result = reg.homespace()
+        assert isinstance(result, NavResult)
+
+    def test_navigate_returns_nav_result(self):
+        reg = ResourceRegistry()
+        reg.register(StubSpace("source"))
+        result = reg.navigate("source")
+        assert isinstance(result, NavResult)
+
+    def test_back_returns_nav_result(self):
+        reg = ResourceRegistry()
+        result = reg.back()
+        assert isinstance(result, NavResult)
+
+    def test_back_with_stack_returns_nav_result(self):
+        reg = ResourceRegistry()
+        reg.register(StubSpace("source"))
+        reg.navigate("source")
+        result = reg.back()
+        assert isinstance(result, NavResult)
+
+    def test_navigate_error_returns_nav_result(self):
+        reg = ResourceRegistry()
+        result = reg.navigate("nonexistent")
+        assert isinstance(result, NavResult)
+
+    def test_format_unsupported_error_returns_nav_result(self):
+        space = StubSpace("source", tools={"read"})
+        result = format_unsupported_error(space, "write")
+        assert isinstance(result, NavResult)
