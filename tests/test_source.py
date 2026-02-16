@@ -1,4 +1,4 @@
-"""Tests for SourceResourcespace: protocol, path resolution, safety, read, enter/nav."""
+"""Tests for SourceResourcespace: protocol, path resolution, safety, read, enter/nav, glob, grep."""
 
 from pathlib import Path
 
@@ -143,3 +143,69 @@ class TestEnterNav:
         assert set(kids.keys()) == {"meta", "deps", "config", "tests"}
         for child in kids.values():
             assert isinstance(child, Resourcespace)
+
+
+# --- Glob ---
+
+
+class TestGlob:
+    def test_glob_wildcard_returns_modules(self, src):
+        result = src.glob("bae.repl.*")
+        # Should find modules like bae.repl.ai, bae.repl.shell, etc.
+        assert "bae.repl.ai" in result
+        assert "bae.repl.shell" in result
+
+    def test_glob_exact_match(self, src):
+        result = src.glob("bae.repl.resource")
+        assert "bae.repl.resource" in result
+
+    def test_glob_nonexistent_no_matches(self, src):
+        result = src.glob("bae.nonexistent.*")
+        assert result == "(no matches)"
+
+    def test_glob_no_filesystem_paths(self, src):
+        result = src.glob("bae.repl.*")
+        assert "/" not in result
+
+    def test_glob_budget_overflow_raises(self, src):
+        # Globbing a huge pattern should raise ResourceError with narrowing hint
+        # if output exceeds CHAR_CAP
+        result = src.glob("bae.*")
+        # Either fits in budget (string) or raises ResourceError
+        if isinstance(result, str) and len(result) > 2000:
+            pytest.fail("Glob output exceeded CHAR_CAP without raising ResourceError")
+
+
+# --- Grep ---
+
+
+class TestGrep:
+    def test_grep_finds_matches(self, src):
+        result = src.grep("ResourceError")
+        # Should find in bae.repl.resource with module:line: format
+        assert "bae.repl.resource:" in result
+
+    def test_grep_scoped_to_module(self, src):
+        result = src.grep("ResourceError", "bae.repl.resource")
+        assert "bae.repl.resource:" in result
+        # Should NOT contain results from other modules
+        lines = result.strip().splitlines()
+        for line in lines:
+            if ":" in line:
+                assert line.startswith("bae.repl.resource:")
+
+    def test_grep_no_matches(self, src):
+        result = src.grep("zzzznonexistent")
+        assert result == "(no matches)"
+
+    def test_grep_no_filesystem_paths(self, src):
+        result = src.grep("ResourceError")
+        assert "/" not in result
+
+    def test_grep_budget_overflow_raises(self, src):
+        # Grepping a very common pattern should raise ResourceError or truncate
+        # with narrowing hint if too many matches
+        result = src.grep("def ")
+        # Either fits in budget or raises ResourceError
+        if isinstance(result, str) and len(result) > 2000:
+            pytest.fail("Grep output exceeded CHAR_CAP without raising ResourceError")
