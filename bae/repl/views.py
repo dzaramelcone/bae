@@ -159,10 +159,15 @@ class UserView:
             return
 
         if content_type == "tool_translated":
-            summary = linkify_paths(meta.get("tool_summary", content))
-            print_formatted_text(ANSI(
-                f"\033[1m[{channel_name}]\033[0m \033[3;38;5;244m{summary}\033[0m"
-            ))
+            summary = meta.get("tool_summary", content)
+            is_error = meta.get("is_error", False)
+            if is_error:
+                # Red for error tool calls
+                styled = f"\033[31m{summary}\033[0m"
+            else:
+                # Dim for normal tool calls
+                styled = f"\033[3;38;5;244m{summary}\033[0m"
+            print_formatted_text(ANSI(styled))
             return
 
         if content_type == "lifecycle" and channel_name == "graph":

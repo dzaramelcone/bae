@@ -161,22 +161,43 @@ def test_rich_to_ansi_uses_terminal_width(mock_size):
 
 @patch("bae.repl.views.print_formatted_text")
 def test_user_view_tool_translated_shows_summary(mock_pft):
-    """tool_translated metadata renders concise tool_summary as ANSI."""
+    """tool_translated metadata renders diamond-bullet tool_summary as dim ANSI."""
     view = UserView()
     view.render("py", "#87ff87", "<R:foo.py>", metadata={
         "type": "tool_translated",
-        "tool_summary": "read foo.py (42 lines)",
+        "tool_summary": "◆ read(foo.py) -> str (42 lines)",
+        "is_error": False,
     })
     mock_pft.assert_called_once()
     arg = mock_pft.call_args[0][0]
     assert isinstance(arg, ANSI)
-    assert "[py]" in arg.value
-    assert "read foo.py (42 lines)" in arg.value
+    # No [py] prefix -- diamond bullet is the visual indicator
+    assert "[py]" not in arg.value
+    assert "◆ read(foo.py) -> str (42 lines)" in arg.value
+    # Dim styling (ANSI 38;5;244)
+    assert "\033[3;38;5;244m" in arg.value
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_user_view_tool_translated_error(mock_pft):
+    """Error tool calls render in red ANSI."""
+    view = UserView()
+    view.render("py", "#87ff87", "<R:bad.py>", metadata={
+        "type": "tool_translated",
+        "tool_summary": "◆ read(bad.py) -> ResourceError",
+        "is_error": True,
+    })
+    mock_pft.assert_called_once()
+    arg = mock_pft.call_args[0][0]
+    assert isinstance(arg, ANSI)
+    # Red styling (ANSI 31)
+    assert "\033[31m" in arg.value
+    assert "◆ read(bad.py) -> ResourceError" in arg.value
 
 
 @patch("bae.repl.views.print_formatted_text")
 def test_user_view_tool_translated_fallback(mock_pft):
-    """tool_translated without tool_summary falls back to raw content as ANSI."""
+    """tool_translated without tool_summary falls back to raw content as dim ANSI."""
     view = UserView()
     view.render("py", "#87ff87", "<R:foo.py>", metadata={
         "type": "tool_translated",
@@ -187,25 +208,42 @@ def test_user_view_tool_translated_fallback(mock_pft):
     assert "<R:foo.py>" in arg.value
 
 
+@patch("bae.repl.views.print_formatted_text")
+def test_user_view_response_renders_normally(mock_pft):
+    """Response type renders with prefix as usual (final response only now)."""
+    view = UserView()
+    view.render("ai", "#87d7ff", "Here is my answer.", metadata={
+        "type": "response", "label": "1",
+    })
+    mock_pft.assert_called()
+    # Check that content is rendered (not suppressed)
+    all_text = ""
+    for call in mock_pft.call_args_list:
+        arg = call[0][0]
+        if isinstance(arg, ANSI):
+            all_text += arg.value
+    assert "Here is my answer." in all_text
+
+
 def test_tool_summary_read():
-    """_tool_summary generates 'read path (N lines)' for Read tags."""
+    """_tool_summary generates diamond-bullet 'read(path) -> str (N lines)' for Read tags."""
     output = "line1\nline2\nline3"
     result = _tool_summary("<R:bae/repl/ai.py>", output)
-    assert result == "read bae/repl/ai.py (3 lines)"
+    assert result == "◆ read(bae/repl/ai.py) -> str (3 lines)"
 
 
 def test_tool_summary_glob():
-    """_tool_summary generates 'glob pattern (N matches)' for Glob tags."""
+    """_tool_summary generates diamond-bullet 'glob(pattern) -> str (N matches)' for Glob tags."""
     output = "src/a.py\nsrc/b.py\nsrc/c.py"
     result = _tool_summary("<G:src/*.py>", output)
-    assert result == "glob src/*.py (3 matches)"
+    assert result == "◆ glob(src/*.py) -> str (3 matches)"
 
 
 def test_tool_summary_write():
-    """_tool_summary passes Write output through as-is."""
+    """_tool_summary generates diamond-bullet 'write(path) -> str' for Write tags."""
     output = "Wrote 42 chars to foo.py"
     result = _tool_summary("<W:foo.py>", output)
-    assert result == "Wrote 42 chars to foo.py"
+    assert result == "◆ write(foo.py) -> str"
 
 
 # --- DebugView tests ---
