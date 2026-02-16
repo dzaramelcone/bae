@@ -10,7 +10,7 @@ from bae.repl.spaces import (
     Resourcespace,
     format_unsupported_error,
 )
-from bae.repl.tools import CHAR_CAP, TOKEN_CAP, ToolRouter
+from bae.repl.tools import CHAR_CAP, TOKEN_CAP, ToolRouter, _build_validator, _validate_tool_params
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +57,13 @@ class StubSpace:
 
     def supported_tools(self) -> set[str]:
         return self._tools
+
+    def tools(self) -> dict[str, object]:
+        tool_map = {}
+        for t in self._tools:
+            if hasattr(self, t):
+                tool_map[t] = getattr(self, t)
+        return tool_map
 
     def children(self) -> dict[str, Resourcespace]:
         return self._children
@@ -269,4 +276,110 @@ class TestErrorCollection:
         router = ToolRouter(reg)
         # Single dispatch returning error
         result = router.dispatch("read", "x")
+        assert "read failed" in result
+
+
+# ---------------------------------------------------------------------------
+# Pydantic parameter validation
+# ---------------------------------------------------------------------------
+
+class TestBuildValidator:
+    def test_creates_model_with_correct_field_types(self):
+        """_build_validator creates pydantic model matching method signature."""
+        def method(target: str, count: int = 5):
+            pass
+        model = _build_validator(method)
+        assert model is not None
+        fields = model.model_fields
+        assert "target" in fields
+        assert "count" in fields
+
+    def test_returns_none_for_no_params(self):
+        """Methods with no params (besides self) return None."""
+        def method():
+            pass
+        model = _build_validator(method)
+        assert model is None
+
+    def test_skips_self_param(self):
+        """self parameter is excluded from the validator model."""
+        class Fake:
+            def method(self, target: str):
+                pass
+        model = _build_validator(Fake.method)
+        assert model is not None
+        assert "self" not in model.model_fields
+        assert "target" in model.model_fields
+
+    def test_unannotated_params_default_to_str(self):
+        """Parameters without type annotations default to str."""
+        def method(target):
+            pass
+        model = _build_validator(method)
+        assert model is not None
+
+
+class TestParameterValidation:
+    def test_wrong_type_returns_error_with_signature(self):
+        """Wrong param types return formatted error with signature hint."""
+        class TypedSpace(StubSpace):
+            def read(self, target: str, line: int = 0) -> str:
+                return f"read {target} at {line}"
+        reg = ResourceRegistry()
+        space = TypedSpace("source")
+        reg.register(space)
+        reg.navigate("source")
+        router = ToolRouter(reg)
+        result = router.dispatch("read", "file.py", line="not_a_number")
+        assert "parameter error" in result
+        assert "read(" in result
+
+    def test_missing_required_param_returns_error(self):
+        """Missing required params return error mentioning 'required'."""
+        def method(target: str, required_arg: int):
+            """Read a target."""
+            pass
+        result = _validate_tool_params("read", method, "file.py")
+        assert isinstance(result, str)
+        assert "required" in result.lower() or "missing" in result.lower()
+
+    def test_valid_params_pass_through(self):
+        """Correct params are validated and returned as dict."""
+        class TypedSpace(StubSpace):
+            def read(self, target: str) -> str:
+                return f"read {target}"
+        reg = ResourceRegistry()
+        space = TypedSpace("source")
+        reg.register(space)
+        reg.navigate("source")
+        router = ToolRouter(reg)
+        result = router.dispatch("read", "file.py")
+        assert "read file.py" in result
+
+    def test_error_includes_docstring(self):
+        """Validation error includes the tool's docstring."""
+        def method(target: str, count: int):
+            """Read the specified target file."""
+            pass
+        result = _validate_tool_params("read", method, "file.py", count="bad")
+        assert isinstance(result, str)
+        assert "Read the specified target file" in result
+
+    def test_home_dispatch_unaffected(self, tmp_path):
+        """Home dispatch (no current resource) works without validation."""
+        reg = ResourceRegistry()
+        router = ToolRouter(reg)
+        f = tmp_path / "test.txt"
+        f.write_text("hello")
+        result = router.dispatch("read", str(f))
+        assert "hello" in result
+
+    def test_resource_error_still_caught(self):
+        """ResourceError from resource methods still caught after validation."""
+        reg = ResourceRegistry()
+        space = StubSpace("source", error_on={"read"})
+        reg.register(space)
+        reg.navigate("source")
+        router = ToolRouter(reg)
+        result = router.dispatch("read", "target")
         assert "read failed" in result
