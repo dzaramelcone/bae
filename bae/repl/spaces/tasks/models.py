@@ -114,8 +114,8 @@ class TaskStore:
         now = time.time()
         task_id = str(uuid.uuid7())
 
-        # Major task body validation
-        if minor == 0 and patch == 0:
+        # Major task body validation (priority 0.0.0 is unclassified, not major)
+        if major > 0 and minor == 0 and patch == 0:
             for section in _MAJOR_REQUIRED_SECTIONS:
                 if section not in body:
                     raise ValueError(
