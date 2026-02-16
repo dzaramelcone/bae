@@ -66,6 +66,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Roadmap created for v7.0 Hypermedia Resourcespace
+Stopped at: Phase 31 context gathered
 Branch: main
-Resume file: None
+Resume file: .planning/phases/31-resource-protocol-navigation/31-CONTEXT.md
