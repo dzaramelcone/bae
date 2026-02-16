@@ -1,10 +1,10 @@
 """Resourcespace packages: protocol re-exports and sub-packages.
 
-Import protocol types from bae.repl.resource so downstream code can
-use `from bae.repl.spaces import Resourcespace, ResourceRegistry, ...`.
+Protocol types are defined in bae.repl.spaces.view. This __init__ re-exports
+them so downstream code can use `from bae.repl.spaces import Resourcespace, ...`.
 """
 
-from bae.repl.resource import (
+from bae.repl.spaces.view import (
     NavResult,
     ResourceError,
     ResourceHandle,

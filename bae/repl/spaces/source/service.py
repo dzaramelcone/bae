@@ -16,7 +16,7 @@ import tomllib
 from pathlib import Path
 from typing import Callable
 
-from bae.repl.resource import ResourceError, Resourcespace
+from bae.repl.spaces.view import ResourceError, Resourcespace
 from bae.repl.spaces.source.models import (
     CHAR_CAP,
     _GLOB_VALID,

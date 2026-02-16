@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from bae.repl.resource import ResourceError, ResourceRegistry, format_unsupported_error
+from bae.repl.spaces import ResourceError, ResourceRegistry, format_unsupported_error
 
 TOKEN_CAP = 500
 CHAR_CAP = TOKEN_CAP * 4  # ~4 chars/token heuristic

@@ -12,7 +12,7 @@ import re
 import textwrap
 from pathlib import Path
 
-from bae.repl.resource import ResourceError
+from bae.repl.spaces.view import ResourceError
 
 CHAR_CAP = 2000
 

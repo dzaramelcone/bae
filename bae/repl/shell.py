@@ -24,7 +24,7 @@ from bae.repl.ai import AI
 from bae.repl.bash import dispatch_bash
 from bae.repl.engine import GraphRegistry
 from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, toggle_channels
-from bae.repl.resource import ResourceRegistry, ResourceHandle
+from bae.repl.spaces import ResourceRegistry, ResourceHandle
 from bae.repl.spaces.source import SourceResourcespace
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec

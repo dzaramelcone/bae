@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from bae.lm import LM
     from bae.node import Node
     from bae.repl.channels import ChannelRouter
-    from bae.repl.resource import ResourceRegistry
+    from bae.repl.spaces import ResourceRegistry
     from bae.repl.tasks import TaskManager
     from bae.repl.tools import ToolRouter
 
