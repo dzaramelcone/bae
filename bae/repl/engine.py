@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from bae.lm import LM
-from bae.resolver import LM_KEY
+from bae.resolver import GATE_HOOK_KEY, LM_KEY
 
 if TYPE_CHECKING:
     from bae.graph import Graph
@@ -121,23 +121,49 @@ class GraphRegistry:
         self._gate_counter: int = 0
 
     def submit(
-        self, graph: Graph, tm: TaskManager, *, lm: LM | None = None, **kwargs
+        self,
+        graph: Graph,
+        tm: TaskManager,
+        *,
+        lm: LM | None = None,
+        notify=None,
+        **kwargs,
     ) -> GraphRun:
         run_id = f"g{self._next_id}"
         self._next_id += 1
         run = GraphRun(run_id=run_id, graph=graph)
         self._runs[run_id] = run
-        coro = self._execute(run, lm=lm, **kwargs)
+        coro = self._execute(run, lm=lm, notify=notify, **kwargs)
         tm.submit(coro, name=f"graph:{run_id}:{graph.start.__name__}", mode="graph")
         return run
 
-    async def _execute(self, run: GraphRun, *, lm: LM | None = None, **kwargs):
+    async def _execute(
+        self, run: GraphRun, *, lm: LM | None = None, notify=None, **kwargs,
+    ):
         try:
             if lm is None:
                 from bae.lm import ClaudeCLIBackend
                 lm = ClaudeCLIBackend()
             timing_lm = TimingLM(lm, run)
-            dep_cache = {LM_KEY: timing_lm}
+
+            async def _gate_hook(node_cls, gate_fields):
+                """Create InputGates for gate-annotated fields and await resolution."""
+                gates = []
+                for field_name, field_type, description in gate_fields:
+                    gate = self.create_gate(
+                        run.run_id, field_name, field_type, description,
+                        node_cls.__name__,
+                    )
+                    gates.append(gate)
+                run.state = GraphState.WAITING
+                if notify is not None:
+                    for g in gates:
+                        notify(f"[{g.gate_id}] {g.node_type}.{g.schema_display}")
+                results = await asyncio.gather(*[g.future for g in gates])
+                run.state = GraphState.RUNNING
+                return {g.field_name: val for g, val in zip(gates, results)}
+
+            dep_cache = {LM_KEY: timing_lm, GATE_HOOK_KEY: _gate_hook}
             result = await run.graph.arun(lm=timing_lm, dep_cache=dep_cache, **kwargs)
             run.result = result
             run.state = GraphState.DONE
@@ -158,7 +184,7 @@ class GraphRegistry:
             self._archive(run)
 
     def submit_coro(
-        self, coro, tm: TaskManager, *, name: str = "graph",
+        self, coro, tm: TaskManager, *, name: str = "graph", notify=None,
     ) -> GraphRun:
         """Submit a pre-built coroutine as a managed graph run.
 

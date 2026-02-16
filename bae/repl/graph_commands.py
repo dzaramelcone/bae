@@ -142,7 +142,7 @@ async def _cmd_cancel(arg: str, shell) -> None:
     if run is None:
         shell.router.write("graph", f"no run {arg}", mode="GRAPH")
         return
-    if run.state != GraphState.RUNNING:
+    if run.state not in (GraphState.RUNNING, GraphState.WAITING):
         shell.router.write(
             "graph", f"{arg} not running ({run.state.value})", mode="GRAPH",
         )

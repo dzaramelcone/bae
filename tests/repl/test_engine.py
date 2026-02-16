@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from typing import Annotated
 
 from bae.lm import LM
+from bae.markers import Gate
 from bae.node import Node
 from bae.repl.engine import GraphRegistry, GraphRun, GraphState, InputGate, NodeTiming, TimingLM
 from bae.repl.tasks import TaskManager
@@ -25,12 +27,42 @@ class End(Node):
     reply: str
 
 
+class GatedNode(Node):
+    """Node with a Gate-annotated field for testing gate interception."""
+    approved: Annotated[bool, Gate(description="Deploy to prod?")]
+
+    def __call__(self) -> End: ...
+
+
+class MultiGatedNode(Node):
+    """Node with two Gate-annotated fields for concurrent gate testing."""
+    approved: Annotated[bool, Gate(description="Deploy to prod?")]
+    reason: Annotated[str, Gate(description="Why?")]
+
+    def __call__(self) -> End: ...
+
+
+class GatedStart(Node):
+    """Start node that transitions to a GatedNode."""
+    text: str
+
+    def __call__(self) -> GatedNode: ...
+
+
+class MultiGatedStart(Node):
+    """Start node that transitions to a MultiGatedNode."""
+    text: str
+
+    def __call__(self) -> MultiGatedNode: ...
+
+
 class MockLM:
-    """Minimal LM that always produces End(reply="done")."""
+    """Minimal LM that produces nodes from resolved fields."""
 
     async def fill(self, target, resolved, instruction, source=None):
         if target is End:
             return End.model_construct(reply="done", **resolved)
+        # For gated nodes: gate fields come via resolved dict from hook
         return target.model_construct(**resolved)
 
     async def choose_type(self, types, context):
@@ -562,3 +594,131 @@ class TestInputGate:
         registry._runs["g1"] = run
         active = registry.active()
         assert run in active
+
+
+# --- TestGateHook: engine intercepts gate fields during execution ---
+
+
+class TestGateHook:
+    async def test_gate_hook_creates_gates(self, registry, tm):
+        """Graph with Gate field creates InputGate and transitions to WAITING."""
+        from bae.graph import Graph
+
+        graph = Graph(start=GatedStart)
+        run = registry.submit(graph, tm, lm=MockLM(), text="hi")
+        # Wait for the gate to be created (engine hits WAITING)
+        for _ in range(100):
+            if run.state == GraphState.WAITING:
+                break
+            await asyncio.sleep(0.01)
+        assert run.state == GraphState.WAITING
+        assert registry.pending_gate_count() >= 1
+        gates = registry.pending_gates_for_run(run.run_id)
+        assert len(gates) == 1
+        assert gates[0].field_name == "approved"
+        assert gates[0].field_type is bool
+        assert gates[0].description == "Deploy to prod?"
+        # Resolve gate to allow graph to finish
+        registry.resolve_gate(gates[0].gate_id, True)
+        await _drain_tasks(tm)
+
+    async def test_gate_hook_resumes_on_resolve(self, registry, tm):
+        """Resolving a gate resumes graph execution and delivers the value."""
+        from bae.graph import Graph
+
+        graph = Graph(start=GatedStart)
+        run = registry.submit(graph, tm, lm=MockLM(), text="hi")
+        for _ in range(100):
+            if run.state == GraphState.WAITING:
+                break
+            await asyncio.sleep(0.01)
+        assert run.state == GraphState.WAITING
+        gates = registry.pending_gates_for_run(run.run_id)
+        registry.resolve_gate(gates[0].gate_id, True)
+        await _drain_tasks(tm)
+        assert run.state == GraphState.DONE
+        # Verify the gate value made it into the trace
+        gated = [n for n in run.result.trace if isinstance(n, GatedNode)]
+        assert len(gated) == 1
+        assert gated[0].approved is True
+
+    async def test_multiple_gate_fields_concurrent(self, registry, tm):
+        """Node with 2 gate fields: both Futures created, resolve independently."""
+        from bae.graph import Graph
+
+        graph = Graph(start=MultiGatedStart)
+        run = registry.submit(graph, tm, lm=MockLM(), text="hi")
+        for _ in range(100):
+            if run.state == GraphState.WAITING:
+                break
+            await asyncio.sleep(0.01)
+        assert run.state == GraphState.WAITING
+        gates = registry.pending_gates_for_run(run.run_id)
+        assert len(gates) == 2
+        names = {g.field_name for g in gates}
+        assert names == {"approved", "reason"}
+        # Resolve in any order
+        for g in gates:
+            if g.field_name == "approved":
+                registry.resolve_gate(g.gate_id, True)
+            else:
+                registry.resolve_gate(g.gate_id, "because yes")
+        await _drain_tasks(tm)
+        assert run.state == GraphState.DONE
+        gated = [n for n in run.result.trace if isinstance(n, MultiGatedNode)]
+        assert len(gated) == 1
+        assert gated[0].approved is True
+        assert gated[0].reason == "because yes"
+
+    async def test_gate_cancel_during_waiting(self, registry, tm):
+        """Cancel a graph while WAITING: CancelledError and gate cleanup."""
+        from bae.graph import Graph
+
+        graph = Graph(start=GatedStart)
+        run = registry.submit(graph, tm, lm=MockLM(), text="hi")
+        for _ in range(100):
+            if run.state == GraphState.WAITING:
+                break
+            await asyncio.sleep(0.01)
+        assert run.state == GraphState.WAITING
+        gates = registry.pending_gates_for_run(run.run_id)
+        assert len(gates) == 1
+        # Cancel the graph
+        tm.revoke_all(graceful=False)
+        await _drain_tasks(tm)
+        assert run.state == GraphState.CANCELLED
+        assert registry.pending_gate_count() == 0
+        assert gates[0].future.cancelled()
+
+    async def test_gate_notify_callback(self, registry, tm):
+        """Notify callback receives gate schema when gates are created."""
+        from bae.graph import Graph
+
+        notifications = []
+        graph = Graph(start=GatedStart)
+        run = registry.submit(
+            graph, tm, lm=MockLM(), notify=lambda msg: notifications.append(msg),
+            text="hi",
+        )
+        for _ in range(100):
+            if run.state == GraphState.WAITING:
+                break
+            await asyncio.sleep(0.01)
+        assert len(notifications) == 1
+        assert "approved" in notifications[0]
+        assert "bool" in notifications[0]
+        assert "Deploy to prod?" in notifications[0]
+        # Clean up
+        gates = registry.pending_gates_for_run(run.run_id)
+        for g in gates:
+            registry.resolve_gate(g.gate_id, True)
+        await _drain_tasks(tm)
+
+
+async def _drain_tasks(tm: TaskManager):
+    """Await all tasks to completion, swallowing exceptions."""
+    for tt in list(tm._tasks.values()):
+        try:
+            await tt.task
+        except (asyncio.CancelledError, Exception):
+            pass

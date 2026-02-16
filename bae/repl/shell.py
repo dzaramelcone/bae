@@ -354,6 +354,35 @@ class CortexShell:
         if stderr:
             self.router.write("bash", stderr.rstrip("\n"), mode="BASH", metadata={"type": "stderr"})
 
+    async def _resolve_gate_input(self, gate_id: str, raw_value: str) -> None:
+        """Resolve a pending gate from any mode via @g prefix."""
+        gate = self.engine.get_pending_gate(gate_id)
+        if gate is None:
+            self.router.write("graph", f"no pending gate {gate_id}", mode="GRAPH")
+            return
+
+        from pydantic import TypeAdapter
+
+        try:
+            adapter = TypeAdapter(gate.field_type)
+            value = adapter.validate_python(raw_value)
+        except Exception as e:
+            type_name = getattr(gate.field_type, "__name__", str(gate.field_type))
+            self.router.write(
+                "graph",
+                f"invalid value for {gate.field_name} ({type_name}): {e}",
+                mode="GRAPH",
+            )
+            return
+
+        self.engine.resolve_gate(gate_id, value)
+        self.router.write(
+            "graph",
+            f"resolved {gate_id}: {gate.field_name} = {value!r}",
+            mode="GRAPH",
+            metadata={"type": "lifecycle", "run_id": gate.run_id},
+        )
+
     async def _dispatch(self, text: str) -> None:
         """Route input to the active mode handler.
 
@@ -361,6 +390,17 @@ class CortexShell:
         (await ...) are tracked via TaskManager. NL/GRAPH/BASH modes fire
         as background tasks so prompt_async() stays active.
         """
+        # Cross-mode gate input: @g<digits> <value>
+        # Only from non-NL modes. NL mode preserves @label session routing.
+        if self.mode != Mode.NL and text.startswith("@g") and len(text) > 2:
+            rest = text[2:]
+            space = rest.find(" ")
+            if space > 0 and rest[:space].replace(".", "").isdigit():
+                gate_id = "g" + rest[:space]
+                raw_value = rest[space + 1:]
+                await self._resolve_gate_input(gate_id, raw_value)
+                return
+
         if self.mode == Mode.PY:
             try:
                 result, captured = await async_exec(text, self.namespace)
@@ -420,6 +460,11 @@ class CortexShell:
                 self._run_nl(prompt), name=f"ai:{self._active_session}:{prompt[:30]}", mode="nl"
             )
         elif self.mode == Mode.GRAPH:
+            if text.strip().lower() == "shush":
+                self.shush_gates = not self.shush_gates
+                state = "on" if self.shush_gates else "off"
+                self.router.write("graph", f"shush mode {state}", mode="GRAPH")
+                return
             await dispatch_graph(text, self)
         elif self.mode == Mode.BASH:
             self.tm.submit(self._run_bash(text), name=f"bash:{text[:30]}", mode="bash")

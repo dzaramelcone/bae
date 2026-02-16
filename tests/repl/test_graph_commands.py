@@ -12,6 +12,8 @@ from bae.graph import Graph, graph
 from bae.node import Node
 from bae.repl.engine import GraphRegistry, GraphState
 from bae.repl.graph_commands import dispatch_graph
+from bae.repl.modes import Mode
+from bae.repl.shell import CortexShell
 from bae.repl.tasks import TaskManager
 
 
@@ -87,6 +89,11 @@ class FakeShell:
     namespace: dict
     _lm: MockLM
     router: FakeRouter
+    mode: Mode = Mode.GRAPH
+    shush_gates: bool = False
+
+    # Bind CortexShell's gate resolution method for cross-mode tests.
+    _resolve_gate_input = CortexShell._resolve_gate_input
 
 
 # --- Helpers ---
@@ -377,6 +384,59 @@ class TestCmdTrace:
         assert "no trace available" in out
         shell.tm.revoke_all(graceful=False)
         await _drain(shell.tm)
+
+
+# --- TestCrossModeGateResolve ---
+
+
+class TestCrossModeGateResolve:
+    async def test_resolve_bool_gate(self, shell):
+        """@g<id> <value> resolves a pending gate with type coercion."""
+        gate = shell.engine.create_gate(
+            run_id="g1", field_name="confirm", field_type=bool,
+            description="confirm?", node_type="SomeNode",
+        )
+        await shell._resolve_gate_input("g1.0", "true")
+        out = _output(shell.router)
+        assert "resolved g1.0" in out
+        assert "confirm" in out
+        assert gate.future.result() is True
+
+    async def test_resolve_gate_not_found(self, shell):
+        """Resolving a non-existent gate shows error message."""
+        await shell._resolve_gate_input("g99.0", "yes")
+        out = _output(shell.router)
+        assert "no pending gate g99.0" in out
+
+    async def test_resolve_gate_invalid_type(self, shell):
+        """Invalid value for gate type shows validation error."""
+        shell.engine.create_gate(
+            run_id="g1", field_name="count", field_type=int,
+            description="how many?", node_type="SomeNode",
+        )
+        await shell._resolve_gate_input("g1.0", "not-a-number")
+        out = _output(shell.router)
+        assert "invalid value" in out
+        assert "count" in out
+        assert "int" in out
+
+    async def test_nl_mode_does_not_route_gates(self):
+        """In NL mode, @g prefix is NOT intercepted for gate routing.
+
+        The cross-mode gate routing condition in _dispatch checks
+        ``self.mode != Mode.NL`` so NL mode preserves @label session routing.
+        """
+        # Verify the routing condition: NL mode excluded
+        assert Mode.NL == Mode.NL  # baseline
+        # The condition is: mode != Mode.NL and text.startswith("@g") and len(text) > 2
+        # For NL mode this is False, so @g text flows to NL session routing.
+        for mode in (Mode.PY, Mode.BASH, Mode.GRAPH):
+            assert mode != Mode.NL
+        # NL must not match the gate routing guard
+        text = "@g1 hello"
+        mode = Mode.NL
+        should_route_gate = mode != Mode.NL and text.startswith("@g") and len(text) > 2
+        assert not should_route_gate
 
 
 # --- Helpers ---

@@ -16,6 +16,7 @@ from bae.exceptions import RecallError
 from bae.markers import Dep, Gate, Recall
 
 LM_KEY = object()  # sentinel for LM in dep cache
+GATE_HOOK_KEY = object()  # sentinel for gate hook callback in dep cache
 
 
 def _is_node_type(t: object) -> bool:
@@ -404,12 +405,16 @@ async def resolve_dep(fn: object, cache: dict, trace: list | None = None) -> obj
 
 
 async def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[str, object]:
-    """Resolve all Dep and Recall fields on a Node subclass.
+    """Resolve all Dep, Recall, and Gate fields on a Node subclass.
 
     Dep fields (including Node-as-Dep) are resolved concurrently per
     topological level using ``asyncio.gather()``.  Independent deps on the
     same level fire in parallel.  Recall fields are resolved synchronously
     after deps (pure computation, no I/O benefit from async).
+
+    Gate fields are resolved via a hook callback injected into dep_cache
+    under ``GATE_HOOK_KEY``. When present, the hook receives the node class
+    and gate field metadata, creates Futures, and awaits user input.
 
     The result dict preserves field declaration order.
 
@@ -419,14 +424,16 @@ async def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[s
         dep_cache: Per-run dep cache shared across resolve_fields calls.
 
     Returns:
-        Dict mapping field name to resolved value for Dep and Recall fields only.
+        Dict mapping field name to resolved value for Dep, Recall, and Gate fields.
     """
     hints = get_type_hints(node_cls, include_extras=True)
 
-    # Classify fields into dep and recall buckets
+    # Classify fields into dep, recall, and gate buckets
     # dep_fields maps field_name -> DAG key (callable or Node class)
     dep_fields: dict[str, object] = {}
     recall_fields: dict[str, type] = {}
+    # gate_fields: list of (field_name, base_type, description)
+    gate_fields: list[tuple[str, type, str]] = []
 
     for field_name, hint in hints.items():
         if field_name == "return":
@@ -448,6 +455,9 @@ async def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[s
             if isinstance(m, Recall):
                 recall_fields[field_name] = base_type
                 break
+            if isinstance(m, Gate):
+                gate_fields.append((field_name, base_type, m.description))
+                break
 
     # Resolve deps via topo-sort levels with gather
     if dep_fields:
@@ -468,6 +478,17 @@ async def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[s
             for fn in ready:
                 dag.done(fn)
 
+    # Resolve gate fields via hook (if present); cache results per node class
+    gate_cache_key = (node_cls, "gates")
+    gate_values: dict[str, object] = {}
+    if gate_fields and GATE_HOOK_KEY in dep_cache:
+        if gate_cache_key in dep_cache:
+            gate_values = dep_cache[gate_cache_key]
+        else:
+            gate_hook = dep_cache[GATE_HOOK_KEY]
+            gate_values = await gate_hook(node_cls, gate_fields)
+            dep_cache[gate_cache_key] = gate_values
+
     # Build resolved dict in declaration order
     resolved: dict[str, object] = {}
     for field_name, hint in hints.items():
@@ -478,5 +499,7 @@ async def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[s
             resolved[field_name] = dep_cache[dep_fields[field_name]]
         elif field_name in recall_fields:
             resolved[field_name] = recall_from_trace(trace, recall_fields[field_name])
+        elif field_name in gate_values:
+            resolved[field_name] = gate_values[field_name]
 
     return resolved
