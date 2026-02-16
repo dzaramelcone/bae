@@ -115,11 +115,13 @@ Plans:
   2. All 5 tools resolve paths relative to project root; out-of-scope paths (absolute, `../` traversal) are rejected with clear errors
   3. `read()` shows a budget-aware project file tree within 500 token cap
   4. `source.meta()` enters a subresourcespace for editing the resourcespace's own code
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 32-01: TBD
-- [ ] 32-02: TBD
+- [ ] 32-01-PLAN.md — SourceResourcespace core: protocol, module path resolution, path safety, read (TDD)
+- [ ] 32-02-PLAN.md — Glob and grep with module-path output (TDD)
+- [ ] 32-03-PLAN.md — Write, edit, hot-reload, rollback, and undo (TDD)
+- [ ] 32-04-PLAN.md — Subresources (deps, config, tests, meta) and shell registration
 
 ### Phase 33: Task Resourcespace
 **Goal**: Agent can manage persistent tasks through a navigable resource with CRUD and search
