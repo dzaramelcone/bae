@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 27-graph-mode
 source: [27-01-SUMMARY.md, 27-02-SUMMARY.md, 27-03-SUMMARY.md]
 started: 2026-02-15T20:00:00Z
-updated: 2026-02-15T20:00:00Z
+updated: 2026-02-15T20:10:00Z
 ---
 
 ## Current Test
@@ -55,26 +55,53 @@ skipped: 0
   reason: "User reported: graph submits fine but then locks up -- never completes"
   severity: blocker
   test: 1
-  artifacts: []
-  missing: []
+  root_cause: "ClaudeCLIBackend has 20s per-call timeout (lm.py:413). Complex graphs like ootd with 6+ nodes accumulate 10+ LM calls; any slow call triggers timeout. 67.6s indicates several calls succeeded before one hit the limit."
+  artifacts:
+    - path: "bae/lm.py"
+      issue: "timeout: int = 20 is too low for complex graphs"
+  missing:
+    - "Increase default timeout or make configurable per-graph"
+  debug_session: ".planning/debug/graph-run-timeout-no-trace.md"
 - truth: "list shows a properly formatted table of graph runs"
   status: failed
   reason: "User reported: Rich table renders as raw ANSI escape codes instead of formatted output"
   severity: minor
   test: 3
-  artifacts: []
-  missing: []
+  root_cause: "_cmd_list sends ANSI string via router.write() but channel formatters (UserView._render_prefixed) treat content as plain text via FormattedText, displaying escape codes literally instead of interpreting them with ANSI() wrapper."
+  artifacts:
+    - path: "bae/repl/graph_commands.py"
+      issue: "router.write() calls at lines 140, 206 send ANSI strings without metadata signal"
+    - path: "bae/repl/views.py"
+      issue: "UserView._render_prefixed wraps in FormattedText (plain text) not ANSI()"
+  missing:
+    - "Add metadata={'type': 'ansi'} to router.write() calls"
+    - "Extend formatters to check metadata type and use ANSI() wrapper when appropriate"
+  debug_session: ".planning/debug/graph-list-ansi-escape-codes.md"
 - truth: "inspect shows which node failed and nodes that succeeded before it"
   status: failed
   reason: "User reported: inspect only shows summary line -- no node-level detail, no failure location"
   severity: major
   test: 4
-  artifacts: []
-  missing: []
+  root_cause: "submit_coro() bypasses TimingLM injection (engine.py:125-141) since LM is already bound in closure. GraphRun.node_timings stays empty. inspect checks run.node_timings but finds nothing."
+  artifacts:
+    - path: "bae/repl/engine.py"
+      issue: "submit_coro (line 125) creates GraphRun with graph=None, no TimingLM"
+    - path: "bae/repl/graph_commands.py"
+      issue: "_cmd_inspect checks run.node_timings but it's empty for submit_coro runs"
+  missing:
+    - "Extract timing/trace from GraphResult on run.result, or inject TimingLM into closure"
+  debug_session: ".planning/debug/graph-run-timeout-no-trace.md"
 - truth: "trace shows node transition history for a failed run"
   status: failed
   reason: "User reported: trace g1 says 'no trace available' even though nodes executed before failure"
   severity: major
   test: 5
-  artifacts: []
-  missing: []
+  root_cause: "_wrap_coro() (engine.py:143-160) only sets run.result on success. On failure, RuntimeError from LM backend propagates -- graph.arun() attaches .trace to BaeError/DepError but not RuntimeError. run.result stays None, so trace command sees nothing."
+  artifacts:
+    - path: "bae/repl/engine.py"
+      issue: "_wrap_coro only sets run.result on success (line 148-149), not on failure"
+    - path: "bae/graph.py"
+      issue: "Only BaeError/DepError get .trace attached (lines 336, 350), not RuntimeError"
+  missing:
+    - "Preserve partial trace on failure: extract from exception or capture before re-raise"
+  debug_session: ".planning/debug/graph-run-timeout-no-trace.md"
