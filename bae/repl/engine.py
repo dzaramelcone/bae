@@ -15,6 +15,7 @@ from bae.resolver import LM_KEY
 if TYPE_CHECKING:
     from bae.graph import Graph
     from bae.repl.tasks import TaskManager
+    from bae.result import GraphResult
 
 
 class GraphState(enum.Enum):
@@ -38,13 +39,14 @@ class NodeTiming:
 @dataclass
 class GraphRun:
     run_id: str
-    graph: Graph
+    graph: Graph | None
     state: GraphState = GraphState.RUNNING
     node_timings: list[NodeTiming] = field(default_factory=list)
     current_node: str = ""
     started_ns: int = field(default_factory=time.perf_counter_ns)
     ended_ns: int = 0
     error: str = ""
+    result: GraphResult | None = None
 
 
 class TimingLM:
@@ -106,7 +108,45 @@ class GraphRegistry:
             timing_lm = TimingLM(lm, run)
             dep_cache = {LM_KEY: timing_lm}
             result = await run.graph.arun(lm=timing_lm, dep_cache=dep_cache, **kwargs)
+            run.result = result
             run.state = GraphState.DONE
+            return result
+        except asyncio.CancelledError:
+            run.state = GraphState.CANCELLED
+            raise
+        except Exception as e:
+            run.state = GraphState.FAILED
+            run.error = f"{type(e).__name__}: {e}"
+            raise
+        finally:
+            run.ended_ns = time.perf_counter_ns()
+            self._archive(run)
+
+    def submit_coro(
+        self, coro, tm: TaskManager, *, name: str = "graph",
+    ) -> GraphRun:
+        """Submit a pre-built coroutine as a managed graph run.
+
+        Used when `run <expr>` evaluates to an already-constructed coroutine
+        (e.g., `ootd(user_info=..., user_message=...)`). The coroutine is
+        wrapped with lifecycle tracking but TimingLM cannot be injected
+        since the LM is already bound inside the coroutine.
+        """
+        run_id = f"g{self._next_id}"
+        self._next_id += 1
+        run = GraphRun(run_id=run_id, graph=None)
+        self._runs[run_id] = run
+        wrapped = self._wrap_coro(run, coro)
+        tm.submit(wrapped, name=f"graph:{run_id}:{name}", mode="graph")
+        return run
+
+    async def _wrap_coro(self, run: GraphRun, coro):
+        """Wrap a coroutine with lifecycle tracking."""
+        try:
+            result = await coro
+            run.state = GraphState.DONE
+            if hasattr(result, "trace"):
+                run.result = result
             return result
         except asyncio.CancelledError:
             run.state = GraphState.CANCELLED

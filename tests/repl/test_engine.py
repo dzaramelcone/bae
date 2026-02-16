@@ -311,3 +311,107 @@ class TestGraphRegistry:
         assert "timing_lm" in captured
         assert isinstance(captured["timing_lm"], TimingLM)
         assert captured["inner_lm"] is mock_lm
+
+    async def test_execute_stores_result(self, registry, tm, mock_lm):
+        """Submit a graph, await completion, verify run.result has trace."""
+        from bae.graph import Graph
+        from bae.result import GraphResult
+
+        graph = Graph(start=Start)
+        run = registry.submit(graph, tm, lm=mock_lm, text="hello")
+        for tt in list(tm._tasks.values()):
+            try:
+                await tt.task
+            except Exception:
+                pass
+        assert run.state == GraphState.DONE
+        assert run.result is not None
+        assert isinstance(run.result, GraphResult)
+        assert len(run.result.trace) >= 1
+
+    async def test_submit_coro_creates_running_graphrun(self, registry, tm):
+        """submit_coro() creates a GraphRun with state RUNNING."""
+        started = asyncio.Event()
+
+        async def fake():
+            started.set()
+            await asyncio.sleep(10)
+            return "done"
+
+        run = registry.submit_coro(fake(), tm, name="test")
+        await started.wait()
+        assert run.state == GraphState.RUNNING
+        assert run.run_id == "g1"
+        assert run.graph is None
+        tm.revoke_all(graceful=False)
+        for tt in list(tm._tasks.values()):
+            try:
+                await tt.task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    async def test_submit_coro_completes_to_done(self, registry, tm):
+        """submit_coro() coroutine completion sets state to DONE."""
+        async def fake():
+            return "done"
+
+        run = registry.submit_coro(fake(), tm, name="test")
+        for tt in list(tm._tasks.values()):
+            try:
+                await tt.task
+            except Exception:
+                pass
+        assert run.state == GraphState.DONE
+
+    async def test_submit_coro_failure_sets_failed(self, registry, tm):
+        """submit_coro() wraps failures with error message."""
+        async def failing():
+            raise ValueError("boom")
+
+        run = registry.submit_coro(failing(), tm, name="test")
+        for tt in list(tm._tasks.values()):
+            try:
+                await tt.task
+            except Exception:
+                pass
+        assert run.state == GraphState.FAILED
+        assert "boom" in run.error
+        assert "ValueError" in run.error
+
+    async def test_submit_coro_cancellation(self, registry, tm):
+        """submit_coro() handles cancellation correctly."""
+        async def slow():
+            await asyncio.sleep(100)
+
+        run = registry.submit_coro(slow(), tm, name="test")
+        await asyncio.sleep(0.05)
+        tm.revoke_all(graceful=False)
+        for tt in list(tm._tasks.values()):
+            try:
+                await tt.task
+            except (asyncio.CancelledError, Exception):
+                pass
+        assert run.state == GraphState.CANCELLED
+
+    async def test_submit_coro_stores_graphresult(self, registry, tm):
+        """submit_coro() stores GraphResult on run when coroutine returns one."""
+        from bae.result import GraphResult
+        from bae.node import Node
+
+        class Stub(Node):
+            x: str = "hi"
+
+        gr = GraphResult(node=None, trace=[Stub()])
+
+        async def returning_result():
+            return gr
+
+        run = registry.submit_coro(returning_result(), tm, name="test")
+        for tt in list(tm._tasks.values()):
+            try:
+                await tt.task
+            except Exception:
+                pass
+        assert run.state == GraphState.DONE
+        assert run.result is gr
+        assert len(run.result.trace) == 1
