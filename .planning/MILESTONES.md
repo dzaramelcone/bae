@@ -130,3 +130,33 @@
 
 ---
 
+
+## v6.0 Graph Runtime (Shipped: 2026-02-16)
+
+**Delivered:** Async graph execution engine inside cortex with concurrent lifecycle management, human-in-the-loop gates via asyncio.Future, full observability through the channel/view system, and agent core extraction. GRAPH mode command interface built then deliberately removed -- all capabilities accessible programmatically.
+
+**Phases completed:** 26-30 (5 phases, 18 plans)
+
+**Key accomplishments:**
+- GraphRegistry engine with concurrent lifecycle tracking, per-node timing, and TaskManager integration
+- asyncio.Future-based input gates with toolbar badge and cross-mode @g resolution from any REPL mode
+- Full observability: OutputPolicy, dep timing hooks, RSS measurement, lifecycle events through [graph] channel
+- graph() factory with flattened params API and _graph_ctx auto-registration inside cortex
+- Agent core extraction: extract_executable and agent_loop decoupled from REPL to bae/agent.py
+- Post-milestone cleanup: GRAPH mode removal (7 commands deleted, infrastructure preserved), 8-priority codebase refactor
+
+**Stats:**
+- 27 commits, 6,130 lines Python (bae/), 10,368 lines tests
+- 647 tests passing
+- 1 day (2026-02-15)
+
+**Git range:** `feat(26-01)` -> `refactor(quick-2)`
+
+**Tech debt accepted:**
+- 7 requirements no longer satisfied after deliberate GRAPH mode removal (infrastructure survives programmatically)
+- AgenticBackend removed post-verification (agentic fill will use model config on nodes)
+- Phase 30 VERIFICATION.md stale
+- tests/traces/json_structured_fill_reference.py drift (carried from v5.0)
+
+---
+

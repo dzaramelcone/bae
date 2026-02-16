@@ -2,19 +2,18 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-15)
+See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v6.0 Graph Runtime -- Phase 29 Observability complete
+**Current focus:** v6.0 complete -- planning next milestone
 
 ## Current Position
 
-Phase: 29 (Observability)
-Plan: 03 of 03 complete
-Status: Phase 29 verified (3/3 must-haves passed)
-Last activity: 2026-02-16 - Completed quick task 2: execute refactor in .planning/audit
+Phase: v6.0 complete (30 phases shipped across v1.0-v6.0)
+Status: Milestone v6.0 archived
+Last activity: 2026-02-16 - Completed v6.0 Graph Runtime milestone
 
-Progress: v1-v5 done | v6.0 [##########] 100%
+Progress: v1-v6 done | next: /gsd:new-milestone
 
 ## Performance Metrics
 

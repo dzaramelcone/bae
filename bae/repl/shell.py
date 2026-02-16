@@ -299,7 +299,6 @@ class CortexShell:
                 router=self.router,
                 namespace=self.namespace,
                 tm=self.tm,
-                store=self.store,
                 label=label,
             )
         return self._ai_sessions[label]

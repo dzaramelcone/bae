@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A framework for building agent graphs where nodes are Pydantic models and topology comes from type hints. Nodes are "context frames" -- their fields assemble the information the LLM needs to produce the next node. Class names are instructions, return types are output schemas, and Field(description=...) provides explicit per-field hints. Three field sources: Dep(callable) for external data, Recall() for graph state, and plain fields for LLM generation. JSON structured output with constrained decoding for reliable fills. Fully async with parallel dep resolution. Ships with cortex -- an NL-first augmented REPL where human and AI collaborate in a shared namespace, with pluggable view formatters and native tool call translation.
+A framework for building agent graphs where nodes are Pydantic models and topology comes from type hints. Nodes are "context frames" -- their fields assemble the information the LLM needs to produce the next node. Class names are instructions, return types are output schemas, and Field(description=...) provides explicit per-field hints. Four field sources: Dep(callable) for external data, Recall() for graph state, Gate() for human-in-the-loop input, and plain fields for LLM generation. JSON structured output with constrained decoding for reliable fills. Fully async with parallel dep resolution and concurrent graph execution engine. Ships with cortex -- an NL-first augmented REPL where human and AI collaborate in a shared namespace, with pluggable view formatters, native tool call translation, and graph observability.
 
 ## Core Value
 
@@ -52,22 +52,24 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 - ✓ AISelfView structured feedback tags -- v5.0
 - ✓ Runtime view cycling (Ctrl+V) with toolbar indicator -- v5.0
 - ✓ Concise tool call display with summaries -- v5.0
+- ✓ GraphRegistry with concurrent lifecycle tracking (RUNNING/WAITING/DONE/FAILED/CANCELLED) -- v6.0
+- ✓ Graph engine wraps arun() with lifecycle events, backend-agnostic -- v6.0
+- ✓ Per-node timing and dep call duration capture via TimingLM -- v6.0
+- ✓ dep_cache parameter on Graph.arun() for cortex injection -- v6.0
+- ✓ Graphs as managed tasks via TaskManager (Ctrl-C menu) -- v6.0
+- ✓ graph() factory with flattened params and auto-engine-registration -- v6.0
+- ✓ Gate() marker for human-in-the-loop input via asyncio.Future -- v6.0
+- ✓ Toolbar badge for pending gate count, @g cross-mode resolution -- v6.0
+- ✓ OutputPolicy (VERBOSE/NORMAL/QUIET/SILENT) per graph run -- v6.0
+- ✓ Graph lifecycle events through [graph] channel with typed metadata -- v6.0
+- ✓ RSS memory delta measurement per graph run -- v6.0
+- ✓ 10+ concurrent graphs without event loop starvation -- v6.0
+- ✓ Graph events persist to SessionStore for cross-session history -- v6.0
+- ✓ Agent core extraction (extract_executable, agent_loop) to bae/agent.py -- v6.0
 
 ### Active
 
-## Current Milestone: v6.0 Graph Runtime
-
-**Goal:** Run bae graphs async inside cortex with concurrent execution, human-in-the-loop input gates, and full observability through the view system.
-
-**Target features:**
-- Async graph execution engine inside cortex
-- Graph registry for 10+ concurrent graphs with lifecycle management
-- Graph mode as management hub (list, inspect, cancel, logs)
-- Pending input system with notification UX (shush mode badge + inline interrupts)
-- Graph I/O flowing through channel/view system
-- Debug views for graph observability (IO, validation errors, run times, memory, dep calls)
-- Graph lifecycle notifications (start/complete/transition)
-- Graphs as managed tasks (TaskManager integration)
+(No active milestone -- planning next)
 
 ### Out of Scope
 
@@ -87,22 +89,30 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 - AI bash dispatch -- security surface, AI uses Python only
 - Token-by-token streaming -- requires API client migration
 - Custom view plugins -- YAGNI, three built-in views sufficient
+- GRAPH mode REPL commands -- built in v6.0, removed; programmatic API sufficient (v6.0 retro)
 
 ## Context
 
-Shipped v5.0 Stream Views with 6,436 lines in bae/repl/ + tests/repl/.
-
-Total codebase: ~16,000 lines of Python across framework + REPL.
+Shipped v6.0 Graph Runtime. 6,130 lines in bae/, 10,368 lines in tests/.
 
 Tech stack: Python 3.14+, Pydantic, pydantic-ai, dspy, Anthropic SDK, prompt_toolkit, Rich.
 
 Three LM backends: PydanticAIBackend, ClaudeCLIBackend, DSPyBackend -- each with v1 (make/decide) and v2 (choose_type/fill) methods, all async.
 
-Cortex architecture: Custom REPL on prompt_toolkit with 4 modes (NL/PY/GRAPH/BASH) sharing one Python namespace. All output flows through labeled channels with pluggable view formatters (UserView, DebugView, AISelfView). AI agent lives in namespace as callable object, uses Claude CLI subprocess with session persistence. Eval loop extracts `<run>` blocks, translates tool call tags natively, feeds results back. SessionStore (SQLite + FTS5) persists all I/O for cross-session memory. TaskManager tracks async tasks with process group cleanup.
+Cortex architecture: Custom REPL on prompt_toolkit with 3 modes (NL/PY/BASH) sharing one Python namespace. Graph engine runs concurrent graphs as managed tasks with lifecycle tracking, per-node timing, and human-in-the-loop gates (asyncio.Future). All output flows through labeled channels with pluggable view formatters (UserView, DebugView, AISelfView). AI agent lives in namespace as callable object with extracted agent core (bae/agent.py). SessionStore (SQLite + FTS5) persists all I/O including graph lifecycle events for cross-session memory.
 
-Reference implementation: `examples/ootd.py` -- 3-node outfit recommendation graph.
+Reference implementation: `examples/ootd.py` -- outfit recommendation graph with graph() factory.
 
-559 tests passing (354 framework + 205 repl).
+647 tests passing, 5 skipped.
+
+**Field annotation summary:**
+
+| Annotation | Meaning | Source |
+|------------|---------|--------|
+| `Dep(fn)` | Bae calls a function to fill this field | External service/function |
+| `Recall()` | Bae searches the trace to fill this field | Prior node in graph execution |
+| `Gate()` | Bae suspends and asks the user to fill this field | Human-in-the-loop input |
+| *(none)* | LLM fills this field | Previous node's context -> LLM generation |
 
 ## Constraints
 
@@ -133,20 +143,21 @@ Reference implementation: `examples/ootd.py` -- 3-node outfit recommendation gra
 | xml_tag convention for execution | 100% compliance across all Claude tiers, clean separation | ✓ Good -- `<run>` blocks only |
 | Tool call interception over rejection | Translate and execute natively rather than reject with error | ✓ Good -- productive tool use |
 | ViewFormatter as Protocol | Strategy pattern via structural typing, zero circular imports | ✓ Good -- pluggable display |
-
-**Field annotation summary:**
-
-| Annotation | Meaning | Source |
-|------------|---------|--------|
-| `Dep(fn)` | Bae calls a function to fill this field | External service/function |
-| `Recall()` | Bae searches the trace to fill this field | Prior node in graph execution |
-| *(none)* | LLM fills this field | Previous node's context -> LLM generation |
+| dep_cache as hook injection | GATE_HOOK_KEY and DEP_TIMING_KEY sentinels in dep_cache | ✓ Good -- zero framework changes for cortex features |
+| asyncio.Future for gates | Graph suspends cleanly, no busy-wait or polling | ✓ Good -- clean integration with event loop |
+| _graph_ctx contextvar | graph() auto-registers with engine when called inside REPL | ✓ Good -- zero explicit setup for users |
+| graph() flattens BaseModel params | Flat kwargs instead of constructing Pydantic models | ✓ Good -- natural CLI UX |
+| GRAPH mode removal | Built then removed -- programmatic API via PY mode sufficient | ✓ Good -- reduced surface area, all capabilities survive |
+| _lifecycle context manager | Shared engine lifecycle for _execute and _wrap_coro | ✓ Good -- eliminated duplication |
+| Agent core as module functions | Stateless, no class -- caller owns session state | ✓ Good -- clean decoupling from REPL |
 
 ## Known Issues
 
 - PydanticAIBackend.choose_type uses free-text string + fuzzy matching -- may rip out PydanticAI entirely
 - tests/traces/json_structured_fill_reference.py drifted from real backend
 - AI streaming/progressive display deferred (NL responses currently blocking)
+- GraphRegistry.active() and .get() orphaned after GRAPH mode removal (functional, unused)
+- Phase 30 VERIFICATION.md stale (AgenticBackend removed post-verification)
 
 ---
-*Last updated: 2026-02-14 after v6.0 Graph Runtime milestone started*
+*Last updated: 2026-02-16 after v6.0 Graph Runtime milestone completed*

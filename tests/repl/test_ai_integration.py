@@ -52,9 +52,8 @@ class TestAIIntegration:
     def test_ai_extract_executable_from_namespace(self):
         """extract_executable is accessible on the namespace ai object."""
         shell = CortexShell()
-        code, extra = shell.namespace["ai"].extract_executable("<run>\nx = 1\n</run>")
-        assert code == "x = 1"
-        assert extra == 0
+        blocks = shell.namespace["ai"].extract_executable("<run>\nx = 1\n</run>")
+        assert blocks == ["x = 1"]
 
     def test_nl_stub_removed(self):
         """NL mode no longer contains the Phase 18 stub text."""

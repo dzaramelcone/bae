@@ -14,13 +14,6 @@ _EXEC_BLOCK_RE = re.compile(
 )
 
 
-def extract_executable(text: str) -> tuple[str | None, int]:
-    """Extract first executable <run> block and count of extras.
-
-    Returns (code, extra_count) where code is the first executable
-    block or None, and extra_count is additional blocks ignored.
-    """
-    matches = _EXEC_BLOCK_RE.findall(text)
-    if not matches:
-        return None, 0
-    return matches[0], len(matches) - 1
+def extract_executable(text: str) -> list[str]:
+    """Extract all executable <run> blocks from text."""
+    return _EXEC_BLOCK_RE.findall(text)

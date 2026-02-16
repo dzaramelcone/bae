@@ -67,52 +67,40 @@ class TestExtractExecutable:
     """Tests for AI.extract_executable static method."""
 
     def test_single_executable_block(self):
-        """Single <run> block extracts code with zero extras."""
+        """Single <run> block extracts code."""
         text = "Here is the result:\n<run>\nx = 42\n</run>\nDone."
-        code, extra = AI.extract_executable(text)
-        assert code == "x = 42"
-        assert extra == 0
+        assert AI.extract_executable(text) == ["x = 42"]
 
     def test_illustrative_block_ignored(self):
-        """Text with only markdown fences returns (None, 0)."""
+        """Text with only markdown fences returns empty list."""
         text = "Here's an example:\n```python\nx = 42\n```\nThat's how it works."
-        code, extra = AI.extract_executable(text)
-        assert code is None
-        assert extra == 0
+        assert AI.extract_executable(text) == []
 
     def test_mixed_blocks(self):
-        """One <run> and one illustrative fence returns (exec_code, 0)."""
+        """One <run> and one illustrative fence returns the <run> block."""
         text = (
             "Here's an example:\n```python\n# illustrative\nx = 1\n```\n"
             "Let me run it:\n<run>\nresult = 2 + 2\n</run>"
         )
-        code, extra = AI.extract_executable(text)
-        assert code == "result = 2 + 2"
-        assert extra == 0
+        assert AI.extract_executable(text) == ["result = 2 + 2"]
 
     def test_multiple_executable_blocks(self):
-        """Two <run> blocks returns (first_code, 1)."""
+        """Two <run> blocks returns both."""
         text = (
             "First:\n<run>\na = 1\n</run>\n"
             "Second:\n<run>\nb = 2\n</run>"
         )
-        code, extra = AI.extract_executable(text)
-        assert code == "a = 1"
-        assert extra == 1
+        assert AI.extract_executable(text) == ["a = 1", "b = 2"]
 
     def test_no_code_blocks(self):
-        """Plain text returns (None, 0)."""
+        """Plain text returns empty list."""
         text = "Just some plain text without any code."
-        code, extra = AI.extract_executable(text)
-        assert code is None
-        assert extra == 0
+        assert AI.extract_executable(text) == []
 
     def test_bare_fence_not_extracted(self):
         """Bare ``` fence is not treated as executable."""
         text = "Code:\n```\nprint('hi')\n```"
-        code, extra = AI.extract_executable(text)
-        assert code is None
-        assert extra == 0
+        assert AI.extract_executable(text) == []
 
 
 # --- TestBuildContext ---
@@ -252,9 +240,9 @@ class TestPromptFile:
         assert "<run>" in prompt
 
     def test_prompt_mentions_convention(self):
-        """System prompt contains the Code execution convention section."""
+        """System prompt contains the Code section."""
         prompt = _load_prompt()
-        assert "Code execution convention" in prompt
+        assert "## Code" in prompt
 
     def test_prompt_mentions_tool_tags(self):
         """System prompt contains all 5 tool tag formats."""
@@ -511,31 +499,25 @@ class TestEvalLoop:
                 await eval_ai("cancel me")
 
     @pytest.mark.asyncio
-    async def test_eval_loop_multi_block_notice(self, eval_ai):
-        """Two <run> blocks: only first executed, debug channel gets notice, feedback includes notice."""
+    async def test_eval_loop_multi_block_all_executed(self, eval_ai):
+        """Two <run> blocks: both executed sequentially, combined output fed back."""
         eval_ai._send.side_effect = [
             "First:\n<run>\na = 1\n</run>\nSecond:\n<run>\nb = 2\n</run>",
             "Got it.",
         ]
         with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
-            mock_exec.return_value = (None, "")
+            mock_exec.side_effect = [(1, ""), (2, "")]
             await eval_ai("multi block")
 
-        # Only first block executed
-        mock_exec.assert_called_once_with("a = 1", eval_ai._namespace)
+        # Both blocks executed
+        assert mock_exec.call_count == 2
+        mock_exec.assert_any_call("a = 1", eval_ai._namespace)
+        mock_exec.assert_any_call("b = 2", eval_ai._namespace)
 
-        # Debug channel received notice
-        debug_writes = [
-            c for c in eval_ai._router.write.call_args_list
-            if c[0][0] == "debug"
-        ]
-        assert len(debug_writes) == 1
-        assert "1 additional block was ignored" in debug_writes[0][0][1]
-        assert debug_writes[0].kwargs["metadata"]["type"] == "exec_notice"
-
-        # AI feedback includes notice
+        # Combined output fed back with separator
         feedback = eval_ai._send.call_args_list[1][0][0]
-        assert "1 additional block was ignored" in feedback
+        assert "[Output]" in feedback
+        assert "---" in feedback
 
     @pytest.mark.asyncio
     async def test_eval_loop_illustrative_not_executed(self, eval_ai):

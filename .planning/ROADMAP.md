@@ -7,7 +7,7 @@
 - v3.0 Async Graphs -- Phases 11-13 (shipped 2026-02-13)
 - v4.0 Cortex -- Phases 14-20 (shipped 2026-02-14)
 - v5.0 Stream Views -- Phases 21-25 (shipped 2026-02-14)
-- v6.0 Graph Runtime -- Phases 26-30 (in progress)
+- v6.0 Graph Runtime -- Phases 26-30 (shipped 2026-02-16)
 
 ## Phases
 
@@ -66,90 +66,16 @@
 
 </details>
 
-### v6.0 Graph Runtime (In Progress)
+<details>
+<summary>v6.0 Graph Runtime (Phases 26-30) -- SHIPPED 2026-02-16</summary>
 
-**Milestone Goal:** Run bae graphs async inside cortex with concurrent execution, human-in-the-loop input gates, and full observability through the view system.
+- [x] Phase 26: Engine Foundation (4/4 plans)
+- [x] Phase 27: Graph Mode (6/6 plans)
+- [x] Phase 28: Input Gates (3/3 plans)
+- [x] Phase 29: Observability (5/5 plans)
+- [x] Phase 30: Agent Core Extraction (2/2 plans)
 
-- [x] **Phase 26: Engine Foundation** - Registry, engine wrapper, timing, TaskManager integration (2026-02-15)
-- [x] **Phase 27: Graph Mode** - Command interface, flat params, ANSI rendering, trace on failure (2026-02-15)
-- [x] **Phase 28: Input Gates** - Future-based human-in-the-loop suspension with routing UX (2026-02-15)
-- [x] **Phase 29: Observability** - Channel integration, debug views, metrics, scaling validation (2026-02-15)
-
-## Phase Details
-
-### Phase 26: Engine Foundation
-**Goal**: Graphs run concurrently inside cortex as managed tasks with lifecycle tracking
-**Depends on**: Phase 25 (v5.0 complete)
-**Requirements**: ENG-01, ENG-02, ENG-03, ENG-04, ENG-05, INT-01
-**Success Criteria** (what must be TRUE):
-  1. Dzara can submit a graph and it runs to completion in the background while she continues using the REPL
-  2. Running graphs appear in the Ctrl-C task menu and can be cancelled from there
-  3. The registry tracks each graph's lifecycle state (RUNNING/WAITING/DONE/FAILED/CANCELLED) and current node
-  4. Per-node timing data (start/end) and dep call durations are captured for every graph run
-  5. `Graph.arun()` accepts a `dep_cache` parameter without breaking existing call sites
-**Plans**: 4 plans
-
-Plans:
-- [x] 26-01-PLAN.md -- dep_cache parameter, event loop yield, CancelledError fix
-- [x] 26-02-PLAN.md -- GraphRegistry, TimingLM, engine wrapper, shell integration
-- [x] 26-03-PLAN.md -- Graph instance guard, subprocess session isolation (gap closure)
-- [x] 26-04-PLAN.md -- GraphRun error field, GRAPH mode error surfacing, kwarg fix (gap closure)
-
-### Phase 27: Graph Mode
-**Goal**: Dzara can start, monitor, inspect, and cancel graphs through GRAPH mode commands
-**Depends on**: Phase 26
-**Requirements**: MODE-01, MODE-02, MODE-03, MODE-04, MODE-05
-**Success Criteria** (what must be TRUE):
-  1. `run <expr>` evaluates a namespace expression and submits the resulting graph to the engine
-  2. `list` shows all graph runs with their state, elapsed time, and current node
-  3. `cancel <id>` stops a running graph and cleans up its resources
-  4. `inspect <id>` displays the full execution trace with node timings and field values
-  5. `trace <id>` shows node transition history for a running or completed graph
-**Plans**: 6 plans
-
-Plans:
-- [x] 27-01-PLAN.md -- graph() factory function, async callable API, engine submit_coro + result storage
-- [x] 27-02-PLAN.md -- GRAPH mode command dispatcher (run/list/cancel/inspect/trace)
-- [x] 27-03-PLAN.md -- param type injection for run, ls alias removal (gap closure)
-- [x] 27-04-PLAN.md -- LM timeout increase, partial trace preservation on failure, flat params (gap closure)
-- [x] 27-05-PLAN.md -- ANSI rendering fix for Rich table/text output (gap closure)
-- [x] 27-06-PLAN.md -- stdin isolation for background graphs, inspect formatting (gap closure)
-
-### Phase 28: Input Gates
-**Goal**: Graphs can pause for human input and Dzara can respond from any mode
-**Depends on**: Phase 27
-**Requirements**: GATE-01, GATE-02, GATE-03, GATE-04, GATE-05, MODE-06
-**Success Criteria** (what must be TRUE):
-  1. When a graph needs user input, execution suspends (via asyncio.Future) until Dzara responds
-  2. Pending input count shows as a toolbar badge visible in all modes
-  3. `input <id> <value>` in GRAPH mode and `@gid <value>` from any mode both resolve a pending gate
-  4. Pending gates display field name, type, and description so Dzara knows what to provide
-  5. Shush mode (badge only) vs inline notification is toggleable per preference
-**Plans**: 3 plans
-
-Plans:
-- [x] 28-01-PLAN.md -- Gate marker, resolver classification, InputGate dataclass, WAITING state, gate registry
-- [x] 28-02-PLAN.md -- Engine gate execution interception, GRAPH mode input command with type coercion
-- [x] 28-03-PLAN.md -- Toolbar gates badge, cross-mode @g routing, shush mode toggle
-
-### Phase 29: Observability
-**Goal**: Full visibility into graph execution through the channel/view system with scaling validation
-**Depends on**: Phase 28
-**Requirements**: OBS-01, OBS-02, OBS-03, OBS-04, OBS-05, OBS-06, INT-02, INT-03
-**Success Criteria** (what must be TRUE):
-  1. Graph events flow through the `[graph]` channel with typed metadata and render correctly in UserView and DebugView
-  2. Lifecycle notifications (start, complete, fail, transition) appear inline regardless of which mode Dzara is in
-  3. Debug view shows node timings, dep durations, LM call times, and validation errors for any graph run
-  4. 10+ concurrent graphs run without event loop starvation, channel flooding, or memory leaks
-  5. Graph events persist to SessionStore so Dzara can review past runs across sessions
-**Plans**: 5 plans
-
-Plans:
-- [x] 29-01-PLAN.md -- Engine instrumentation: OutputPolicy, dep timing hook, RSS measurement, event emission
-- [x] 29-02-PLAN.md -- Display + commands: view rendering, debug command, enhanced inspect, output policy flags
-- [x] 29-03-PLAN.md -- Stress test + verification: 10+ concurrent graphs, store persistence, cross-session history
-- [x] 29-04 -- Fix duplicate done notification, gate submitted/resolved by output policy (101a5d8)
-- [x] 29-05 -- Verbose per-node transition events via logger + _NotifyHandler (101a5d8)
+</details>
 
 ## Progress
 
@@ -184,5 +110,6 @@ Plans:
 | 27. Graph Mode | v6.0 | 6/6 | Complete | 2026-02-15 |
 | 28. Input Gates | v6.0 | 3/3 | Complete | 2026-02-15 |
 | 29. Observability | v6.0 | 5/5 | Complete | 2026-02-15 |
+| 30. Agent Core Extraction | v6.0 | 2/2 | Complete | 2026-02-15 |
 
 ---

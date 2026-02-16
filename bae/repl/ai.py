@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from bae.lm import LM
     from bae.node import Node
     from bae.repl.channels import ChannelRouter
-    from bae.repl.store import SessionStore
     from bae.repl.tasks import TaskManager
 
 _EXEC_BLOCK_RE = re.compile(
@@ -80,7 +79,6 @@ class AI:
         router: ChannelRouter,
         namespace: dict,
         tm: TaskManager | None = None,
-        store: SessionStore | None = None,
         label: str = "1",
         model: str = "claude-sonnet-4-20250514",
         timeout: int = 60,
@@ -90,7 +88,6 @@ class AI:
         self._router = router
         self._namespace = namespace
         self._tm = tm
-        self._store = store
         self._label = label
         self._model = model
         self._timeout = timeout
@@ -106,10 +103,6 @@ class AI:
         until no code blocks remain. Set max_eval_iters > 0 to cap iterations.
         """
         parts: list[str] = []
-        if self._call_count == 0 and self._store is not None:
-            cross = self._store.cross_session_context()
-            if cross:
-                parts.append(cross)
         context = _build_context(self._namespace)
         if context:
             parts.append(context)
@@ -143,57 +136,47 @@ class AI:
                     metadata={"type": "response", "label": self._label})
                 continue
 
-            # Existing: check for <run> blocks
-            code, extra = self.extract_executable(response)
-            if code is None:
+            # Check for <run> blocks
+            blocks = self.extract_executable(response)
+            if not blocks:
                 break
 
-            # Execute the single block
-            output = ""
-            try:
-                result, captured = await async_exec(code, self._namespace)
-                if asyncio.iscoroutine(result):
-                    buf = StringIO()
-                    old = sys.stdout
-                    sys.stdout = buf
-                    try:
-                        result = await result
-                    finally:
-                        sys.stdout = old
-                    captured += buf.getvalue()
-                output = captured
-                if result is not None:
-                    output += repr(result)
-                output = output or "(no output)"
-            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
-                raise
-            except BaseException:
-                tb = traceback.format_exc()
-                output = tb
+            # Execute all blocks sequentially
+            outputs: list[str] = []
+            for code in blocks:
+                output = ""
+                try:
+                    result, captured = await async_exec(code, self._namespace)
+                    if asyncio.iscoroutine(result):
+                        buf = StringIO()
+                        old = sys.stdout
+                        sys.stdout = buf
+                        try:
+                            result = await result
+                        finally:
+                            sys.stdout = old
+                        captured += buf.getvalue()
+                    output = captured
+                    if result is not None:
+                        output += repr(result)
+                    output = output or "(no output)"
+                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                    raise
+                except BaseException:
+                    output = traceback.format_exc()
 
-            self._router.write("py", code, mode="PY", metadata={"type": "ai_exec", "label": self._label})
-            if output:
-                self._router.write("py", output, mode="PY", metadata={"type": "ai_exec_result", "label": self._label})
+                self._router.write("py", code, mode="PY", metadata={"type": "ai_exec", "label": self._label})
+                if output:
+                    self._router.write("py", output, mode="PY", metadata={"type": "ai_exec_result", "label": self._label})
+                outputs.append(output)
 
-            # No-output with no extra blocks: nothing to feed back
-            if output == "(no output)" and extra == 0:
+            combined = "\n---\n".join(outputs)
+
+            # All no-output: nothing to feed back
+            if all(o == "(no output)" for o in outputs):
                 break
 
-            # Build feedback
-            feedback = f"[Output]\n{output}"
-
-            # Multi-block notice
-            if extra > 0:
-                notice = (
-                    f"Only your first executable block was run. "
-                    f"{extra} additional block{'s' if extra != 1 else ''} "
-                    f"{'were' if extra != 1 else 'was'} ignored."
-                )
-                feedback += f"\n\n{notice}"
-                self._router.write(
-                    "debug", notice, mode="DEBUG",
-                    metadata={"type": "exec_notice", "label": self._label},
-                )
+            feedback = f"[Output]\n{combined}"
 
             await asyncio.sleep(0)  # cancellation checkpoint
             response = await self._send(feedback)
@@ -275,12 +258,8 @@ class AI:
         return await self._lm.choose_type(types, context or {})
 
     @staticmethod
-    def extract_executable(text: str) -> tuple[str | None, int]:
-        """Extract first executable <run> block and count of extras.
-
-        Returns (code, extra_count) where code is the first executable
-        block or None, and extra_count is additional blocks ignored.
-        """
+    def extract_executable(text: str) -> list[str]:
+        """Extract all executable <run> blocks from text."""
         return extract_executable(text)
 
     def __repr__(self) -> str:
