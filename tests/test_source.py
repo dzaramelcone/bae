@@ -41,8 +41,8 @@ class TestPathResolution:
     def test_module_to_path_file(self, src):
         from bae.repl.spaces.source.models import _module_to_path
 
-        result = _module_to_path(PROJECT_ROOT, "bae.repl.resource")
-        assert result == PROJECT_ROOT / "bae" / "repl" / "resource.py"
+        result = _module_to_path(PROJECT_ROOT, "bae.repl.spaces.view")
+        assert result == PROJECT_ROOT / "bae" / "repl" / "spaces" / "view.py"
 
     def test_module_to_path_package(self, src):
         from bae.repl.spaces.source.models import _module_to_path
@@ -59,8 +59,8 @@ class TestPathResolution:
     def test_path_to_module_file(self, src):
         from bae.repl.spaces.source.models import _path_to_module
 
-        result = _path_to_module(PROJECT_ROOT, PROJECT_ROOT / "bae" / "repl" / "resource.py")
-        assert result == "bae.repl.resource"
+        result = _path_to_module(PROJECT_ROOT, PROJECT_ROOT / "bae" / "repl" / "spaces" / "view.py")
+        assert result == "bae.repl.spaces.view"
 
     def test_path_to_module_init(self, src):
         from bae.repl.spaces.source.models import _path_to_module
@@ -76,7 +76,7 @@ class TestPathSafety:
     def test_valid_module_path(self):
         from bae.repl.spaces.source.models import _validate_module_path
 
-        _validate_module_path("bae.repl.resource")  # no exception
+        _validate_module_path("bae.repl.spaces.view")  # no exception
 
     def test_traversal_rejected(self):
         from bae.repl.spaces.source.models import _validate_module_path
@@ -107,18 +107,18 @@ class TestRead:
         assert "bae" in result
 
     def test_read_module_summary(self, src):
-        result = src.read("bae.repl.resource")
+        result = src.read("bae.repl.spaces.view")
         # Summary format: module path, docstring line, class count, function count
-        assert "bae.repl.resource" in result
+        assert "bae.repl.spaces.view" in result
         assert "class" in result.lower()
         assert "function" in result.lower()
 
     def test_read_symbol_source(self, src):
-        result = src.read("bae.repl.resource.ResourceError")
+        result = src.read("bae.repl.spaces.view.ResourceError")
         assert "class ResourceError" in result
 
     def test_read_symbol_isolation(self, src):
-        result = src.read("bae.repl.resource.ResourceError")
+        result = src.read("bae.repl.spaces.view.ResourceError")
         # Should NOT contain other classes from the module
         assert "class ResourceRegistry" not in result
         assert "class ResourceHandle" not in result
@@ -160,8 +160,8 @@ class TestGlob:
         assert "bae.repl.shell" in result
 
     def test_glob_exact_match(self, src):
-        result = src.glob("bae.repl.resource")
-        assert "bae.repl.resource" in result
+        result = src.glob("bae.repl.spaces.view")
+        assert "bae.repl.spaces.view" in result
 
     def test_glob_nonexistent_no_matches(self, src):
         result = src.glob("bae.nonexistent.*")
@@ -185,18 +185,18 @@ class TestGlob:
 
 class TestGrep:
     def test_grep_finds_matches(self, src):
-        result = src.grep("class ResourceError", "bae.repl")
-        # Should find in bae.repl.resource with module:line: format
-        assert "bae.repl.resource:" in result
+        result = src.grep("class ResourceError", "bae.repl.spaces")
+        # Should find in bae.repl.spaces.view with module:line: format
+        assert "bae.repl.spaces.view:" in result
 
     def test_grep_scoped_to_module(self, src):
-        result = src.grep("ResourceError", "bae.repl.resource")
-        assert "bae.repl.resource:" in result
+        result = src.grep("ResourceError", "bae.repl.spaces.view")
+        assert "bae.repl.spaces.view:" in result
         # Should NOT contain results from other modules
         lines = result.strip().splitlines()
         for line in lines:
             if ":" in line:
-                assert line.startswith("bae.repl.resource:")
+                assert line.startswith("bae.repl.spaces.view:")
 
     def test_grep_no_matches(self, src):
         # Search only in bae package where this string doesn't exist
