@@ -29,6 +29,8 @@ async def dispatch_graph(text: str, shell) -> None:
         "cancel": _cmd_cancel,
         "inspect": _cmd_inspect,
         "trace": _cmd_trace,
+        "input": _cmd_input,
+        "gates": _cmd_gates,
     }
     handler = handlers.get(cmd)
     if handler is None:
@@ -56,15 +58,17 @@ async def _cmd_run(arg: str, shell) -> None:
         shell.router.write("graph", tb.rstrip("\n"), mode="GRAPH", metadata={"type": "error"})
         return
 
+    notify = _make_notify(shell)
+
     if asyncio.iscoroutine(result):
         name = getattr(result, "cr_code", None)
         name = getattr(name, "co_qualname", "graph") if name else "graph"
-        run = shell.engine.submit_coro(result, shell.tm, name=name)
+        run = shell.engine.submit_coro(result, shell.tm, name=name, notify=notify)
     else:
         from bae.graph import Graph
 
         if isinstance(result, Graph):
-            run = shell.engine.submit(result, shell.tm, lm=shell._lm)
+            run = shell.engine.submit(result, shell.tm, lm=shell._lm, notify=notify)
         else:
             if asyncio.iscoroutine(result):
                 result.close()
@@ -242,4 +246,62 @@ async def _cmd_trace(arg: str, shell) -> None:
         else:
             lines.append(f"  {i}. {name}")
 
+    shell.router.write("graph", "\n".join(lines), mode="GRAPH")
+
+
+def _make_notify(shell):
+    """Build a notify callback that emits gate creation through the graph channel."""
+    def notify(msg):
+        if not getattr(shell, "shush_gates", False):
+            shell.router.write(
+                "graph", msg, mode="GRAPH",
+                metadata={"type": "gate"},
+            )
+    return notify
+
+
+async def _cmd_input(arg: str, shell) -> None:
+    """Resolve a pending input gate: input <gate_id> <value>."""
+    parts = arg.strip().split(None, 1)
+    if len(parts) < 2:
+        shell.router.write("graph", "usage: input <id> <value>", mode="GRAPH")
+        return
+
+    gate_id, raw_value = parts
+    gate = shell.engine.get_pending_gate(gate_id)
+    if gate is None:
+        shell.router.write("graph", f"no pending gate {gate_id}", mode="GRAPH")
+        return
+
+    from pydantic import TypeAdapter
+
+    try:
+        adapter = TypeAdapter(gate.field_type)
+        value = adapter.validate_python(raw_value)
+    except Exception as e:
+        type_name = getattr(gate.field_type, "__name__", str(gate.field_type))
+        shell.router.write(
+            "graph",
+            f"invalid value for {gate.field_name} ({type_name}): {e}",
+            mode="GRAPH",
+        )
+        return
+
+    shell.engine.resolve_gate(gate_id, value)
+    shell.router.write(
+        "graph", f"resolved {gate_id}: {gate.field_name} = {value!r}",
+        mode="GRAPH",
+        metadata={"type": "lifecycle", "run_id": gate.run_id},
+    )
+
+
+async def _cmd_gates(arg: str, shell) -> None:
+    """Show all pending input gates."""
+    gates = list(shell.engine._pending_gates.values())
+    if not gates:
+        shell.router.write("graph", "(no pending gates)", mode="GRAPH")
+        return
+    lines = []
+    for g in gates:
+        lines.append(f"  {g.gate_id}  {g.node_type}.{g.schema_display}")
     shell.router.write("graph", "\n".join(lines), mode="GRAPH")

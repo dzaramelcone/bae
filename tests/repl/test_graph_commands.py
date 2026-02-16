@@ -386,6 +386,87 @@ class TestCmdTrace:
         await _drain(shell.tm)
 
 
+# --- TestCmdInput ---
+
+
+class TestCmdInput:
+    async def test_input_resolves_gate(self, shell):
+        """input <id> <value> resolves a pending gate with type coercion."""
+        gate = shell.engine.create_gate(
+            run_id="g1", field_name="approved", field_type=bool,
+            description="Deploy to prod?", node_type="ConfirmDeploy",
+        )
+        await dispatch_graph("input g1.0 true", shell)
+        out = _output(shell.router)
+        assert "resolved g1.0" in out
+        assert "approved" in out
+        assert gate.future.result() is True
+
+    async def test_input_no_args(self, shell):
+        """input with no arguments shows usage."""
+        await dispatch_graph("input", shell)
+        out = _output(shell.router)
+        assert "usage" in out.lower()
+
+    async def test_input_invalid_gate_id(self, shell):
+        """input with unknown gate id shows 'no pending gate'."""
+        await dispatch_graph("input bad.id true", shell)
+        out = _output(shell.router)
+        assert "no pending gate bad.id" in out
+
+    async def test_input_invalid_type(self, shell):
+        """input with invalid value for gate type shows error message."""
+        shell.engine.create_gate(
+            run_id="g1", field_name="count", field_type=int,
+            description="how many?", node_type="Counter",
+        )
+        await dispatch_graph("input g1.0 abc", shell)
+        out = _output(shell.router)
+        assert "invalid value" in out
+        assert "count" in out
+        assert "int" in out
+
+    async def test_input_string_value(self, shell):
+        """input with a string-typed gate passes the raw value through."""
+        gate = shell.engine.create_gate(
+            run_id="g1", field_name="reason", field_type=str,
+            description="why?", node_type="Explain",
+        )
+        await dispatch_graph("input g1.0 because reasons", shell)
+        out = _output(shell.router)
+        assert "resolved g1.0" in out
+        assert gate.future.result() == "because reasons"
+
+
+# --- TestCmdGates ---
+
+
+class TestCmdGates:
+    async def test_gates_command_empty(self, shell):
+        """gates with no pending gates shows '(no pending gates)'."""
+        await dispatch_graph("gates", shell)
+        out = _output(shell.router)
+        assert "(no pending gates)" in out
+
+    async def test_gates_command_shows_pending(self, shell):
+        """gates shows all pending gates with IDs and schema."""
+        shell.engine.create_gate(
+            run_id="g1", field_name="approved", field_type=bool,
+            description="Deploy?", node_type="ConfirmDeploy",
+        )
+        shell.engine.create_gate(
+            run_id="g1", field_name="reason", field_type=str,
+            description="Why?", node_type="ConfirmDeploy",
+        )
+        await dispatch_graph("gates", shell)
+        out = _output(shell.router)
+        assert "g1.0" in out
+        assert "g1.1" in out
+        assert "approved" in out
+        assert "reason" in out
+        assert "ConfirmDeploy" in out
+
+
 # --- TestCrossModeGateResolve ---
 
 
