@@ -9,6 +9,7 @@ nav trees, and error messages with @resource() hyperlinks.
 from __future__ import annotations
 
 import difflib
+import inspect
 from typing import Callable, Protocol, runtime_checkable
 
 from rich.tree import Tree
@@ -79,6 +80,46 @@ class ResourceError(Exception):
 
 
 _TOOL_NAMES = frozenset({"read", "write", "edit", "glob", "grep"})
+
+
+def _tool_signature(name: str, method: Callable) -> str:
+    """Build XML tag signature like <Read:target:str> from method."""
+    tag = name.title()
+    try:
+        sig = inspect.signature(method)
+    except (ValueError, TypeError):
+        return f"<{tag}>"
+
+    params = []
+    for pname, param in sig.parameters.items():
+        if pname == "self":
+            continue
+        ptype = param.annotation
+        if ptype is inspect.Parameter.empty:
+            params.append(pname)
+        elif isinstance(ptype, type):
+            params.append(f"{pname}:{ptype.__name__}")
+        else:
+            params.append(f"{pname}:{ptype}")
+
+    if not params:
+        return f"<{tag}>"
+
+    # Body-content format for write with content param
+    if name == "write" and "content" in [p.split(":")[0] for p in params]:
+        inline = [p for p in params if not p.startswith("content")]
+        body_param = next(p for p in params if p.startswith("content"))
+        if inline:
+            return f"<{tag}:{', '.join(inline)}>{body_param}</{tag}>"
+        return f"<{tag}>{body_param}</{tag}>"
+
+    return f"<{tag}:{', '.join(params)}>"
+
+
+def _tool_docstring(method: Callable) -> str:
+    """First line of method docstring, or empty string."""
+    doc = getattr(method, "__doc__", None) or ""
+    return doc.split("\n")[0].strip()
 
 
 class ResourceRegistry:
@@ -241,13 +282,20 @@ class ResourceRegistry:
             lines.append("\n".join(main_lines))
 
         # Functions table
-        tools = sorted(space.supported_tools())
-        if tools:
+        tools_map = space.tools()
+        tool_names = sorted(space.supported_tools())
+        if tool_names:
             lines.append("")
-            lines.append("| Tool | Function | Returns |")
-            lines.append("|------|----------|---------|")
-            for tool in tools:
-                lines.append(f"| {tool} | {tool}() | {tool} result |")
+            lines.append("| Tool | Signature | Description |")
+            lines.append("|------|-----------|-------------|")
+            for tool in tool_names:
+                method = tools_map.get(tool)
+                if method:
+                    sig = _tool_signature(tool, method)
+                    doc = _tool_docstring(method)
+                    lines.append(f"| {tool} | {sig} | {doc} |")
+                else:
+                    lines.append(f"| {tool} | <{tool.title()}> | |")
 
         # Advanced hints
         if advanced_lines:

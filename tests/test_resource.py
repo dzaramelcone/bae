@@ -13,6 +13,7 @@ from bae.repl.spaces import (
     format_nav_error,
     format_unsupported_error,
 )
+from bae.repl.spaces.view import _tool_signature, _tool_docstring
 
 
 # ---------------------------------------------------------------------------
@@ -512,3 +513,118 @@ class TestToolInjection:
         reg.navigate("source")  # should not crash
         reg.back()
         reg.home()
+
+
+# ---------------------------------------------------------------------------
+# Tool signature and docstring helpers
+# ---------------------------------------------------------------------------
+
+class TestToolSignature:
+    def test_typed_params(self):
+        def read(target: str = "") -> str:
+            """Read something."""
+            return ""
+        assert _tool_signature("read", read) == "<Read:target:str>"
+
+    def test_multiple_params(self):
+        def grep(pattern: str = "", path: str = "") -> str:
+            """Search."""
+            return ""
+        assert _tool_signature("grep", grep) == "<Grep:pattern:str, path:str>"
+
+    def test_no_params(self):
+        def nav() -> str:
+            return ""
+        assert _tool_signature("nav", nav) == "<Nav>"
+
+    def test_unannotated_params(self):
+        def read(target="") -> str:
+            return ""
+        assert _tool_signature("read", read) == "<Read:target>"
+
+    def test_write_body_content(self):
+        def write(target: str, content: str = "") -> str:
+            """Create a module."""
+            return ""
+        sig = _tool_signature("write", write)
+        assert sig == "<Write:target:str>content:str</Write>"
+
+    def test_self_param_skipped(self):
+        class Foo:
+            def read(self, target: str = "") -> str:
+                return ""
+        assert _tool_signature("read", Foo().read) == "<Read:target:str>"
+
+    def test_bad_signature_graceful(self):
+        """Callable without inspectable signature returns plain tag."""
+        # Object with __call__ that raises on inspect.signature
+        class Opaque:
+            __call__ = None  # type: ignore[assignment]
+        sig = _tool_signature("opaque", Opaque())
+        assert sig == "<Opaque>"
+
+
+class TestToolDocstring:
+    def test_first_line(self):
+        def read(target: str = "") -> str:
+            """Read package listing, module summary, or symbol source."""
+            return ""
+        assert _tool_docstring(read) == "Read package listing, module summary, or symbol source."
+
+    def test_multiline_takes_first(self):
+        def edit(target: str = "") -> str:
+            """Replace a symbol.
+
+            Detailed explanation here.
+            """
+            return ""
+        assert _tool_docstring(edit) == "Replace a symbol."
+
+    def test_no_docstring(self):
+        def foo():
+            pass
+        assert _tool_docstring(foo) == ""
+
+
+class TestEntryDisplaySignatures:
+    """Entry display renders typed XML signatures and docstrings."""
+
+    def test_entry_shows_signature_header(self):
+        reg = ResourceRegistry()
+        def read(target: str = "") -> str:
+            """Read stuff."""
+            return ""
+        space = StubSpace("source", tool_callables={"read": read})
+        reg.register(space)
+        result = reg.navigate("source")
+        assert "| Tool | Signature | Description |" in result
+
+    def test_entry_shows_typed_signature(self):
+        reg = ResourceRegistry()
+        def read(target: str = "") -> str:
+            """Read stuff."""
+            return ""
+        space = StubSpace("source", tool_callables={"read": read})
+        reg.register(space)
+        result = reg.navigate("source")
+        assert "<Read:target:str>" in result
+        assert "Read stuff." in result
+
+    def test_entry_write_body_content(self):
+        reg = ResourceRegistry()
+        def write(target: str, content: str = "") -> str:
+            """Create a module."""
+            return ""
+        space = StubSpace("source", tools={"write"}, tool_callables={"write": write})
+        reg.register(space)
+        result = reg.navigate("source")
+        assert "<Write:target:str>content:str</Write>" in result
+
+    def test_entry_missing_callable_fallback(self):
+        """Tool in supported_tools but not in tools() map gets plain tag."""
+        reg = ResourceRegistry()
+        space = StubSpace("source", tools={"read", "glob"}, tool_callables={})
+        reg.register(space)
+        result = reg.navigate("source")
+        assert "<Read>" in result
+        assert "<Glob>" in result
