@@ -84,7 +84,7 @@
 - [x] **Phase 32: Source Resourcespace** - Project-scoped file operations proving the resourcespace pattern end-to-end (completed 2026-02-16)
 - [x] **Phase 32.1: Resourcespace Package Structure** - Restructure into bae/repl/spaces/ with per-space packages (INSERTED) (completed 2026-02-16)
 - [x] **Phase 32.1.1: Subresource Packages + Shim Removal** - Break subresources into own packages, remove shims, enforce structure (INSERTED) (completed 2026-02-16)
-- [ ] **Phase 32.2: UserView Tool Call Stripping** - Strip tool calls from AI output, show AI-native tool tags with docstring summaries (INSERTED)
+- [x] **Phase 32.2: UserView Tool Call Stripping** - Strip tool calls from AI output, show AI-native tool tags with docstring summaries (INSERTED) (completed 2026-02-16)
 - [ ] **Phase 33: Task Resourcespace** - Persistent task CRUD with FTS search and cross-session persistence
 - [ ] **Phase 34: Memory Resourcespace** - Session history as navigable, searchable, taggable resources
 - [ ] **Phase 35: Search Resourcespace** - Federated cross-resourcespace search with navigation hyperlinks
@@ -155,7 +155,7 @@ Plans:
 
 **Goal:** Strip tool call content from UserView and AI context history; prune everything but tool I/O and agent's last message; resource entry shows AI-native tool tags with docstring summaries
 **Depends on:** Phase 32.1
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] 32.2-01-PLAN.md — Reformat tool summaries to `◆ name(args) -> type` and suppress intermediate AI responses
