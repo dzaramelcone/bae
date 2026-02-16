@@ -13,7 +13,7 @@ import inspect
 from typing import Annotated, get_args, get_origin, get_type_hints
 
 from bae.exceptions import RecallError
-from bae.markers import Dep, Recall
+from bae.markers import Dep, Gate, Recall
 
 LM_KEY = object()  # sentinel for LM in dep cache
 
@@ -54,6 +54,10 @@ def classify_fields(node_cls: type) -> dict[str, str]:
                     break
                 if isinstance(m, Recall):
                     result[name] = "recall"
+                    classified = True
+                    break
+                if isinstance(m, Gate):
+                    result[name] = "gate"
                     classified = True
                     break
             if not classified:
@@ -97,7 +101,7 @@ def recall_from_trace(trace: list, target_type: type) -> object:
                 args = get_args(hint)
                 base_type = args[0]
                 metadata = args[1:]
-                if any(isinstance(m, (Dep, Recall)) for m in metadata):
+                if any(isinstance(m, (Dep, Gate, Recall)) for m in metadata):
                     continue
 
             # Check type match: field type must be a subclass of target type

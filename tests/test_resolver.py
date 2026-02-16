@@ -11,7 +11,7 @@ from typing import Annotated
 import pytest
 
 from bae.exceptions import BaeError, RecallError
-from bae.markers import Dep, Recall
+from bae.markers import Dep, Gate, Recall
 from bae.node import Node
 from bae.resolver import (
     LM_KEY,
@@ -185,6 +185,49 @@ class TestClassifyFields:
 
         result = classify_fields(TestNode)
         assert result["data"] == "plain"
+
+    def test_classify_gate_field(self):
+        """Gate-annotated field is classified as 'gate'."""
+
+        class TestNode(Node):
+            approved: Annotated[bool, Gate(description="Approve?")]
+
+        result = classify_fields(TestNode)
+        assert result["approved"] == "gate"
+
+    def test_gate_excluded_from_plain_model(self):
+        """_build_plain_model excludes gate-annotated fields."""
+        from bae.lm import _build_plain_model
+
+        class TestNode(Node):
+            approved: Annotated[bool, Gate(description="Approve?")]
+            reason: str
+
+        PlainModel = _build_plain_model(TestNode)
+        assert "approved" not in PlainModel.model_fields
+        assert "reason" in PlainModel.model_fields
+
+    def test_recall_skips_gate_fields(self):
+        """recall_from_trace skips gate-annotated fields when searching."""
+
+        class GateNode(Node):
+            gated: Annotated[str, Gate(description="Enter value")]
+            plain_val: str
+
+        node = GateNode.model_construct(gated="gate value", plain_val="real value")
+        trace = [node]
+        assert recall_from_trace(trace, str) == "real value"
+
+    def test_gate_and_plain_coexist(self):
+        """Gate and plain fields classified correctly on the same node."""
+
+        class TestNode(Node):
+            approved: Annotated[bool, Gate(description="Approve?")]
+            reason: str
+
+        result = classify_fields(TestNode)
+        assert result["approved"] == "gate"
+        assert result["reason"] == "plain"
 
 
 # --- Test node types for recall testing ---

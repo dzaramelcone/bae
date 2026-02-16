@@ -41,6 +41,22 @@ class Recall:
 
 
 @dataclass(frozen=True)
+class Gate:
+    """Marker for fields requiring human input during graph execution.
+
+    Gate() suspends graph execution at resolve time until the user
+    provides a value. The field name, type, and description are
+    displayed as a prompt.
+
+    Usage:
+        class ConfirmDeploy(Node):
+            approved: Annotated[bool, Gate(description="Deploy to prod?")]
+    """
+
+    description: str = ""
+
+
+@dataclass(frozen=True)
 class Effect:
     """Marker for side effects on graph transitions.
 
