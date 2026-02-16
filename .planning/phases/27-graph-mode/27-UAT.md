@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: complete
 phase: 27-graph-mode
-source: [27-04-SUMMARY.md, 27-05-SUMMARY.md]
-started: 2026-02-15T21:40:00Z
-updated: 2026-02-15T21:40:00Z
+source: [27-06-SUMMARY.md]
+started: 2026-02-15T22:00:00Z
+updated: 2026-02-15T22:00:00Z
 ---
 
 ## Current Test
@@ -12,59 +12,23 @@ updated: 2026-02-15T21:40:00Z
 
 ## Tests
 
-### 1. run with flattened params
-expected: In GRAPH mode, `run ootd(name="Dzara", user_message="should I wear a coat?")` works with flat kwargs — no UserInfo construction needed. Prints "submitted g1" and graph runs in background.
-result: issue
-reported: "flat params work and submits fine, but locks input -- can't type while graph runs, may be stealing stdin"
-severity: blocker
-
-### 2. list renders formatted table
-expected: In GRAPH mode, `list` shows a properly formatted Rich table with box-drawing characters and aligned columns (ID, STATE, ELAPSED, NODE). No raw ANSI escape codes visible.
+### 1. REPL stays responsive during graph execution
+expected: In GRAPH mode, `run ootd(name="Dzara", user_message="what should I wear?")` submits the graph and you can immediately type other commands (e.g. `list`) while the graph runs in the background. Input is NOT locked.
 result: pass
 
-### 3. inspect shows detail on failed run
-expected: After a graph fails, `inspect g1` shows the run ID, state, elapsed time, AND the nodes that executed before the failure with their timings.
-result: issue
-reported: "fields not aligned with nodes, no per-node timing, trace is wall of text -- lacks indenting and formatting, hard to read"
-severity: major
-
-### 4. trace shows partial history on failure
-expected: After a graph fails, `trace g1` shows a numbered list of node types that executed before the error — not "no trace available".
+### 2. inspect shows inline timing and formatted fields
+expected: After a graph completes, `inspect g1` shows each node with its timing inline (e.g. `1. IsTheUserGettingDressed (2.3s)`) and the terminal node's fields are formatted with indentation — not a raw dict wall of text.
 result: pass
+notes: "Dep nodes don't appear as separate trace entries (nested in field values). Future: each node logs start/end into a heap, trace constructed from that, with TUI hypermedia for dep/recall refs. Deferred to Phase 29."
 
 ## Summary
 
-total: 4
+total: 2
 passed: 2
-issues: 2
+issues: 0
 pending: 0
 skipped: 0
 
 ## Gaps
 
-- truth: "graph runs in background while Dzara continues using the REPL"
-  status: failed
-  reason: "User reported: flat params work and submits fine, but locks input -- can't type while graph runs, may be stealing stdin"
-  severity: blocker
-  test: 1
-  root_cause: "ClaudeCLIBackend subprocess (lm.py:384-389) omits stdin param in asyncio.create_subprocess_exec, so child process inherits parent's stdin. prompt_toolkit loses terminal access while claude CLI subprocess holds stdin."
-  artifacts:
-    - path: "bae/lm.py"
-      issue: "asyncio.create_subprocess_exec missing stdin=DEVNULL at line 384"
-  missing:
-    - "Add stdin=asyncio.subprocess.DEVNULL to subprocess creation"
-  debug_session: ".planning/debug/graph-run-blocks-input.md"
-- truth: "inspect shows per-node timings with well-formatted, indented field values"
-  status: failed
-  reason: "User reported: fields not aligned with nodes, no per-node timing, trace is wall of text lacking indenting and formatting"
-  severity: major
-  test: 3
-  root_cause: "_cmd_inspect shows timing in a separate section, not inline with nodes. Only terminal node shows fields (dumped as raw repr). No json.dumps(indent=2) or Rich formatting for nested structures."
-  artifacts:
-    - path: "bae/repl/graph_commands.py"
-      issue: "_cmd_inspect separates timing from trace, only terminal node has fields, raw dict repr"
-  missing:
-    - "Merge timing inline with each trace node"
-    - "Use json.dumps(indent=2) or Rich Syntax for field values"
-    - "Show fields for terminal node only, with proper formatting"
-  debug_session: ".planning/debug/inspect-formatting.md"
+[none yet]
