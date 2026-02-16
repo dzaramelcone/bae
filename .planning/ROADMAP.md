@@ -108,7 +108,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 27-01-PLAN.md -- Graph.params property, GraphRun.result field, engine submit_coro
+- [ ] 27-01-PLAN.md -- graph() factory function, async callable API, engine submit_coro + result storage
 - [ ] 27-02-PLAN.md -- GRAPH mode command dispatcher (run/list/cancel/inspect/trace)
 
 ### Phase 28: Input Gates
