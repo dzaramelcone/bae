@@ -434,7 +434,9 @@ class TestToolInjection:
         space = StubSpace("source", tool_callables={"read": mock_read})
         reg.register(space)
         reg.navigate("source")
-        assert ns["read"] is mock_read
+        # Wrapped, not raw -- but still callable and wraps the original
+        assert "read" in ns
+        assert callable(ns["read"])
 
     def test_home_swaps_to_home_tools(self):
         """Navigate to resource, then home(): resource tools removed, home tools injected."""
@@ -448,7 +450,9 @@ class TestToolInjection:
         reg.register(space)
         reg._home_tools = {"read": home_read, "glob": home_glob, "grep": home_grep}
         reg.navigate("source")
-        assert ns["read"] is mock_read
+        # Wrapped, not raw identity
+        assert "read" in ns
+        assert ns["read"] is not home_read  # should be resource wrapper, not home tool
         reg.home()
         assert ns["read"] is home_read
         assert ns["glob"] is home_glob
@@ -467,8 +471,8 @@ class TestToolInjection:
         reg.navigate("alpha")
         assert "glob" in ns
         reg.navigate("beta")
-        assert ns["read"] is mock_read
-        assert ns["write"] is mock_write
+        assert "read" in ns
+        assert "write" in ns
         assert "glob" not in ns
 
     def test_home_injects_tools(self):
@@ -513,6 +517,58 @@ class TestToolInjection:
         reg.navigate("source")  # should not crash
         reg.back()
         reg.home()
+
+    def test_put_tools_wraps_with_validation(self):
+        """_put_tools injects wrapper functions, not raw bound methods."""
+        ns = {}
+        reg = ResourceRegistry(namespace=ns)
+
+        class TypedSpace(StubSpace):
+            def read(self, target: str = "") -> str:
+                """Read content."""
+                return f"read: {target}"
+
+        space = TypedSpace("source", tool_callables={"read": None})
+        # Override tool_callables to use the actual bound method
+        space._tool_callables = {"read": space.read}
+        reg.register(space)
+        reg.navigate("source")
+        assert "read" in ns
+        assert ns["read"] is not space.read  # wrapper, not raw method
+
+    def test_wrapper_validates_bad_params(self):
+        """Wrapped callable raises ResourceError on type mismatch."""
+        ns = {}
+        reg = ResourceRegistry(namespace=ns)
+
+        class TypedSpace(StubSpace):
+            def read(self, target: str = "") -> str:
+                """Read content."""
+                return f"read: {target}"
+
+        space = TypedSpace("source")
+        space._tool_callables = {"read": space.read}
+        reg.register(space)
+        reg.navigate("source")
+        with pytest.raises(ResourceError, match="parameter error"):
+            ns["read"](12345)
+
+    def test_wrapper_passes_valid_params(self):
+        """Wrapped callable passes through valid params to underlying method."""
+        ns = {}
+        reg = ResourceRegistry(namespace=ns)
+
+        class TypedSpace(StubSpace):
+            def read(self, target: str = "") -> str:
+                """Read content."""
+                return f"read: {target}"
+
+        space = TypedSpace("source")
+        space._tool_callables = {"read": space.read}
+        reg.register(space)
+        reg.navigate("source")
+        result = ns["read"]("valid_target")
+        assert result == "read: valid_target"
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ nav trees, and error messages with @resource() hyperlinks.
 from __future__ import annotations
 
 import difflib
+import functools
 import inspect
 from typing import Callable, Protocol, runtime_checkable
 
@@ -202,6 +203,31 @@ class ResourceRegistry:
             parts.append(space.name)
         return " > ".join(parts)
 
+    def _make_tool_wrapper(self, tool_name: str, method: Callable) -> Callable:
+        """Wrap a tool callable with pydantic parameter validation."""
+        from bae.repl.tools import _validate_tool_params
+
+        @functools.wraps(method)
+        def wrapper(*args, **kwargs):
+            sig = inspect.signature(method)
+            param_names = [p for p in sig.parameters if p != "self"]
+            if args and param_names:
+                arg = args[0]
+                extra_kwargs = {}
+                for i, a in enumerate(args[1:], 1):
+                    if i < len(param_names):
+                        extra_kwargs[param_names[i]] = a
+                extra_kwargs.update(kwargs)
+                validated = _validate_tool_params(tool_name, method, arg, **extra_kwargs)
+                if isinstance(validated, str):
+                    raise ResourceError(validated)
+                first_key = param_names[0]
+                first_val = validated.pop(first_key)
+                return method(first_val, **validated)
+            return method(*args, **kwargs)
+
+        return wrapper
+
     def _put_tools(self) -> None:
         """Put current resource's tools into namespace. Idempotent."""
         if self._namespace is None:
@@ -210,7 +236,8 @@ class ResourceRegistry:
             self._namespace.pop(name, None)
         current = self.current
         if current is not None:
-            self._namespace.update(current.tools())
+            for tool_name, method in current.tools().items():
+                self._namespace[tool_name] = self._make_tool_wrapper(tool_name, method)
         elif self._home_tools:
             self._namespace.update(self._home_tools)
 
