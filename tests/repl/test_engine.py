@@ -8,9 +8,9 @@ import pytest
 from typing import Annotated
 
 from bae.lm import LM
-from bae.markers import Gate
+from bae.markers import Dep, Gate
 from bae.node import Node
-from bae.repl.engine import GraphRegistry, GraphRun, GraphState, InputGate, NodeTiming, TimingLM
+from bae.repl.engine import GraphRegistry, GraphRun, GraphState, InputGate, NodeTiming, OutputPolicy, TimingLM
 from bae.repl.tasks import TaskManager
 
 
@@ -54,6 +54,19 @@ class MultiGatedStart(Node):
     text: str
 
     def __call__(self) -> MultiGatedNode: ...
+
+
+async def slow_dep() -> str:
+    await asyncio.sleep(0.01)
+    return "computed"
+
+
+class DepStart(Node):
+    """Start node with a Dep-annotated field for timing tests."""
+    text: str
+    info: Annotated[str, Dep(slow_dep)]
+
+    def __call__(self) -> End: ...
 
 
 class MockLM:
@@ -697,22 +710,111 @@ class TestGateHook:
         notifications = []
         graph = Graph(start=GatedStart)
         run = registry.submit(
-            graph, tm, lm=MockLM(), notify=lambda msg: notifications.append(msg),
+            graph, tm, lm=MockLM(),
+            notify=lambda content, meta=None: notifications.append((content, meta)),
             text="hi",
         )
         for _ in range(100):
             if run.state == GraphState.WAITING:
                 break
             await asyncio.sleep(0.01)
-        assert len(notifications) == 1
-        assert "approved" in notifications[0]
-        assert "bool" in notifications[0]
-        assert "Deploy to prod?" in notifications[0]
+        # Filter to gate notifications (ignore lifecycle events)
+        gate_notifs = [(c, m) for c, m in notifications if m and m.get("type") == "gate"]
+        assert len(gate_notifs) == 1
+        content, meta = gate_notifs[0]
+        assert "approved" in content
+        assert "bool" in content
+        assert "Deploy to prod?" in content
+        assert meta["type"] == "gate"
         # Clean up
         gates = registry.pending_gates_for_run(run.run_id)
         for g in gates:
             registry.resolve_gate(g.gate_id, True)
         await _drain_tasks(tm)
+
+
+# --- TestOutputPolicy ---
+
+
+class TestOutputPolicy:
+    def test_verbose_emits_all(self):
+        """VERBOSE.should_emit returns True for all event types."""
+        p = OutputPolicy.VERBOSE
+        for event in ("start", "complete", "fail", "transition", "gate", "error"):
+            assert p.should_emit(event), f"VERBOSE should emit {event}"
+
+    def test_normal_emits_lifecycle(self):
+        """NORMAL emits start/complete/fail/gate/error but not transition."""
+        p = OutputPolicy.NORMAL
+        for event in ("start", "complete", "fail", "gate", "error"):
+            assert p.should_emit(event), f"NORMAL should emit {event}"
+        assert not p.should_emit("transition")
+
+    def test_quiet_emits_errors_only(self):
+        """QUIET emits only fail/gate/error."""
+        p = OutputPolicy.QUIET
+        for event in ("fail", "gate", "error"):
+            assert p.should_emit(event), f"QUIET should emit {event}"
+        for event in ("start", "complete", "transition"):
+            assert not p.should_emit(event), f"QUIET should not emit {event}"
+
+    def test_silent_emits_nothing(self):
+        """SILENT.should_emit returns False for everything."""
+        p = OutputPolicy.SILENT
+        for event in ("start", "complete", "fail", "transition", "gate", "error"):
+            assert not p.should_emit(event), f"SILENT should not emit {event}"
+
+
+# --- TestDepTiming ---
+
+
+class TestDepTiming:
+    async def test_dep_timing_collection(self, registry, tm):
+        """Dep-annotated field timing appears in run.dep_timings after execution."""
+        from bae.graph import Graph
+
+        graph = Graph(start=DepStart)
+        run = registry.submit(graph, tm, lm=MockLM(), text="hello")
+        await _drain_tasks(tm)
+        assert run.state == GraphState.DONE
+        assert len(run.dep_timings) >= 1
+        name, dur_ms = run.dep_timings[0]
+        assert "slow_dep" in name
+        assert dur_ms > 0
+
+    async def test_rss_delta_recorded(self, registry, tm, mock_lm):
+        """run.rss_delta_bytes is an int after execution."""
+        from bae.graph import Graph
+
+        graph = Graph(start=Start)
+        run = registry.submit(graph, tm, lm=mock_lm, text="hello")
+        await _drain_tasks(tm)
+        assert run.state == GraphState.DONE
+        assert isinstance(run.rss_delta_bytes, int)
+
+
+# --- TestNotifyMetadata ---
+
+
+class TestNotifyMetadata:
+    async def test_notify_receives_metadata(self, registry, tm, mock_lm):
+        """Notify callback receives (content, meta) with lifecycle events."""
+        from bae.graph import Graph
+
+        events = []
+        graph = Graph(start=Start)
+        run = registry.submit(
+            graph, tm, lm=mock_lm,
+            notify=lambda content, meta=None: events.append((content, meta)),
+            text="hello",
+        )
+        await _drain_tasks(tm)
+        assert run.state == GraphState.DONE
+        lifecycle = [(c, m) for c, m in events if m and m.get("type") == "lifecycle"]
+        assert len(lifecycle) >= 2  # start + complete
+        event_types = {m["event"] for _, m in lifecycle}
+        assert "start" in event_types
+        assert "complete" in event_types
 
 
 async def _drain_tasks(tm: TaskManager):

@@ -250,12 +250,12 @@ async def _cmd_trace(arg: str, shell) -> None:
 
 
 def _make_notify(shell):
-    """Build a notify callback that emits gate creation through the graph channel."""
-    def notify(msg):
+    """Build a notify callback that routes engine events through the graph channel."""
+    def notify(content, meta=None):
         if not getattr(shell, "shush_gates", False):
             shell.router.write(
-                "graph", msg, mode="GRAPH",
-                metadata={"type": "gate"},
+                "graph", content, mode="GRAPH",
+                metadata=meta or {"type": "lifecycle"},
             )
     return notify
 
