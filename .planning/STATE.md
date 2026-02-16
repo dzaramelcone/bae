@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 31 of 36 (Resource Protocol + Navigation)
-Plan: 3 of 3 in current phase
+Plan: 4 of 4 in current phase
 Status: Phase Complete
-Last activity: 2026-02-16 -- Completed 31-03 (Shell integration)
+Last activity: 2026-02-16 -- Completed 31-04 (ANSI rendering fix)
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 102 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 3 v7.0)
+- Total plans completed: 103 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 4 v7.0)
 - v6.0 duration: 1 day (2026-02-15)
 - v5.0 duration: 1 day (2026-02-14)
 
@@ -34,6 +34,7 @@ Progress: [██████████] 100%
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 31-04: NavResult str subclass with raw __repr__ preserves ANSI in navigation output
 - v7.0 31-03: homespace/back are lambdas wrapping registry methods, not ResourceHandles
 - v7.0 31-03: Resource location injected via _with_location into every AI _send call
 - v7.0 31-02: ResourceError promoted from dataclass to Exception subclass for raise/except
@@ -73,6 +74,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 31-03-PLAN.md (Phase 31 complete)
+Stopped at: Completed 31-04-PLAN.md (Phase 31 gap closure complete)
 Branch: main
-Resume file: .planning/phases/31-resource-protocol-navigation/31-03-SUMMARY.md
+Resume file: .planning/phases/31-resource-protocol-navigation/31-04-SUMMARY.md
