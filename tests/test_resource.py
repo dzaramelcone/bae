@@ -22,12 +22,13 @@ from bae.repl.resource import (
 class StubSpace:
     """Minimal Resourcespace implementation for tests."""
 
-    def __init__(self, name: str, description: str = "", children_map=None, tools=None, hints=None):
+    def __init__(self, name: str, description: str = "", children_map=None, tools=None, hints=None, tool_callables=None):
         self.name = name
         self.description = description or f"{name} resource"
         self._children = children_map or {}
         self._tools = tools or {"read", "glob", "grep"}
         self._hints = hints or []
+        self._tool_callables = tool_callables or {}
 
     def enter(self) -> str:
         parts = [self.description]
@@ -44,6 +45,9 @@ class StubSpace:
 
     def supported_tools(self) -> set[str]:
         return self._tools
+
+    def tools(self) -> dict:
+        return self._tool_callables
 
     def children(self) -> dict[str, Resourcespace]:
         return self._children
@@ -415,3 +419,54 @@ class TestNavResult:
         space = StubSpace("source", tools={"read"})
         result = format_unsupported_error(space, "write")
         assert isinstance(result, NavResult)
+
+
+# ---------------------------------------------------------------------------
+# Tool injection via namespace
+# ---------------------------------------------------------------------------
+
+class TestToolInjection:
+    def test_navigate_injects_tools(self):
+        ns = {}
+        reg = ResourceRegistry(namespace=ns)
+        mock_read = lambda: "content"
+        space = StubSpace("source", tool_callables={"read": mock_read})
+        reg.register(space)
+        reg.navigate("source")
+        assert ns["read"] is mock_read
+
+    def test_homespace_removes_tools(self):
+        ns = {}
+        reg = ResourceRegistry(namespace=ns)
+        mock_read = lambda: "content"
+        space = StubSpace("source", tool_callables={"read": mock_read})
+        reg.register(space)
+        reg.navigate("source")
+        assert "read" in ns
+        reg.homespace()
+        assert "read" not in ns
+
+    def test_navigate_swaps_tools(self):
+        ns = {}
+        reg = ResourceRegistry(namespace=ns)
+        mock_read = lambda: "r"
+        mock_glob = lambda: "g"
+        mock_write = lambda: "w"
+        space_a = StubSpace("alpha", tool_callables={"read": mock_read, "glob": mock_glob})
+        space_b = StubSpace("beta", tool_callables={"read": mock_read, "write": mock_write})
+        reg.register(space_a)
+        reg.register(space_b)
+        reg.navigate("alpha")
+        assert "glob" in ns
+        reg.navigate("beta")
+        assert ns["read"] is mock_read
+        assert ns["write"] is mock_write
+        assert "glob" not in ns
+
+    def test_no_namespace_no_crash(self):
+        """Registry without namespace still works fine."""
+        reg = ResourceRegistry()
+        reg.register(StubSpace("source"))
+        reg.navigate("source")  # should not crash
+        reg.back()
+        reg.homespace()

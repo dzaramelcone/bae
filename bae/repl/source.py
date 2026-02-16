@@ -9,6 +9,7 @@ summary, and symbol source extraction via AST line ranges.
 from __future__ import annotations
 
 import ast
+from typing import Callable
 import fnmatch
 import importlib
 import re
@@ -273,6 +274,9 @@ class DepsSubresource:
     def supported_tools(self) -> set[str]:
         return {"read", "write"}
 
+    def tools(self) -> dict[str, Callable]:
+        return {"read": self.read, "write": self.write}
+
     def children(self) -> dict[str, Resourcespace]:
         return {}
 
@@ -322,6 +326,9 @@ class ConfigSubresource:
 
     def supported_tools(self) -> set[str]:
         return {"read"}
+
+    def tools(self) -> dict[str, Callable]:
+        return {"read": self.read}
 
     def children(self) -> dict[str, Resourcespace]:
         return {}
@@ -431,6 +438,9 @@ class TestsSubresource:
     def supported_tools(self) -> set[str]:
         return {"read", "grep"}
 
+    def tools(self) -> dict[str, Callable]:
+        return {"read": self.read, "grep": self.grep}
+
     def children(self) -> dict[str, Resourcespace]:
         return {}
 
@@ -484,6 +494,9 @@ class MetaSubresource:
 
     def supported_tools(self) -> set[str]:
         return {"read", "edit"}
+
+    def tools(self) -> dict[str, Callable]:
+        return {"read": self.read, "edit": self.edit}
 
     def children(self) -> dict[str, Resourcespace]:
         return {}
@@ -734,6 +747,15 @@ class SourceResourcespace:
 
     def supported_tools(self) -> set[str]:
         return {"read", "write", "edit", "glob", "grep"}
+
+    def tools(self) -> dict[str, Callable]:
+        return {
+            "read": self.read,
+            "write": self.write,
+            "edit": self.edit,
+            "glob": self.glob,
+            "grep": self.grep,
+        }
 
     def children(self) -> dict[str, Resourcespace]:
         return dict(self._children)

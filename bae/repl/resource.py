@@ -9,7 +9,7 @@ nav trees, and error messages with @resource() hyperlinks.
 from __future__ import annotations
 
 import difflib
-from typing import Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 from rich.tree import Tree
 
@@ -58,6 +58,10 @@ class Resourcespace(Protocol):
         """Subresourcespaces for dotted navigation."""
         ...
 
+    def tools(self) -> dict[str, Callable]:
+        """Tool callables keyed by standard tool name. Injected into namespace on navigate."""
+        ...
+
 
 class ResourceError(Exception):
     """Protocol-level error with navigation hints."""
@@ -74,12 +78,16 @@ class ResourceError(Exception):
         return "\n".join(parts)
 
 
+_TOOL_NAMES = frozenset({"read", "write", "edit", "glob", "grep"})
+
+
 class ResourceRegistry:
     """Flat registry of resourcespaces with stack-based navigation."""
 
-    def __init__(self) -> None:
+    def __init__(self, namespace: dict | None = None) -> None:
         self._spaces: dict[str, Resourcespace] = {}
         self._stack: list[Resourcespace] = []
+        self._namespace = namespace
 
     @property
     def current(self) -> Resourcespace | None:
@@ -127,12 +135,14 @@ class ResourceRegistry:
         if len(self._stack) > MAX_STACK_DEPTH:
             self._stack = self._stack[-MAX_STACK_DEPTH:]
 
+        self._put_tools()
         return NavResult(transition + self._entry_display(chain[-1]))
 
     def back(self) -> str:
         """Pop navigation stack. Returns entry display of parent or root nav."""
         if self._stack:
             self._stack.pop()
+        self._put_tools()
         if self._stack:
             return NavResult(self._entry_display(self._stack[-1]))
         return self._root_nav()
@@ -140,6 +150,7 @@ class ResourceRegistry:
     def homespace(self) -> str:
         """Clear stack, return root nav tree."""
         self._stack.clear()
+        self._put_tools()
         return self._root_nav()
 
     def breadcrumb(self) -> str:
@@ -148,6 +159,16 @@ class ResourceRegistry:
         for space in self._stack:
             parts.append(space.name)
         return " > ".join(parts)
+
+    def _put_tools(self) -> None:
+        """Put current resource's tools into namespace. Idempotent."""
+        if self._namespace is None:
+            return
+        for name in _TOOL_NAMES:
+            self._namespace.pop(name, None)
+        current = self.current
+        if current is not None:
+            self._namespace.update(current.tools())
 
     def _root_nav(self) -> str:
         """Render nav tree from root using Rich Tree."""

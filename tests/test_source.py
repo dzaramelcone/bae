@@ -492,3 +492,35 @@ class TestShellRegistration:
         meta_handle = handle.meta
         result = meta_handle()
         assert "source" in result.lower() or "bae.repl.source" in result
+
+
+# --- Tools protocol ---
+
+
+class TestToolsProtocol:
+    def test_source_tools_returns_all_five(self, src):
+        tools = src.tools()
+        assert set(tools.keys()) == {"read", "write", "edit", "glob", "grep"}
+        # Each value is callable
+        for v in tools.values():
+            assert callable(v)
+
+    def test_deps_tools_returns_read_write(self, src):
+        deps = src.children()["deps"]
+        tools = deps.tools()
+        assert set(tools.keys()) == {"read", "write"}
+
+    def test_config_tools_returns_read(self, src):
+        config = src.children()["config"]
+        tools = config.tools()
+        assert set(tools.keys()) == {"read"}
+
+    def test_tests_tools_returns_read_grep(self, src):
+        tests = src.children()["tests"]
+        tools = tests.tools()
+        assert set(tools.keys()) == {"read", "grep"}
+
+    def test_meta_tools_returns_read_edit(self, src):
+        meta = src.children()["meta"]
+        tools = meta.tools()
+        assert set(tools.keys()) == {"read", "edit"}

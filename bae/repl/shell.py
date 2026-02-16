@@ -228,7 +228,7 @@ class CortexShell:
         from bae.lm import ClaudeCLIBackend
 
         self._lm = ClaudeCLIBackend()
-        self.registry = ResourceRegistry()
+        self.registry = ResourceRegistry(namespace=self.namespace)
         self._tool_router = ToolRouter(self.registry)
         self.namespace["homespace"] = lambda: self.registry.homespace()
         self.namespace["back"] = lambda: self.registry.back()
