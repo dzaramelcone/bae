@@ -23,6 +23,7 @@ from pygments.lexers.python import PythonLexer
 from bae.repl.ai import AI
 from bae.repl.bash import dispatch_bash
 from bae.repl.engine import GraphRegistry
+from bae.repl.graph_commands import dispatch_graph
 from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, toggle_channels
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
@@ -333,44 +334,6 @@ class CortexShell:
             tb = traceback.format_exc()
             self.router.write("ai", tb.rstrip("\n"), mode="NL", metadata={"type": "error"})
 
-    async def _run_graph(self, text: str) -> None:
-        """GRAPH mode: graph execution via engine."""
-        graph = self.namespace.get("graph")
-        if not graph:
-            self.router.write("graph", "(no graph in namespace)", mode="GRAPH")
-            return
-        try:
-            run = self.engine.submit(graph, self.tm, lm=self._lm)
-            self.router.write(
-                "graph", f"submitted {run.run_id}", mode="GRAPH",
-                metadata={"type": "lifecycle", "run_id": run.run_id},
-            )
-            # Surface background task completion/failure through [graph] channel
-            active = self.tm.active()
-            for tt in active:
-                if tt.name.startswith(f"graph:{run.run_id}:"):
-                    def _on_graph_done(task, _run=run):
-                        if task.cancelled():
-                            self.router.write(
-                                "graph", f"{_run.run_id} cancelled", mode="GRAPH",
-                                metadata={"type": "lifecycle", "run_id": _run.run_id},
-                            )
-                        elif task.exception() is not None:
-                            self.router.write(
-                                "graph", f"{_run.run_id} failed: {_run.error}", mode="GRAPH",
-                                metadata={"type": "error", "run_id": _run.run_id},
-                            )
-                        else:
-                            self.router.write(
-                                "graph", f"{_run.run_id} done", mode="GRAPH",
-                                metadata={"type": "lifecycle", "run_id": _run.run_id},
-                            )
-                    tt.task.add_done_callback(_on_graph_done)
-                    break
-        except Exception:
-            tb = traceback.format_exc()
-            self.router.write("graph", tb.rstrip("\n"), mode="GRAPH", metadata={"type": "error"})
-
     async def _run_bash(self, text: str) -> None:
         """BASH mode: shell command, self-contained error handling."""
         try:
@@ -453,7 +416,7 @@ class CortexShell:
                 self._run_nl(prompt), name=f"ai:{self._active_session}:{prompt[:30]}", mode="nl"
             )
         elif self.mode == Mode.GRAPH:
-            await self._run_graph(text)
+            await dispatch_graph(text, self)
         elif self.mode == Mode.BASH:
             self.tm.submit(self._run_bash(text), name=f"bash:{text[:30]}", mode="bash")
 
