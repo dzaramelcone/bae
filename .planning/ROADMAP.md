@@ -85,7 +85,7 @@
 - [x] **Phase 32.1: Resourcespace Package Structure** - Restructure into bae/repl/spaces/ with per-space packages (INSERTED) (completed 2026-02-16)
 - [x] **Phase 32.1.1: Subresource Packages + Shim Removal** - Break subresources into own packages, remove shims, enforce structure (INSERTED) (completed 2026-02-16)
 - [x] **Phase 32.2: UserView Tool Call Stripping** - Strip tool calls from AI output, show AI-native tool tags with docstring summaries (INSERTED) (completed 2026-02-16)
-- [ ] **Phase 33: Task Resourcespace** - Persistent task CRUD with FTS search and cross-session persistence
+- [x] **Phase 33: Task Resourcespace** - Persistent task CRUD with FTS search and cross-session persistence (completed 2026-02-16)
 - [ ] **Phase 34: Memory Resourcespace** - Session history as navigable, searchable, taggable resources
 - [ ] **Phase 35: Search Resourcespace** - Federated cross-resourcespace search with navigation hyperlinks
 - [ ] **Phase 36: Discovery + Integration** - Homespace dashboard, AI context injection, resource-scoped view summaries
@@ -261,7 +261,7 @@ Phases execute in numeric order: 31 -> 32 -> 33 -> 34 -> 35 -> 36
 | 32. Source Resourcespace | v7.0 | Complete    | 2026-02-16 | - |
 | 32.1. Resourcespace Package Structure | v7.0 | Complete    | 2026-02-16 | - |
 | 32.1.1. Subresource Packages + Shim Removal | v7.0 | 4/4 | Complete | 2026-02-16 |
-| 33. Task Resourcespace | v7.0 | 0/TBD | Not started | - |
+| 33. Task Resourcespace | v7.0 | Complete    | 2026-02-16 | - |
 | 34. Memory Resourcespace | v7.0 | 0/TBD | Not started | - |
 | 35. Search Resourcespace | v7.0 | 0/TBD | Not started | - |
 | 36. Discovery + Integration | v7.0 | 0/TBD | Not started | - |
