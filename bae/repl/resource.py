@@ -99,45 +99,35 @@ class ResourceRegistry:
         if space is None:
             return format_nav_error(target, self)
 
-        # Resolve dotted path through children
-        resolved = space
+        # Build navigation chain
+        chain = [space]
+        resolved_chain = space
         for child_name in parts[1:]:
-            kids = resolved.children()
+            kids = resolved_chain.children()
             if child_name not in kids:
                 return format_nav_error(target, self)
-            resolved = kids[child_name]
+            resolved_chain = kids[child_name]
+            chain.append(resolved_chain)
 
         # Transition message
         prev = self.current
         transition = ""
-        if prev is not None and prev is not resolved:
-            transition = f"Left {prev.name} -> entering {resolved.name}\n\n"
+        if prev is not None and prev is not chain[-1]:
+            transition = f"Left {prev.name} -> entering {chain[-1].name}\n\n"
 
-        # Push onto stack (cap at MAX_STACK_DEPTH)
-        self._stack.append(resolved)
+        # Replace stack from divergence point (not append)
+        common = 0
+        for i in range(min(len(self._stack), len(chain))):
+            if self._stack[i] is chain[i]:
+                common = i + 1
+            else:
+                break
+        self._stack = self._stack[:common] + chain[common:]
+
         if len(self._stack) > MAX_STACK_DEPTH:
             self._stack = self._stack[-MAX_STACK_DEPTH:]
 
-        # For dotted navigation, also push intermediates into breadcrumb context
-        # but only the final resource is on the stack per Pitfall 6.
-        # We need the full path for breadcrumb though, so we track the path segments.
-        # Actually, per the plan: "pushes only the final resource" -- the breadcrumb
-        # is built from stack names. For dotted nav to show "home > source > meta",
-        # we push source then meta, but only if navigating via dotted path.
-        if len(parts) > 1:
-            # Remove the single push we just did
-            self._stack.pop()
-            # Push the intermediate chain
-            chain = [space]
-            resolved_chain = space
-            for child_name in parts[1:]:
-                resolved_chain = resolved_chain.children()[child_name]
-                chain.append(resolved_chain)
-            self._stack.extend(chain)
-            if len(self._stack) > MAX_STACK_DEPTH:
-                self._stack = self._stack[-MAX_STACK_DEPTH:]
-
-        return NavResult(transition + self._entry_display(resolved))
+        return NavResult(transition + self._entry_display(chain[-1]))
 
     def back(self) -> str:
         """Pop navigation stack. Returns entry display of parent or root nav."""
@@ -165,7 +155,7 @@ class ResourceRegistry:
         current = self.current
 
         for name, space in sorted(self._spaces.items()):
-            label = f"@{name}()"
+            label = f"{name}()"
             if space is current:
                 label += "  <-- you are here"
             branch = tree.add(label)
@@ -173,7 +163,7 @@ class ResourceRegistry:
             kids = space.children()
             shown = 0
             for child_name, child_space in sorted(kids.items()):
-                child_label = f"@{name}.{child_name}()"
+                child_label = f"{name}.{child_name}()"
                 if child_space is current:
                     child_label += "  <-- you are here"
                 branch.add(child_label)
@@ -244,7 +234,7 @@ class ResourceHandle:
         return ResourceHandle(f"{self._name}.{child}", self._registry)
 
     def __repr__(self) -> str:
-        return f"@{self._name}() -- navigate to {self._name}"
+        return f"{self._name}() -- navigate to {self._name}"
 
 
 def format_unsupported_error(space: Resourcespace, tool: str) -> str:
@@ -252,7 +242,7 @@ def format_unsupported_error(space: Resourcespace, tool: str) -> str:
     hints = []
     for child_name, child_space in space.children().items():
         if tool in child_space.supported_tools():
-            hints.append(f"@{space.name}.{child_name}()")
+            hints.append(f"{space.name}.{child_name}()")
 
     err = ResourceError(
         f"{space.name} does not support {tool}.",
@@ -269,8 +259,8 @@ def format_nav_error(target: str, registry: ResourceRegistry) -> str:
     if matches:
         suggestion = matches[0]
         err = ResourceError(
-            f"No resource '{target}'. Did you mean @{suggestion}()?",
-            hints=[f"@{suggestion}()"],
+            f"No resource '{target}'. Did you mean {suggestion}()?",
+            hints=[f"{suggestion}()"],
         )
     else:
         err = ResourceError(f"No resource '{target}'.")

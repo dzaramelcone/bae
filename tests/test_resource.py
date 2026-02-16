@@ -106,12 +106,10 @@ class TestRegistry:
 
     def test_back_pops_to_previous(self):
         reg = ResourceRegistry()
-        source = StubSpace("source")
-        tasks = StubSpace("tasks")
+        meta = StubSpace("meta")
+        source = StubSpace("source", children_map={"meta": meta})
         reg.register(source)
-        reg.register(tasks)
-        reg.navigate("source")
-        reg.navigate("tasks")
+        reg.navigate("source.meta")
         reg.back()
         assert reg.current is source
 
@@ -188,6 +186,27 @@ class TestRegistry:
         assert "source" in result.lower()
         assert "tasks" in result.lower()
 
+    def test_navigate_sibling_replaces_stack(self):
+        """Navigate source.config then source.deps: breadcrumb is home > source > deps."""
+        reg = ResourceRegistry()
+        config = StubSpace("config")
+        deps = StubSpace("deps")
+        source = StubSpace("source", children_map={"config": config, "deps": deps})
+        reg.register(source)
+        reg.navigate("source.config")
+        assert reg.breadcrumb() == "home > source > config"
+        reg.navigate("source.deps")
+        assert reg.breadcrumb() == "home > source > deps"
+
+    def test_navigate_same_root_replaces(self):
+        """Navigate source then source again: stack has exactly one source entry."""
+        reg = ResourceRegistry()
+        source = StubSpace("source")
+        reg.register(source)
+        reg.navigate("source")
+        reg.navigate("source")
+        assert reg._stack == [source]
+
 
 # ---------------------------------------------------------------------------
 # ResourceHandle
@@ -215,7 +234,7 @@ class TestResourceHandle:
     def test_repr_contains_mention(self):
         reg = ResourceRegistry()
         handle = ResourceHandle("source", reg)
-        assert "@source()" in repr(handle)
+        assert "source()" in repr(handle)
 
 
 # ---------------------------------------------------------------------------
@@ -259,8 +278,8 @@ class TestNavTree:
         reg.register(StubSpace("source"))
         reg.register(StubSpace("tasks"))
         result = reg.homespace()
-        assert "@source()" in result
-        assert "@tasks()" in result
+        assert "source()" in result
+        assert "tasks()" in result
 
     def test_nav_tree_marks_current(self):
         reg = ResourceRegistry()
@@ -299,8 +318,8 @@ class TestNavTree:
         source = StubSpace("source", children_map={"meta": meta})
         reg.register(source)
         tree = reg._root_nav()
-        assert "@source()" in tree
-        assert "@source.meta()" in tree
+        assert "source()" in tree
+        assert "source.meta()" in tree
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +332,7 @@ class TestErrors:
         reg.register(StubSpace("source"))
         result = reg.navigate("sourc")
         assert "source" in result.lower()
-        assert "@source()" in result
+        assert "source()" in result
 
     def test_no_close_match_plain_error(self):
         reg = ResourceRegistry()
@@ -327,19 +346,26 @@ class TestErrors:
         source._children = {"meta": meta}
         result = format_unsupported_error(source, "write")
         assert "write" in result.lower()
-        assert "@source.meta()" in result
+        assert "source.meta()" in result
 
     def test_errors_contain_hyperlinks(self):
         reg = ResourceRegistry()
         reg.register(StubSpace("source"))
         result = format_nav_error("sourc", reg)
-        assert "@source()" in result
+        assert "source()" in result
 
     def test_resource_error_str(self):
-        err = ResourceError("something broke", hints=["@source()"])
+        err = ResourceError("something broke", hints=["source()"])
         s = str(err)
         assert "something broke" in s
-        assert "@source()" in s
+        assert "source()" in s
+
+    def test_error_messages_no_at_prefix(self):
+        """Error messages use source() syntax, not @source() syntax."""
+        reg = ResourceRegistry()
+        reg.register(StubSpace("source"))
+        result = format_nav_error("sourc", reg)
+        assert "@" not in result
 
 
 # ---------------------------------------------------------------------------

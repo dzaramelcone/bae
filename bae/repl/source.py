@@ -509,7 +509,7 @@ class SourceResourcespace:
         lines = [f"{self.description}\n"]
         lines.append("Subresources:")
         for name, sub in sorted(self._children.items()):
-            lines.append(f"  @source.{name}() -- {sub.description}")
+            lines.append(f"  source.{name}() -- {sub.description}")
         lines.append("")
         lines.append("Packages:")
         for pkg in _discover_packages(self._root):
