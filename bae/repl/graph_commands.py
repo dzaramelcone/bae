@@ -46,15 +46,6 @@ async def _cmd_run(arg: str, shell) -> None:
     if not arg:
         shell.router.write("graph", "usage: run <expr>", mode="GRAPH")
         return
-    # Inject graph callable parameter types into eval namespace
-    for obj in list(shell.namespace.values()):
-        param_types = getattr(obj, "_param_types", None)
-        if param_types:
-            for type_name, type_cls in param_types.items():
-                cls_name = type_cls.__name__
-                if cls_name not in shell.namespace:
-                    shell.namespace[cls_name] = type_cls
-
     try:
         from bae.repl.exec import async_exec
 
@@ -137,7 +128,7 @@ async def _cmd_list(arg: str, shell) -> None:
             f"{elapsed:.1f}s",
             run.current_node or "-",
         )
-    shell.router.write("graph", _rich_to_ansi(table).rstrip("\n"), mode="GRAPH")
+    shell.router.write("graph", _rich_to_ansi(table).rstrip("\n"), mode="GRAPH", metadata={"type": "ansi"})
 
 
 async def _cmd_cancel(arg: str, shell) -> None:
@@ -203,7 +194,7 @@ async def _cmd_inspect(arg: str, shell) -> None:
                 parts.append(f"  {i}. {type(node).__name__}")
 
     text = Text("\n".join(parts))
-    shell.router.write("graph", _rich_to_ansi(text).rstrip("\n"), mode="GRAPH")
+    shell.router.write("graph", _rich_to_ansi(text).rstrip("\n"), mode="GRAPH", metadata={"type": "ansi"})
 
 
 async def _cmd_trace(arg: str, shell) -> None:
