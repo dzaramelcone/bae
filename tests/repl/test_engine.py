@@ -942,3 +942,116 @@ async def test_concurrent_no_channel_flood():
         )
 
         store.close()
+
+
+# --- Store persistence tests ---
+
+
+async def test_graph_events_persist_to_store():
+    """Graph events persist through the full channel -> store pipeline and are searchable."""
+    import json
+    import tempfile
+    from pathlib import Path
+    from bae.graph import Graph
+    from bae.repl.channels import ChannelRouter
+    from bae.repl.store import SessionStore
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        store = SessionStore(db_path)
+        router = ChannelRouter()
+        router.register("graph", color="#ffaf87", store=store)
+        router._channels["graph"].visible = False
+
+        graph = Graph(start=StressStart)
+        registry = GraphRegistry()
+        tm = TaskManager()
+
+        # Notify callback matching real _make_notify pattern
+        def notify(content, meta=None):
+            router.write("graph", content, mode="GRAPH", metadata=meta)
+
+        # Submit with VERBOSE so all events emit
+        run = registry.submit(
+            graph, tm, lm=MockLM(), notify=notify,
+            policy=OutputPolicy.VERBOSE, text="persist-test",
+        )
+
+        async with asyncio.timeout(10):
+            while registry.active():
+                await asyncio.sleep(0.05)
+        await _drain_tasks(tm)
+        assert run.state == GraphState.DONE
+
+        # Query store for graph channel entries
+        entries = store.session_entries()
+        graph_entries = [e for e in entries if e["channel"] == "graph"]
+        assert len(graph_entries) >= 2, (
+            f"expected 2+ graph entries (start + complete), got {len(graph_entries)}"
+        )
+
+        # Check metadata on persisted entries
+        metas = [json.loads(e["metadata"]) for e in graph_entries]
+        events = [m.get("event") for m in metas if m.get("type") == "lifecycle"]
+        assert "start" in events, f"no start event in store, got {events}"
+        assert "complete" in events, f"no complete event in store, got {events}"
+
+        # Content is non-empty for each entry
+        for e in graph_entries:
+            assert e["content"], f"empty content in entry {e}"
+
+        # FTS5 search works on graph events
+        search_results = store.search("started")
+        assert len(search_results) >= 1, "FTS5 search for 'started' returned nothing"
+
+        store.close()
+
+
+async def test_store_cross_session_graph_events():
+    """Graph events from session 1 are visible in session 2 (cross-session history)."""
+    import tempfile
+    from pathlib import Path
+    from bae.graph import Graph
+    from bae.repl.channels import ChannelRouter
+    from bae.repl.store import SessionStore
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+
+        # Session 1: submit graph, wait for completion
+        store1 = SessionStore(db_path)
+        router1 = ChannelRouter()
+        router1.register("graph", color="#ffaf87", store=store1)
+        router1._channels["graph"].visible = False
+
+        graph = Graph(start=StressStart)
+        registry = GraphRegistry()
+        tm = TaskManager()
+
+        def notify(content, meta=None):
+            router1.write("graph", content, mode="GRAPH", metadata=meta)
+
+        registry.submit(
+            graph, tm, lm=MockLM(), notify=notify,
+            policy=OutputPolicy.VERBOSE, text="cross-session",
+        )
+
+        async with asyncio.timeout(10):
+            while registry.active():
+                await asyncio.sleep(0.05)
+        await _drain_tasks(tm)
+        store1.close()
+
+        # Session 2: new store on same db, verify events from session 1 visible
+        store2 = SessionStore(db_path)
+        recent = store2.recent()
+        # Filter to graph channel entries from session 1
+        s1_graph = [
+            e for e in recent
+            if e["channel"] == "graph" and e["session_id"] == store1.session_id
+        ]
+        assert len(s1_graph) >= 2, (
+            f"expected 2+ graph events from session 1, got {len(s1_graph)}"
+        )
+
+        store2.close()
