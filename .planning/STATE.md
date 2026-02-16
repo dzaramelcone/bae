@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-15)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v6.0 Graph Runtime -- Phase 27 Graph Mode complete (gap closure done)
+**Current focus:** v6.0 Graph Runtime -- Phase 27 Graph Mode complete (all gap closure done)
 
 ## Current Position
 
 Phase: 27 (Graph Mode)
-Plan: 03 of 03 complete
-Status: Phase 27 complete (including gap closure)
-Last activity: 2026-02-15 -- 27-03 param type injection + ls removal
+Plan: 05 of 05 complete
+Status: Phase 27 complete (including all gap closure plans)
+Last activity: 2026-02-15 -- 27-05 ANSI rendering fix for graph commands
 
 Progress: v1-v5 done | v6.0 [####......] 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 90 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 14 work)
+- Total plans completed: 91 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 15 work)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -28,6 +28,7 @@ Progress: v1-v5 done | v6.0 [####......] 20%
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
+| 27-05 | ANSI rendering fix for graph commands | 2min | 2 | 3 |
 | 27-03 | Param type injection + ls removal | 2min | 2 | 3 |
 | 27-02 | GRAPH mode command dispatcher | 3min | 2 | 3 |
 | 27-01 | graph() factory + engine coroutine | 6min | 2 | 7 |
@@ -44,6 +45,8 @@ Progress: v1-v5 done | v6.0 [####......] 20%
 
 See PROJECT.md Key Decisions table for full history.
 
+- 27-05: ANSI metadata on router.write rather than direct print -- preserves channel visibility and store recording
+- 27-05: Type injection removed from _cmd_run -- graph callables handle param flattening directly
 - 27-03: _param_types on graph() wrapper auto-injected into namespace by _cmd_run before eval
 - 27-03: Type injection permanent (not per-run) -- domain types belong in user namespace
 - 27-03: ls alias removed from GRAPH dispatch -- only canonical command names
@@ -93,6 +96,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 27-03-PLAN.md (Phase 27 gap closure complete)
+Stopped at: Completed 27-05-PLAN.md (ANSI rendering fix for graph commands)
 Branch: main
 Resume file: None
