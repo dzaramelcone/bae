@@ -67,7 +67,8 @@ Recent:
 ### Roadmap Evolution
 
 - Phase 32.1 inserted after Phase 32: Resourcespace Package Structure (URGENT) — restructure into spaces/ packages before adding more resourcespaces in 33+
-- Phase 32.2 inserted after Phase 32: UserView Tool Call Stripping (URGENT) — strip tool calls from AI output, show only session tag + execution + result
+- Phase 32.1.1 inserted after Phase 32.1: Subresource Packages + Shim Removal (URGENT) — break subresources into own packages, remove all backward-compat shims, enforce structure in source resourcespace
+- Phase 32.2 inserted after Phase 32: UserView Tool Call Stripping (URGENT) — strip tool calls from AI output + context history, show only tool I/O and agent's last message
 
 ### Blockers/Concerns
 
