@@ -18,6 +18,9 @@ from bae.repl.spaces.view import ResourceError
 def enter() -> str:
     return (
         "Source resourcespace implementation (bae.repl.spaces.source)\n\n"
+        "Convention: view.py must implement the protocol and call service layer functions.\n"
+        "service.py has the underlying implementations. "
+        "models.py for entities, schemas.py for DTOs -- add only when needed.\n\n"
         "read() for summary, read(symbol) for symbol source, edit(symbol, new_source) to modify"
     )
 

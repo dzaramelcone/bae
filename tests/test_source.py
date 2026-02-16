@@ -465,6 +465,11 @@ class TestMetaSubresource:
         result = src.children()["meta"].enter()
         assert "source" in result.lower()
 
+    def test_enter_includes_convention_guidance(self, src):
+        result = src.children()["meta"].enter()
+        assert "view.py must implement the protocol" in result
+        assert "service.py has the underlying implementations" in result
+
     def test_supported_tools(self, src):
         assert src.children()["meta"].supported_tools() == {"read", "edit"}
 
