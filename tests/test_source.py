@@ -185,7 +185,7 @@ class TestGlob:
 
 class TestGrep:
     def test_grep_finds_matches(self, src):
-        result = src.grep("ResourceError", "bae.repl")
+        result = src.grep("class ResourceError", "bae.repl")
         # Should find in bae.repl.resource with module:line: format
         assert "bae.repl.resource:" in result
 
@@ -199,20 +199,18 @@ class TestGrep:
                 assert line.startswith("bae.repl.resource:")
 
     def test_grep_no_matches(self, src):
-        result = src.grep("zzzznonexistent")
+        # Search only in bae package where this string doesn't exist
+        result = src.grep("zzzznonexistent", "bae")
         assert result == "(no matches)"
 
     def test_grep_no_filesystem_paths(self, src):
-        result = src.grep("ResourceError", "bae.repl")
+        result = src.grep("class ResourceError", "bae.repl")
         assert "/" not in result
 
     def test_grep_budget_overflow_raises(self, src):
-        # Grepping a very common pattern should raise ResourceError or truncate
-        # with narrowing hint if too many matches
-        result = src.grep("def ")
-        # Either fits in budget or raises ResourceError
-        if isinstance(result, str) and len(result) > 2000:
-            pytest.fail("Grep output exceeded CHAR_CAP without raising ResourceError")
+        # Grepping a very common pattern across all modules raises ResourceError
+        with pytest.raises(ResourceError, match="[Nn]arrow"):
+            src.grep("def ")
 
 
 # --- Temporary project fixture for write/edit/undo tests ---
@@ -346,16 +344,27 @@ class TestHotReload:
         assert g.greet() == "reloaded"
 
     def test_failed_reload_rolls_back(self, tmp_project):
-        src = SourceResourcespace(tmp_project)
-        original = (tmp_project / "mylib" / "core.py").read_text()
-        # Edit that writes valid Python but breaks on reload (bad import)
+        from bae.repl.source import _hot_reload
+
+        # Create a module, commit it, then corrupt and test rollback
+        good = "import os\n\ndef helper():\n    return os.getcwd()\n"
+        (tmp_project / "mylib" / "good.py").write_text(good)
+        subprocess.run(["git", "add", "."], cwd=tmp_project, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "add good"], cwd=tmp_project,
+            capture_output=True,
+            env={**dict(__import__("os").environ), "GIT_AUTHOR_NAME": "test",
+                 "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "test",
+                 "GIT_COMMITTER_EMAIL": "t@t"},
+        )
+        # Write bad content (top-level import of nonexistent module)
+        bad = "import nonexistent_module_xyz_abc\n\ndef helper():\n    return 1\n"
+        filepath = tmp_project / "mylib" / "good.py"
+        filepath.write_text(bad)
         with pytest.raises(ResourceError, match="[Rr]eload|[Rr]olled"):
-            src.edit(
-                "mylib.core.standalone",
-                new_source="def standalone():\n    import nonexistent_module_xyz\n    return 1\n",
-            )
-        # File should be rolled back
-        assert (tmp_project / "mylib" / "core.py").read_text() == original
+            _hot_reload("mylib.good", filepath, good)
+        # File rolled back to good state
+        assert filepath.read_text() == good
 
 
 # --- Undo ---
