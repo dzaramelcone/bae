@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v7.0 Hypermedia Resourcespace -- Phase 31: Resource Protocol + Navigation
+**Current focus:** v7.0 Hypermedia Resourcespace -- Phase 32: Source Resourcespace
 
 ## Current Position
 
-Phase: 31 of 36 (Resource Protocol + Navigation)
-Plan: 4 of 4 in current phase
-Status: Phase Complete
-Last activity: 2026-02-16 -- Completed 31-04 (ANSI rendering fix)
+Phase: 32 of 36 (Source Resourcespace)
+Plan: 1 of 4 in current phase
+Status: In Progress
+Last activity: 2026-02-16 -- Completed 32-01 (SourceResourcespace foundation)
 
-Progress: [██████████] 100%
+Progress: [███████████░░░░░░░░░] 25%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 103 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 4 v7.0)
+- Total plans completed: 104 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 5 v7.0)
 - v6.0 duration: 1 day (2026-02-15)
 - v5.0 duration: 1 day (2026-02-14)
 
@@ -34,6 +34,8 @@ Progress: [██████████] 100%
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 32-01: Module-level helpers for path resolution; _StubSubresource for not-yet-implemented children
+- v7.0 32-01: CHAR_CAP=2000 with ResourceError narrowing guidance (no silent pruning)
 - v7.0 31-04: NavResult str subclass with raw __repr__ preserves ANSI in navigation output
 - v7.0 31-03: homespace/back are lambdas wrapping registry methods, not ResourceHandles
 - v7.0 31-03: Resource location injected via _with_location into every AI _send call
@@ -74,6 +76,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 31-04-PLAN.md (Phase 31 gap closure complete)
+Stopped at: Completed 32-01-PLAN.md
 Branch: main
-Resume file: .planning/phases/31-resource-protocol-navigation/31-04-SUMMARY.md
+Resume file: .planning/phases/32-source-resourcespace/32-01-SUMMARY.md
