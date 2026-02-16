@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 32 of 36 (Source Resourcespace)
-Plan: 2 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: In Progress
-Last activity: 2026-02-16 -- Completed 32-02 (glob and grep tools)
+Last activity: 2026-02-16 -- Completed 32-03 (write, edit, undo with hot-reload)
 
-Progress: [██████████████░░░░░░] 50%
+Progress: [████████████████████░] 75%
 
 ## Performance Metrics
 
@@ -34,6 +34,8 @@ Progress: [██████████████░░░░░░] 50%
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 32-03: _replace_symbol auto-adjusts indentation via textwrap.dedent + col_offset re-indent
+- v7.0 32-03: Hot-reload non-fatal for write(), fatal for edit() (triggers rollback to old_source)
 - v7.0 32-01: Module-level helpers for path resolution; _StubSubresource for not-yet-implemented children
 - v7.0 32-01: CHAR_CAP=2000 with ResourceError narrowing guidance (no silent pruning)
 - v7.0 31-04: NavResult str subclass with raw __repr__ preserves ANSI in navigation output
@@ -77,6 +79,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32-02-PLAN.md
+Stopped at: Completed 32-03-PLAN.md
 Branch: main
-Resume file: .planning/phases/32-source-resourcespace/32-02-SUMMARY.md
+Resume file: .planning/phases/32-source-resourcespace/32-03-SUMMARY.md
