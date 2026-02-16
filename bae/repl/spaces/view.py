@@ -255,6 +255,12 @@ class ResourceRegistry:
             lines.append("Resourcespaces:")
             for name, space in sorted(self._spaces.items()):
                 lines.append(f"  {name}() -- {space.description}")
+            # Task count if available
+            task_space = self._spaces.get("tasks")
+            if task_space and hasattr(task_space, "outstanding_count"):
+                count = task_space.outstanding_count()
+                if count:
+                    lines.append(f"\nTasks: {count} outstanding")
         tools = sorted(self._home_tools.keys()) if self._home_tools else []
         if tools:
             lines.append("")

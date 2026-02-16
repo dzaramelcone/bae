@@ -26,6 +26,7 @@ from bae.repl.engine import GraphRegistry
 from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, toggle_channels
 from bae.repl.spaces import ResourceRegistry, ResourceHandle
 from bae.repl.spaces.source import SourceResourcespace
+from bae.repl.spaces.tasks import TaskResourcespace
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
 from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mode
@@ -241,6 +242,9 @@ class CortexShell:
         source_rs = SourceResourcespace(Path.cwd())
         self.registry.register(source_rs)
         self.namespace["source"] = ResourceHandle("source", self.registry)
+        task_rs = TaskResourcespace(Path.cwd() / ".bae" / "tasks.db")
+        self.registry.register(task_rs)
+        self.namespace["tasks"] = ResourceHandle("tasks", self.registry)
         self._ai_sessions: dict[str, AI] = {}
         self._active_session: str = "1"
         self.ai = self._get_or_create_session("1")
