@@ -307,7 +307,7 @@ class TestTaskMenu:
 # --- TestBackgroundDispatch ---
 
 class TestBackgroundDispatch:
-    """NL/GRAPH/BASH dispatch as fire-and-forget background tasks; PY blocks."""
+    """NL/BASH dispatch as fire-and-forget background tasks; PY blocks."""
 
     @pytest.mark.asyncio
     async def test_dispatch_nl_returns_immediately(self, shell):

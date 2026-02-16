@@ -113,8 +113,7 @@ async def test_underscore_capture_string(shell):
 async def test_trace_capture_success(mock_router):
     """channel_arun returns GraphResult with trace accessible for _trace capture."""
     graph = Graph(start=Start)
-    start_node = Start(msg="hello")
-    result = await channel_arun(graph, start_node, mock_router)
+    result = await channel_arun(graph, mock_router, msg="hello")
 
     assert result is not None
     assert result.trace is not None
@@ -126,12 +125,11 @@ async def test_trace_capture_success(mock_router):
 
 @pytest.mark.asyncio
 async def test_trace_capture_sets_namespace(shell):
-    """Simulating GRAPH mode: _trace set in namespace after successful run."""
+    """Simulating graph engine: _trace set in namespace after successful run."""
     graph = Graph(start=Start)
-    start_node = Start(msg="world")
-    result = await channel_arun(graph, start_node, shell.router)
+    result = await channel_arun(graph, shell.router, msg="world")
 
-    # Simulate what the GRAPH mode handler does
+    # Simulate what a graph engine handler does
     if result and result.trace:
         shell.namespace["_trace"] = result.trace
 
@@ -154,9 +152,9 @@ async def test_trace_capture_on_error(shell):
     mock_graph = MagicMock()
     mock_graph.arun = AsyncMock(side_effect=err)
 
-    # Simulate the GRAPH mode error handler
+    # Simulate the graph engine error handler
     try:
-        await channel_arun(mock_graph, Start(msg="test"), shell.router)
+        await channel_arun(mock_graph, shell.router, msg="test")
     except Exception as exc:
         trace = getattr(exc, "trace", None)
         if trace:
@@ -174,7 +172,7 @@ async def test_trace_not_set_when_error_has_no_trace(shell):
     mock_graph.arun = AsyncMock(side_effect=RuntimeError("unrelated error"))
 
     try:
-        await channel_arun(mock_graph, Start(msg="test"), shell.router)
+        await channel_arun(mock_graph, shell.router, msg="test")
     except Exception as exc:
         trace = getattr(exc, "trace", None)
         if trace:
