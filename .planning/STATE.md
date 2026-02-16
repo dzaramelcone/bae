@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 32.2 of 36 (UserView Tool Call Stripping)
-Plan: 2 of 3 in current phase
-Status: In Progress
-Last activity: 2026-02-16 -- Completed 32.2-02 (typed XML signatures in functions table)
+Plan: 3 of 3 in current phase
+Status: Phase Complete
+Last activity: 2026-02-16 -- Completed 32.2-03 (pydantic parameter validation)
 
-Progress: [█████████████████████████████████░░░░░░░░░░░░░░░░░] 67% of 32.2
+Progress: [██████████████████████████████████████████████████] 100% of 32.2
 
 ## Performance Metrics
 
@@ -34,6 +34,7 @@ Progress: [███████████████████████
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 32.2-03: Validator cache keyed by id(method); unannotated params default to str in pydantic model
 - v7.0 32.2-02: Body-content write format shows content param between open/close tags; fallback for missing tool callables renders plain <Tag>
 - v7.0 32.1.1-04: Role grouping only for convention packages (with view.py); tstring Template.__str__ returns repr so use manual render
 - v7.0 32.1.1-03: Include _LINE_RANGE_RE in home __init__.py exports (ai.py imports it)
@@ -101,6 +102,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32.2-01-PLAN.md (tool summary format + response filtering)
+Stopped at: Completed 32.2-03-PLAN.md (pydantic parameter validation) -- Phase 32.2 complete
 Branch: main
-Resume file: .planning/phases/32.2-userview-tool-call-stripping/32.2-01-SUMMARY.md
+Resume file: .planning/phases/32.2-userview-tool-call-stripping/32.2-03-SUMMARY.md
