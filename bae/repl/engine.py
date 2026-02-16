@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 class GraphState(enum.Enum):
     RUNNING = "running"
+    WAITING = "waiting"
     DONE = "done"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -47,6 +48,34 @@ class GraphRun:
     ended_ns: int = 0
     error: str = ""
     result: GraphResult | None = None
+
+
+@dataclass
+class InputGate:
+    """Future wrapper with schema metadata for human input gates.
+
+    Created by the engine when a gate-annotated field is encountered
+    during graph execution. The Future suspends execution until the
+    user provides a value.
+    """
+
+    gate_id: str
+    run_id: str
+    field_name: str
+    field_type: type
+    description: str
+    node_type: str
+    future: asyncio.Future = field(
+        default_factory=lambda: asyncio.get_event_loop().create_future()
+    )
+
+    @property
+    def schema_display(self) -> str:
+        """Human-readable prompt: field_name: type ("description")."""
+        type_name = getattr(self.field_type, "__name__", str(self.field_type))
+        if self.description:
+            return f'{self.field_name}: {type_name} ("{self.description}")'
+        return f"{self.field_name}: {type_name}"
 
 
 class TimingLM:
@@ -88,6 +117,8 @@ class GraphRegistry:
         self._runs: dict[str, GraphRun] = {}
         self._next_id: int = 1
         self._completed: deque[GraphRun] = deque(maxlen=20)
+        self._pending_gates: dict[str, InputGate] = {}
+        self._gate_counter: int = 0
 
     def submit(
         self, graph: Graph, tm: TaskManager, *, lm: LM | None = None, **kwargs
@@ -113,6 +144,7 @@ class GraphRegistry:
             return result
         except asyncio.CancelledError:
             run.state = GraphState.CANCELLED
+            self.cancel_gates(run.run_id)
             raise
         except Exception as e:
             run.state = GraphState.FAILED
@@ -153,6 +185,7 @@ class GraphRegistry:
             return result
         except asyncio.CancelledError:
             run.state = GraphState.CANCELLED
+            self.cancel_gates(run.run_id)
             raise
         except Exception as e:
             run.state = GraphState.FAILED
@@ -169,8 +202,65 @@ class GraphRegistry:
         self._runs.pop(run.run_id, None)
         self._completed.append(run)
 
+    # ── Gate lifecycle ───────────────────────────────────────────────────
+
+    def create_gate(
+        self,
+        run_id: str,
+        field_name: str,
+        field_type: type,
+        description: str,
+        node_type: str,
+    ) -> InputGate:
+        """Create and register an InputGate for a pending human input."""
+        gate_id = f"{run_id}.{self._gate_counter}"
+        self._gate_counter += 1
+        gate = InputGate(
+            gate_id=gate_id,
+            run_id=run_id,
+            field_name=field_name,
+            field_type=field_type,
+            description=description,
+            node_type=node_type,
+        )
+        self._pending_gates[gate_id] = gate
+        return gate
+
+    def resolve_gate(self, gate_id: str, value: object) -> bool:
+        """Resolve a pending gate with a value. Returns False if not found."""
+        gate = self._pending_gates.pop(gate_id, None)
+        if gate is None or gate.future.done():
+            return False
+        gate.future.set_result(value)
+        return True
+
+    def get_pending_gate(self, gate_id: str) -> InputGate | None:
+        """Look up a pending gate by ID."""
+        return self._pending_gates.get(gate_id)
+
+    def pending_gate_count(self) -> int:
+        """Number of gates awaiting user input."""
+        return len(self._pending_gates)
+
+    def pending_gates_for_run(self, run_id: str) -> list[InputGate]:
+        """All pending gates belonging to a specific graph run."""
+        return [g for g in self._pending_gates.values() if g.run_id == run_id]
+
+    def cancel_gates(self, run_id: str) -> None:
+        """Cancel all pending gates for a run and remove from registry."""
+        to_remove = [
+            gid for gid, g in self._pending_gates.items() if g.run_id == run_id
+        ]
+        for gid in to_remove:
+            gate = self._pending_gates.pop(gid)
+            if not gate.future.done():
+                gate.future.cancel()
+
     def active(self) -> list[GraphRun]:
-        return [r for r in self._runs.values() if r.state == GraphState.RUNNING]
+        return [
+            r for r in self._runs.values()
+            if r.state in (GraphState.RUNNING, GraphState.WAITING)
+        ]
 
     def get(self, run_id: str) -> GraphRun | None:
         run = self._runs.get(run_id)

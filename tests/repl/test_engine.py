@@ -8,7 +8,7 @@ import pytest
 
 from bae.lm import LM
 from bae.node import Node
-from bae.repl.engine import GraphRegistry, GraphRun, GraphState, NodeTiming, TimingLM
+from bae.repl.engine import GraphRegistry, GraphRun, GraphState, InputGate, NodeTiming, TimingLM
 from bae.repl.tasks import TaskManager
 
 
@@ -458,3 +458,107 @@ class TestGraphRegistry:
         assert run.state == GraphState.DONE
         assert run.result is gr
         assert len(run.result.trace) == 1
+
+
+# --- TestInputGate and gate registry ---
+
+
+class TestInputGate:
+    def test_waiting_state_exists(self):
+        """GraphState.WAITING has value 'waiting'."""
+        assert GraphState.WAITING.value == "waiting"
+
+    async def test_create_gate(self, registry):
+        """create_gate returns InputGate with correct gate_id format and fields."""
+        gate = registry.create_gate(
+            run_id="g1",
+            field_name="approved",
+            field_type=bool,
+            description="Approve?",
+            node_type="ConfirmDeploy",
+        )
+        assert gate.gate_id == "g1.0"
+        assert gate.run_id == "g1"
+        assert gate.field_name == "approved"
+        assert gate.field_type is bool
+        assert gate.description == "Approve?"
+        assert gate.node_type == "ConfirmDeploy"
+        assert not gate.future.done()
+
+    async def test_resolve_gate(self, registry):
+        """Resolving a gate sets the future result and removes from pending."""
+        gate = registry.create_gate(
+            run_id="g1",
+            field_name="approved",
+            field_type=bool,
+            description="Approve?",
+            node_type="ConfirmDeploy",
+        )
+        assert registry.resolve_gate(gate.gate_id, True)
+        assert gate.future.result() is True
+        assert registry.pending_gate_count() == 0
+
+    async def test_resolve_gate_not_found(self, registry):
+        """Resolving a non-existent gate returns False."""
+        assert not registry.resolve_gate("g999.0", True)
+
+    async def test_pending_gate_count(self, registry):
+        """Pending count tracks create and resolve correctly."""
+        g1 = registry.create_gate("g1", "a", bool, "", "N")
+        registry.create_gate("g1", "b", str, "", "N")
+        assert registry.pending_gate_count() == 2
+        registry.resolve_gate(g1.gate_id, True)
+        assert registry.pending_gate_count() == 1
+
+    async def test_pending_gates_for_run(self, registry):
+        """Filter pending gates by run_id."""
+        registry.create_gate("g1", "a", bool, "", "N")
+        registry.create_gate("g2", "b", str, "", "N")
+        registry.create_gate("g1", "c", int, "", "N")
+        run1_gates = registry.pending_gates_for_run("g1")
+        run2_gates = registry.pending_gates_for_run("g2")
+        assert len(run1_gates) == 2
+        assert len(run2_gates) == 1
+        assert all(g.run_id == "g1" for g in run1_gates)
+
+    async def test_cancel_gates(self, registry):
+        """cancel_gates cancels futures and removes gates for the run."""
+        g1 = registry.create_gate("g1", "a", bool, "", "N")
+        g2 = registry.create_gate("g1", "b", str, "", "N")
+        registry.create_gate("g2", "c", int, "", "N")
+        registry.cancel_gates("g1")
+        assert g1.future.cancelled()
+        assert g2.future.cancelled()
+        assert registry.pending_gate_count() == 1
+        assert registry.pending_gates_for_run("g1") == []
+
+    async def test_schema_display_with_description(self):
+        """schema_display includes description in quotes."""
+        gate = InputGate(
+            gate_id="g1.0",
+            run_id="g1",
+            field_name="approved",
+            field_type=bool,
+            description="Deploy to prod?",
+            node_type="ConfirmDeploy",
+        )
+        assert gate.schema_display == 'approved: bool ("Deploy to prod?")'
+
+    async def test_schema_display_without_description(self):
+        """schema_display omits parenthetical when no description."""
+        gate = InputGate(
+            gate_id="g1.0",
+            run_id="g1",
+            field_name="count",
+            field_type=int,
+            description="",
+            node_type="Counter",
+        )
+        assert gate.schema_display == "count: int"
+
+    async def test_active_includes_waiting(self, registry):
+        """A run in WAITING state appears in active()."""
+        run = GraphRun(run_id="g1", graph=None, state=GraphState.WAITING)
+        registry._runs["g1"] = run
+        active = registry.active()
+        assert run in active
