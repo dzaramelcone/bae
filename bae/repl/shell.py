@@ -23,7 +23,6 @@ from pygments.lexers.python import PythonLexer
 from bae.repl.ai import AI
 from bae.repl.bash import dispatch_bash
 from bae.repl.engine import GraphRegistry
-from bae.repl.graph_commands import dispatch_graph
 from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, toggle_channels
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
@@ -217,7 +216,7 @@ def _build_key_bindings(shell: CortexShell) -> KeyBindings:
 
 
 class CortexShell:
-    """Async REPL with four modes."""
+    """Async REPL with three modes."""
 
     def __init__(self) -> None:
         self.mode: Mode = DEFAULT_MODE
@@ -243,7 +242,6 @@ class CortexShell:
         self._active_session: str = "1"
         self.ai = self._get_or_create_session("1")
         self.namespace["ai"] = self.ai
-        self.shush_gates: bool = False
         self.namespace["engine"] = self.engine
         self.toolbar = ToolbarConfig()
         self.toolbar.add("mode", make_mode_widget(self))
@@ -255,11 +253,13 @@ class CortexShell:
         self.namespace["toolbar"] = self.toolbar
         self.completer = NamespaceCompleter(self.namespace)
 
-        # Set graph context for auto-registration
+        # Set graph context for auto-registration of graphs created in the REPL
         from bae.repl.engine import _graph_ctx
-        from bae.repl.graph_commands import _make_notify
 
-        _graph_ctx.set((self.engine, self.tm, self._lm, _make_notify(self)))
+        def _notify(content, meta=None):
+            self.router.write("graph", content, mode="GRAPH", metadata=meta or {"type": "lifecycle"})
+
+        _graph_ctx.set((self.engine, self.tm, self._lm, _notify))
 
         kb = _build_key_bindings(self)
         self.session = PromptSession(
@@ -393,12 +393,12 @@ class CortexShell:
         """Route input to the active mode handler.
 
         PY sync expressions execute sequentially. PY async expressions
-        (await ...) are tracked via TaskManager. NL/GRAPH/BASH modes fire
+        (await ...) are tracked via TaskManager. NL/BASH modes fire
         as background tasks so prompt_async() stays active.
         """
         # Cross-mode gate input: @g<digits> <value>
-        # Only from non-NL modes. NL mode preserves @label session routing.
-        if self.mode != Mode.NL and text.startswith("@g") and len(text) > 2:
+        # Only from PY/BASH modes. NL mode preserves @label session routing.
+        if self.mode in (Mode.PY, Mode.BASH) and text.startswith("@g") and len(text) > 2:
             rest = text[2:]
             space = rest.find(" ")
             if space > 0 and rest[:space].replace(".", "").isdigit():
@@ -465,13 +465,6 @@ class CortexShell:
             self.tm.submit(
                 self._run_nl(prompt), name=f"ai:{self._active_session}:{prompt[:30]}", mode="nl"
             )
-        elif self.mode == Mode.GRAPH:
-            if text.strip().lower() == "shush":
-                self.shush_gates = not self.shush_gates
-                state = "on" if self.shush_gates else "off"
-                self.router.write("graph", f"shush mode {state}", mode="GRAPH")
-                return
-            await dispatch_graph(text, self)
         elif self.mode == Mode.BASH:
             self.tm.submit(self._run_bash(text), name=f"bash:{text[:30]}", mode="bash")
 
