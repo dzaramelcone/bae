@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v7.0 Hypermedia Resourcespace -- Phase 32.2: UserView Tool Call Stripping
+**Current focus:** v7.0 Hypermedia Resourcespace -- Phase 33: Task Resourcespace
 
 ## Current Position
 
-Phase: 32.2 of 36 (UserView Tool Call Stripping)
-Plan: 4 of 4 in current phase
-Status: Phase Complete
-Last activity: 2026-02-16 -- Completed 32.2-04 (gap closure: run-block tool detection + validation wrappers)
+Phase: 33 of 36 (Task Resourcespace)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-02-16 -- Completed 33-01 (TaskStore data layer, custom tool cleanup, unit tests)
 
-Progress: [██████████████████████████████████████████████████] 100% of 32.2
+Progress: [█████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░] 50% of 33
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 111 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 12 v7.0)
+- Total plans completed: 112 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 13 v7.0)
 - v6.0 duration: 1 day (2026-02-15)
 - v5.0 duration: 1 day (2026-02-14)
 
@@ -34,6 +34,7 @@ Progress: [███████████████████████
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 33-01: FTS5 content_rowid uses implicit SQLite rowid for TEXT PK; _prev_custom set tracks custom tool names for cleanup
 - v7.0 32.2-04: Validation wrappers raise ResourceError; tool detection uses regex on stripped code, not AST
 - v7.0 32.2-03: Validator cache keyed by id(method); unannotated params default to str in pydantic model
 - v7.0 32.2-02: Body-content write format shows content param between open/close tags; fallback for missing tool callables renders plain <Tag>
@@ -122,6 +123,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32.2-04-PLAN.md (gap closure: run-block tool detection + validation wrappers) -- Phase 32.2 fully complete
+Stopped at: Completed 33-01-PLAN.md (TaskStore data layer, custom tool cleanup, unit tests)
 Branch: main
-Resume file: .planning/phases/32.2-userview-tool-call-stripping/32.2-04-SUMMARY.md
+Resume file: .planning/phases/33-task-resourcespace/33-01-SUMMARY.md
