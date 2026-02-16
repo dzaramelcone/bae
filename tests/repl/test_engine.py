@@ -393,6 +393,49 @@ class TestGraphRegistry:
                 pass
         assert run.state == GraphState.CANCELLED
 
+    async def test_wrap_coro_preserves_trace_on_failure(self, registry, tm):
+        """submit_coro wraps exceptions with .trace into run.result."""
+        trace_nodes = [Start.model_construct(text="a"), End.model_construct(reply="b")]
+
+        async def failing_with_trace():
+            err = RuntimeError("timeout")
+            err.trace = trace_nodes
+            raise err
+
+        run = registry.submit_coro(failing_with_trace(), tm, name="test")
+        for tt in list(tm._tasks.values()):
+            try:
+                await tt.task
+            except Exception:
+                pass
+        assert run.state == GraphState.FAILED
+        assert run.result is not None
+        assert run.result.trace is trace_nodes
+        assert len(run.result.trace) == 2
+
+    async def test_execute_preserves_trace_on_failure(self, registry, tm):
+        """_execute extracts .trace from graph.arun exceptions into run.result."""
+        from bae.graph import Graph
+        from bae.result import GraphResult
+
+        class TraceFailLM(MockLM):
+            async def fill(self, target, resolved, instruction, source=None):
+                err = RuntimeError("LM exploded with trace")
+                err.trace = [Start.model_construct(text="partial")]
+                raise err
+
+        graph = Graph(start=Start)
+        run = registry.submit(graph, tm, lm=TraceFailLM(), text="hello")
+        for tt in list(tm._tasks.values()):
+            try:
+                await tt.task
+            except Exception:
+                pass
+        assert run.state == GraphState.FAILED
+        assert run.result is not None
+        assert isinstance(run.result, GraphResult)
+        assert len(run.result.trace) >= 1
+
     async def test_submit_coro_stores_graphresult(self, registry, tm):
         """submit_coro() stores GraphResult on run when coroutine returns one."""
         from bae.result import GraphResult

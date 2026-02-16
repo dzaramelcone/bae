@@ -117,6 +117,9 @@ class GraphRegistry:
         except Exception as e:
             run.state = GraphState.FAILED
             run.error = f"{type(e).__name__}: {e}"
+            if hasattr(e, "trace"):
+                from bae.result import GraphResult
+                run.result = GraphResult(node=None, trace=e.trace)
             raise
         finally:
             run.ended_ns = time.perf_counter_ns()
@@ -154,6 +157,9 @@ class GraphRegistry:
         except Exception as e:
             run.state = GraphState.FAILED
             run.error = f"{type(e).__name__}: {e}"
+            if hasattr(e, "trace"):
+                from bae.result import GraphResult
+                run.result = GraphResult(node=None, trace=e.trace)
             raise
         finally:
             run.ended_ns = time.perf_counter_ns()
