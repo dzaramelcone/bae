@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 32.1.1 of 36 (Subresource Packages + Shim Removal)
-Plan: 3 of 4 in current phase
-Status: In Progress
-Last activity: 2026-02-16 -- Completed 32.1.1-02 (subresource package extraction)
+Plan: 4 of 4 in current phase
+Status: Complete
+Last activity: 2026-02-16 -- Completed 32.1.1-04 (structure-aware source operations)
 
-Progress: [█████████████████████████████████░░░░░░░░░░░░░] 75% of 32.1.1
+Progress: [█████████████████████████████████████████████████] 100% of 32.1.1
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 110 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 11 v7.0)
+- Total plans completed: 111 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 12 v7.0)
 - v6.0 duration: 1 day (2026-02-15)
 - v5.0 duration: 1 day (2026-02-14)
 
@@ -34,6 +34,7 @@ Progress: [███████████████████████
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 32.1.1-04: Role grouping only for convention packages (with view.py); tstring Template.__str__ returns repr so use manual render
 - v7.0 32.1.1-03: Include _LINE_RANGE_RE in home __init__.py exports (ai.py imports it)
 - v7.0 32.1.1-02: Meta _module_path stays as service module (needs AST defs); enter() references package for orientation
 - v7.0 32.1.1-02: Subresource packages follow {name}/{__init__.py, view.py, service.py}; view delegates to stateless service functions
@@ -97,6 +98,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32.1.1-02-PLAN.md (subresource package extraction)
+Stopped at: Completed 32.1.1-04-PLAN.md (structure-aware source operations -- phase 32.1.1 complete)
 Branch: main
-Resume file: .planning/phases/32.1.1-subresource-packages-shim-removal/32.1.1-03-SUMMARY.md
+Resume file: .planning/phases/32.1.1-subresource-packages-shim-removal/32.1.1-04-SUMMARY.md
