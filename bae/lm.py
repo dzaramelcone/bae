@@ -410,7 +410,7 @@ class AgenticBackend:
 class ClaudeCLIBackend:
     """LLM backend using Claude CLI subprocess."""
 
-    def __init__(self, model: str = "claude-opus-4-6", timeout: int = 20):
+    def __init__(self, model: str = "claude-opus-4-6", timeout: int = 120):
         self.model = model
         self.timeout = timeout
 

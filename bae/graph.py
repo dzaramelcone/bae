@@ -327,122 +327,127 @@ class Graph:
         current: Node | None = start_node
         iters = 0
 
-        while current is not None:
-            await asyncio.sleep(0)  # yield to event loop
+        try:
+            while current is not None:
+                await asyncio.sleep(0)  # yield to event loop
 
-            # Iteration guard
-            if max_iters and iters >= max_iters:
-                err = BaeError(f"Graph execution exceeded {max_iters} iterations")
-                err.trace = trace
-                raise err
+                # Iteration guard
+                if max_iters and iters >= max_iters:
+                    err = BaeError(f"Graph execution exceeded {max_iters} iterations")
+                    err.trace = trace
+                    raise err
 
-            # 1. Resolve deps and recalls
-            try:
-                resolved = await resolve_fields(current.__class__, trace, cache)
-            except RecallError:
-                raise  # Already correct type
-            except Exception as e:
-                err = DepError(
-                    f"{e} failed on {current.__class__.__name__}",
-                    node_type=current.__class__,
-                    cause=e,
+                # 1. Resolve deps and recalls
+                try:
+                    resolved = await resolve_fields(current.__class__, trace, cache)
+                except RecallError:
+                    raise  # Already correct type
+                except Exception as e:
+                    err = DepError(
+                        f"{e} failed on {current.__class__.__name__}",
+                        node_type=current.__class__,
+                        cause=e,
+                    )
+                    err.trace = trace
+                    raise err from e
+
+                # 2. Set resolved values on self
+                for field_name, value in resolved.items():
+                    object.__setattr__(current, field_name, value)
+
+                logger.debug(
+                    "Resolved %d fields on %s",
+                    len(resolved),
+                    current.__class__.__name__,
                 )
-                err.trace = trace
-                raise err from e
 
-            # 2. Set resolved values on self
-            for field_name, value in resolved.items():
-                object.__setattr__(current, field_name, value)
+                # 3. Append to trace (after resolution, before __call__)
+                trace.append(current)
 
-            logger.debug(
-                "Resolved %d fields on %s",
-                len(resolved),
-                current.__class__.__name__,
-            )
+                # 4. Determine routing and execute
+                strategy = _get_routing_strategy(current.__class__)
 
-            # 3. Append to trace (after resolution, before __call__)
-            trace.append(current)
+                if strategy[0] == "terminal":
+                    # Terminal node -- already in trace, exit
+                    current = None
+                elif strategy[0] == "custom":
+                    # Custom __call__ logic
+                    source_node = current
+                    if _wants_lm(current.__class__.__call__):
+                        current = await current(lm)
+                    else:
+                        current = await current()
 
-            # 4. Determine routing and execute
-            strategy = _get_routing_strategy(current.__class__)
+                    # Fill required plain fields the caller didn't set
+                    if current is not None:
+                        model_fields = current.__class__.model_fields
+                        plain = {
+                            n for n, k in classify_fields(current.__class__).items()
+                            if k == "plain" and n in model_fields
+                        }
+                        unfilled = {
+                            n for n in plain
+                            if n not in (current.model_fields_set or set())
+                            and model_fields[n].is_required()
+                        }
+                        if unfilled:
+                            target_resolved = await resolve_fields(
+                                current.__class__, trace, cache
+                            )
+                            for name in plain & (current.model_fields_set or set()):
+                                target_resolved[name] = getattr(current, name)
+                            current = await lm.fill(
+                                current.__class__, target_resolved,
+                                _build_instruction(current.__class__),
+                                source=source_node,
+                            )
 
-            if strategy[0] == "terminal":
-                # Terminal node -- already in trace, exit
-                current = None
-            elif strategy[0] == "custom":
-                # Custom __call__ logic
-                source_node = current
-                if _wants_lm(current.__class__.__call__):
-                    current = await current(lm)
+                    # Fire effects annotated on the return type hint
+                    if current is not None:
+                        source_cls = source_node.__class__
+                        raw_hint = get_type_hints(
+                            source_cls.__call__, include_extras=True
+                        ).get("return")
+                        if raw_hint:
+                            for fn in _get_effects(raw_hint, current.__class__):
+                                result = fn(current)
+                                if asyncio.iscoroutine(result):
+                                    await result
                 else:
-                    current = await current()
+                    # Ellipsis body -- LM routing via v2 API
+                    source_cls = current.__class__
+                    if strategy[0] == "make":
+                        target_type = strategy[1]
+                    elif strategy[0] == "decide":
+                        types_list = list(strategy[1])
+                        context = _build_context(current)
+                        target_type = await lm.choose_type(types_list, context)
+                    else:
+                        current = None
+                        iters += 1
+                        continue
 
-                # Fill required plain fields the caller didn't set
-                if current is not None:
-                    model_fields = current.__class__.model_fields
-                    plain = {
-                        n for n, k in classify_fields(current.__class__).items()
-                        if k == "plain" and n in model_fields
-                    }
-                    unfilled = {
-                        n for n in plain
-                        if n not in (current.model_fields_set or set())
-                        and model_fields[n].is_required()
-                    }
-                    if unfilled:
-                        target_resolved = await resolve_fields(
-                            current.__class__, trace, cache
-                        )
-                        for name in plain & (current.model_fields_set or set()):
-                            target_resolved[name] = getattr(current, name)
-                        current = await lm.fill(
-                            current.__class__, target_resolved,
-                            _build_instruction(current.__class__),
-                            source=source_node,
-                        )
+                    # Resolve target's dep/recall fields before fill
+                    target_resolved = await resolve_fields(target_type, trace, cache)
+                    instruction = _build_instruction(target_type)
+                    current = await lm.fill(
+                        target_type, target_resolved, instruction, source=current
+                    )
 
-                # Fire effects annotated on the return type hint
-                if current is not None:
-                    source_cls = source_node.__class__
+                    # Fire effects annotated on the return type hint
                     raw_hint = get_type_hints(
                         source_cls.__call__, include_extras=True
                     ).get("return")
-                    if raw_hint:
-                        for fn in _get_effects(raw_hint, current.__class__):
-                            result = fn(current)
-                            if asyncio.iscoroutine(result):
-                                await result
-            else:
-                # Ellipsis body -- LM routing via v2 API
-                source_cls = current.__class__
-                if strategy[0] == "make":
-                    target_type = strategy[1]
-                elif strategy[0] == "decide":
-                    types_list = list(strategy[1])
-                    context = _build_context(current)
-                    target_type = await lm.choose_type(types_list, context)
-                else:
-                    current = None
-                    iters += 1
-                    continue
+                    for fn in _get_effects(raw_hint, target_type):
+                        result = fn(current)
+                        if asyncio.iscoroutine(result):
+                            await result
 
-                # Resolve target's dep/recall fields before fill
-                target_resolved = await resolve_fields(target_type, trace, cache)
-                instruction = _build_instruction(target_type)
-                current = await lm.fill(
-                    target_type, target_resolved, instruction, source=current
-                )
-
-                # Fire effects annotated on the return type hint
-                raw_hint = get_type_hints(
-                    source_cls.__call__, include_extras=True
-                ).get("return")
-                for fn in _get_effects(raw_hint, target_type):
-                    result = fn(current)
-                    if asyncio.iscoroutine(result):
-                        await result
-
-            iters += 1
+                iters += 1
+        except Exception as e:
+            if not hasattr(e, "trace"):
+                e.trace = trace
+            raise
 
         return GraphResult(node=None, trace=trace)
 

@@ -313,6 +313,67 @@ class FactoryEnd(Node):
     async def __call__(self) -> None: ...
 
 
+class TraceA(Node):
+    msg: str
+    def __call__(self) -> TraceB: ...
+
+
+class TraceB(Node):
+    reply: str
+    def __call__(self) -> TraceC: ...
+
+
+class TraceC(Node):
+    final: str
+    async def __call__(self) -> None: ...
+
+
+class TestArunPartialTrace:
+    async def test_runtime_error_carries_trace(self):
+        """RuntimeError from LM timeout carries .trace with partial execution."""
+
+        class TraceMockLM:
+            """LM that succeeds on first fill then raises RuntimeError."""
+
+            def __init__(self):
+                self.calls = 0
+
+            async def choose_type(self, types, context):
+                return types[0]
+
+            async def fill(self, target, resolved, instruction, source=None):
+                self.calls += 1
+                if self.calls > 1:
+                    raise RuntimeError("Claude CLI timed out after 120s")
+                return target.model_construct(**resolved)
+
+            async def make(self, node, target):
+                raise NotImplementedError
+
+            async def decide(self, node):
+                raise NotImplementedError
+
+        graph_obj = Graph(start=TraceA)
+        lm = TraceMockLM()
+        with pytest.raises(RuntimeError, match="timed out") as exc_info:
+            await graph_obj.arun(msg="hi", lm=lm)
+        assert hasattr(exc_info.value, "trace")
+        assert isinstance(exc_info.value.trace, list)
+        # TraceA was traced, TraceB fill succeeded, then TraceC fill raised
+        assert len(exc_info.value.trace) >= 2
+        assert type(exc_info.value.trace[0]).__name__ == "TraceA"
+        assert type(exc_info.value.trace[1]).__name__ == "TraceB"
+
+    async def test_bae_error_trace_not_overwritten(self):
+        """BaeError from max_iters already has .trace -- outer catch doesn't overwrite."""
+        graph_obj = Graph(start=Infinite)
+        lm = MockLM(sequence=[])
+        with pytest.raises(BaeError, match="exceeded") as exc_info:
+            await graph_obj.arun(lm=lm, max_iters=5)
+        assert hasattr(exc_info.value, "trace")
+        assert len(exc_info.value.trace) == 5
+
+
 class TestGraphFactory:
     def test_graph_factory_returns_callable(self):
         """graph() returns an async callable."""
