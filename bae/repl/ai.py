@@ -448,7 +448,7 @@ def _build_context(namespace: dict) -> str:
     """
     from bae.graph import Graph
     from bae.node import Node
-    from bae.repl.resource import ResourceHandle
+    from bae.repl.spaces import ResourceHandle
 
     lines: list[str] = []
 
