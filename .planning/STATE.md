@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 32.2 of 36 (UserView Tool Call Stripping)
-Plan: 3 of 3 in current phase
+Plan: 4 of 4 in current phase
 Status: Phase Complete
-Last activity: 2026-02-16 -- Completed 32.2-03 (pydantic parameter validation)
+Last activity: 2026-02-16 -- Completed 32.2-04 (gap closure: run-block tool detection + validation wrappers)
 
 Progress: [██████████████████████████████████████████████████] 100% of 32.2
 
@@ -34,6 +34,7 @@ Progress: [███████████████████████
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 32.2-04: Validation wrappers raise ResourceError; tool detection uses regex on stripped code, not AST
 - v7.0 32.2-03: Validator cache keyed by id(method); unannotated params default to str in pydantic model
 - v7.0 32.2-02: Body-content write format shows content param between open/close tags; fallback for missing tool callables renders plain <Tag>
 - v7.0 32.1.1-04: Role grouping only for convention packages (with view.py); tstring Template.__str__ returns repr so use manual render
@@ -73,6 +74,12 @@ Recent:
 ### Pending Todos
 
 - Session store: conversation indexing agent (deferred)
+- Source write/edit: auto-commit to VCS on successful write (undo yanks commits); consider jj if git is clunky for this
+- Source write: takes two args (code + test) — both AST-parsed, unit test run immediately, if passes → save + commit + hot reload; full suite runs async in bg, alarm on failure → auto-dispatch subagent to research/diagnose/fix
+- Source edit: same but unit test optional, allowed to fail
+- Source write/edit: coverage check on the unit test if not too heavy/slow
+- Functions table: sort order should match system tools display order; tags should use system tool names (R/W/E/G/Grep)
+- Resource navigation: track which resources agent session has entered, show condensed re-entry info ("left a → reentered b") instead of full entry display on revisit
 
 ### Roadmap Evolution
 
@@ -102,6 +109,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32.2-03-PLAN.md (pydantic parameter validation) -- Phase 32.2 complete
+Stopped at: Completed 32.2-04-PLAN.md (gap closure: run-block tool detection + validation wrappers) -- Phase 32.2 fully complete
 Branch: main
-Resume file: .planning/phases/32.2-userview-tool-call-stripping/32.2-03-SUMMARY.md
+Resume file: .planning/phases/32.2-userview-tool-call-stripping/32.2-04-SUMMARY.md
