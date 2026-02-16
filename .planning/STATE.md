@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 32 of 36 (Source Resourcespace)
-Plan: 3 of 4 in current phase
-Status: In Progress
-Last activity: 2026-02-16 -- Completed 32-03 (write, edit, undo with hot-reload)
+Plan: 4 of 4 in current phase
+Status: Phase Complete
+Last activity: 2026-02-16 -- Completed 32-04 (subresources and shell registration)
 
-Progress: [████████████████████░] 75%
+Progress: [█████████████████████] 100%
 
 ## Performance Metrics
 
@@ -34,6 +34,7 @@ Progress: [████████████████████░] 75%
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 32-04: Subresource classes are module-level; ConfigSubresource returns JSON; tomlkit added for TOML writes
 - v7.0 32-03: _replace_symbol auto-adjusts indentation via textwrap.dedent + col_offset re-indent
 - v7.0 32-03: Hot-reload non-fatal for write(), fatal for edit() (triggers rollback to old_source)
 - v7.0 32-01: Module-level helpers for path resolution; _StubSubresource for not-yet-implemented children
@@ -79,6 +80,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32-03-PLAN.md
+Stopped at: Completed 32-04-PLAN.md (Phase 32 complete)
 Branch: main
-Resume file: .planning/phases/32-source-resourcespace/32-03-SUMMARY.md
+Resume file: .planning/phases/32-source-resourcespace/32-04-SUMMARY.md
