@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: resolved
 phase: 32-source-resourcespace
 source: [32-01-SUMMARY.md, 32-02-SUMMARY.md, 32-03-SUMMARY.md, 32-04-SUMMARY.md, 32-05-SUMMARY.md]
 started: 2026-02-16T23:10:00Z
-updated: 2026-02-16T23:30:00Z
+updated: 2026-02-16T23:55:00Z
 ---
 
 ## Current Test
@@ -71,7 +71,7 @@ skipped: 0
 ## Gaps
 
 - truth: "Package listing shows accurate class/function counts reflecting submodule contents"
-  status: failed
+  status: resolved
   reason: "User reported: 0 classes, 0 functions for all packages including bae. Counts only reflect __init__.py, not submodules."
   severity: minor
   test: 3
@@ -84,7 +84,7 @@ skipped: 0
     - "e.g., 'bae -- Bae: Type-driven agent graphs. (2 subpackages, 14 modules)'"
   debug_session: ".planning/debug/package-counts-zero.md"
 - truth: "home() is a resource with its own tools; homespace() renamed to home()"
-  status: failed
+  status: resolved
   reason: "User reported: homespace() should be home(). Home is a resource — it should have its own tools, not just clear everything."
   severity: major
   test: 11
