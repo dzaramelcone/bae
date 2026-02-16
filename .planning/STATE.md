@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 ## Current Position
 
 Phase: 29 (Observability)
-Plan: 01 of 03 complete
-Status: Executing Phase 29
-Last activity: 2026-02-15 -- Phase 29 Plan 01 complete
+Plan: 03 of 03 complete
+Status: Phase 29 complete
+Last activity: 2026-02-15 -- Phase 29 Plan 03 complete
 
 Progress: v1-v5 done | v6.0 [########..] 78%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 97 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 21 v6.0)
+- Total plans completed: 98 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 22 v6.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -28,6 +28,7 @@ Progress: v1-v5 done | v6.0 [########..] 78%
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
+| 29-03 | Concurrent stress + store persistence | 2min | 2 | 1 |
 | 29-01 | OutputPolicy + dep timing + RSS + events | 4min | 2 | 4 |
 | 28-03 | Shell UX: badge, @g routing, shush | 8min | 2 | 4 |
 | 28-01 | Gate marker + InputGate infrastructure | 3min | 2 | 6 |
@@ -51,6 +52,9 @@ Progress: v1-v5 done | v6.0 [########..] 78%
 
 See PROJECT.md Key Decisions table for full history.
 
+- 29-03: StressStart -> Middle -> End with asyncio.sleep simulates realistic concurrent load
+- 29-03: QUIET + successful = zero events, validated via channel buffer and store count
+- 29-03: Cross-session proof via two SessionStore instances on same db file
 - 29-01: DEP_TIMING_KEY as dep_cache sentinel, matching GATE_HOOK_KEY pattern
 - 29-01: notify signature evolved to (content, meta=None) -- backward compatible
 - 29-01: RSS via resource.getrusage high-water mark, not tracemalloc (zero overhead)
@@ -121,6 +125,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 29-01-PLAN.md (engine instrumentation)
+Stopped at: Completed 29-03-PLAN.md (concurrent stress + store persistence)
 Branch: main
 Resume file: None
