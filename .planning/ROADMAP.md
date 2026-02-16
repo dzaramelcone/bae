@@ -115,14 +115,16 @@ Plans:
   2. All 5 tools resolve paths relative to project root; out-of-scope paths (absolute, `../` traversal) are rejected with clear errors
   3. `read()` shows a budget-aware project file tree within 500 token cap
   4. `source.meta()` enters a subresourcespace for editing the resourcespace's own code
-**Plans**: 5 plans
+**Plans**: 7 plans
 
 Plans:
 - [x] 32-01-PLAN.md — SourceResourcespace core: protocol, module path resolution, path safety, read (TDD)
 - [x] 32-02-PLAN.md — Glob and grep with module-path output (TDD)
 - [x] 32-03-PLAN.md — Write, edit, hot-reload, rollback, and undo (TDD)
 - [x] 32-04-PLAN.md — Subresources (deps, config, tests, meta) and shell registration
-- [ ] 32-05-PLAN.md — Gap closure: fix navigation stack replacement and inject tool callables into namespace
+- [x] 32-05-PLAN.md — Gap closure: fix navigation stack replacement and inject tool callables into namespace
+- [ ] 32-06-PLAN.md — Gap closure: fix package listing counts (submodules instead of class/function)
+- [ ] 32-07-PLAN.md — Gap closure: rename homespace() to home() and make home a resource with tools
 
 ### Phase 33: Task Resourcespace
 **Goal**: Agent can manage persistent tasks through a navigable resource with CRUD and search
