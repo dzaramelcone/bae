@@ -1,4 +1,4 @@
-"""Tests for GRAPH mode command dispatcher and all 5 commands."""
+"""Tests for GRAPH mode command dispatcher and commands."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 import pytest
+from pydantic import BaseModel
 
 from bae.graph import Graph, graph
 from bae.node import Node
@@ -27,6 +28,16 @@ class TEnd(Node):
     reply: str
 
     async def __call__(self) -> None: ...
+
+
+class TInput(BaseModel):
+    value: str
+
+
+class TTypedStart(Node):
+    inp: TInput
+
+    async def __call__(self) -> TEnd: ...
 
 
 # --- Mock LM ---
@@ -109,9 +120,11 @@ def shell():
         _lm=MockLM(),
         router=FakeRouter(),
     )
-    # Populate namespace with a graph factory callable
+    # Populate namespace with graph factory callables
     mygraph = graph(start=TStart)
     s.namespace["mygraph"] = mygraph
+    typed_graph = graph(start=TTypedStart)
+    s.namespace["typed_graph"] = typed_graph
     return s
 
 
@@ -126,6 +139,12 @@ class TestDispatch:
         assert "unknown command" in out.lower()
         assert "run" in out
         assert "list" in out
+
+    async def test_ls_is_unknown(self, shell):
+        """ls is not a recognized command."""
+        await dispatch_graph("ls", shell)
+        out = _output(shell.router)
+        assert "unknown command" in out.lower()
 
     async def test_empty_input(self, shell):
         """Empty input produces no output."""
@@ -177,6 +196,19 @@ class TestCmdRun:
         out = _output(shell.router)
         assert "error" in _meta_types(shell.router)
 
+    async def test_run_injects_param_types(self, shell):
+        """run auto-injects graph callable parameter types into namespace."""
+        shell.namespace["MockLM"] = MockLM
+        # TInput is NOT in shell.namespace initially
+        assert "TInput" not in shell.namespace
+        # Running a command that references typed_graph triggers injection
+        await dispatch_graph("run typed_graph(inp=TInput(value='hi'), lm=MockLM())", shell)
+        out = _output(shell.router)
+        assert "submitted" in out
+        # TInput was injected
+        assert "TInput" in shell.namespace
+        await _drain(shell.tm)
+
     async def test_run_wrong_type_shows_error(self, shell):
         """run with a non-graph/non-coroutine result shows type error."""
         shell.namespace["x"] = 42
@@ -204,12 +236,6 @@ class TestCmdList:
         out = _output(shell.router)
         assert "g1" in out
         assert "done" in out
-
-    async def test_ls_alias(self, shell):
-        """ls works as alias for list."""
-        await dispatch_graph("ls", shell)
-        out = _output(shell.router)
-        assert "(no graph runs)" in out
 
 
 # --- TestCmdCancel ---
