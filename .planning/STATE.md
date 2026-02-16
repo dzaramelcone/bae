@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 31 of 36 (Resource Protocol + Navigation)
-Plan: 0 of 3 in current phase
-Status: Planned
-Last activity: 2026-02-16 -- Roadmap created for v7.0
+Plan: 1 of 3 in current phase
+Status: Executing
+Last activity: 2026-02-16 -- Completed 31-01 (Resource Protocol + Navigation)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 99 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0)
+- Total plans completed: 100 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 1 v7.0)
 - v6.0 duration: 1 day (2026-02-15)
 - v5.0 duration: 1 day (2026-02-14)
 
@@ -34,6 +34,8 @@ Progress: [░░░░░░░░░░] 0%
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 31-01: Dotted navigation pushes full intermediate chain onto stack for correct breadcrumb
+- v7.0 31-01: ResourceHandle guards __getattr__ against underscore-prefixed names
 - v7.0: Navigation is a discoverable affordance -- calling a resource as a function navigates into it
 - v7.0: Resources show functions table with procedural docstrings on entry
 - v7.0: `.nav()` lists targets as `@resource()` hyperlinks; mentions are navigable
@@ -66,6 +68,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Phase 31 planned (3 plans, 3 waves)
+Stopped at: Completed 31-01-PLAN.md
 Branch: main
-Resume file: .planning/phases/31-resource-protocol-navigation/31-CONTEXT.md
+Resume file: .planning/phases/31-resource-protocol-navigation/31-01-SUMMARY.md
