@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 32 of 36 (Source Resourcespace)
-Plan: 6 of 7 in current phase
-Status: In Progress
-Last activity: 2026-02-16 -- Completed 32-06 (gap closure: package summary counts)
+Plan: 7 of 7 in current phase
+Status: Phase Complete
+Last activity: 2026-02-16 -- Completed 32-07 (gap closure: home() orientation builder)
 
 Progress: [█████████████████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 106 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 7 v7.0)
+- Total plans completed: 108 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 9 v7.0)
 - v6.0 duration: 1 day (2026-02-15)
 - v5.0 duration: 1 day (2026-02-14)
 
@@ -41,7 +41,8 @@ Recent:
 - v7.0 32-01: Module-level helpers for path resolution; _StubSubresource for not-yet-implemented children
 - v7.0 32-01: CHAR_CAP=2000 with ResourceError narrowing guidance (no silent pruning)
 - v7.0 31-04: NavResult str subclass with raw __repr__ preserves ANSI in navigation output
-- v7.0 31-03: homespace/back are lambdas wrapping registry methods, not ResourceHandles
+- v7.0 32-07: home() returns NavResult wrapping _build_orientation(); _with_location injects orientation at root for AI context
+- v7.0 31-03: home/back are lambdas wrapping registry methods, not ResourceHandles
 - v7.0 31-03: Resource location injected via _with_location into every AI _send call
 - v7.0 31-02: ResourceError promoted from dataclass to Exception subclass for raise/except
 - v7.0 31-02: Pruning keeps structural lines (headings, tables), trims content to ~2000 chars
@@ -82,6 +83,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32-06-PLAN.md (gap closure: package summary counts)
+Stopped at: Completed 32-07-PLAN.md (gap closure: home() orientation builder)
 Branch: main
-Resume file: .planning/phases/32-source-resourcespace/32-06-SUMMARY.md
+Resume file: .planning/phases/32-source-resourcespace/32-07-SUMMARY.md
