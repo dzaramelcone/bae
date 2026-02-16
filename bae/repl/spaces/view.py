@@ -131,6 +131,7 @@ class ResourceRegistry:
         self._stack: list[Resourcespace] = []
         self._namespace = namespace
         self._home_tools: dict[str, Callable] = {}
+        self._prev_custom: set[str] = set()
 
     @property
     def current(self) -> Resourcespace | None:
@@ -234,10 +235,15 @@ class ResourceRegistry:
             return
         for name in _TOOL_NAMES:
             self._namespace.pop(name, None)
+        for name in self._prev_custom:
+            self._namespace.pop(name, None)
+        self._prev_custom.clear()
         current = self.current
         if current is not None:
             for tool_name, method in current.tools().items():
                 self._namespace[tool_name] = self._make_tool_wrapper(tool_name, method)
+                if tool_name not in _TOOL_NAMES:
+                    self._prev_custom.add(tool_name)
         elif self._home_tools:
             self._namespace.update(self._home_tools)
 
