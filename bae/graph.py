@@ -502,5 +502,9 @@ def graph(start: type[Node]):
     wrapper.__name__ = start.__name__
     wrapper.__doc__ = f"Run {start.__name__} graph."
     wrapper._name = start.__name__
+    wrapper._param_types = {
+        name: fi.annotation for name, fi in g._input_fields.items()
+        if isinstance(fi.annotation, type)
+    }
 
     return wrapper

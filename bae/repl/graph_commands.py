@@ -25,16 +25,15 @@ async def dispatch_graph(text: str, shell) -> None:
     handlers = {
         "run": _cmd_run,
         "list": _cmd_list,
-        "ls": _cmd_list,
         "cancel": _cmd_cancel,
         "inspect": _cmd_inspect,
         "trace": _cmd_trace,
     }
     handler = handlers.get(cmd)
     if handler is None:
-        cmds = ", ".join(sorted(set(handlers) - {"ls"}))
+        cmds = ", ".join(sorted(handlers))
         shell.router.write(
-            "graph", f"unknown command: {cmd}\navailable: {cmds} (ls = list)",
+            "graph", f"unknown command: {cmd}\navailable: {cmds}",
             mode="GRAPH",
         )
         return
@@ -47,6 +46,15 @@ async def _cmd_run(arg: str, shell) -> None:
     if not arg:
         shell.router.write("graph", "usage: run <expr>", mode="GRAPH")
         return
+    # Inject graph callable parameter types into eval namespace
+    for obj in list(shell.namespace.values()):
+        param_types = getattr(obj, "_param_types", None)
+        if param_types:
+            for type_name, type_cls in param_types.items():
+                cls_name = type_cls.__name__
+                if cls_name not in shell.namespace:
+                    shell.namespace[cls_name] = type_cls
+
     try:
         from bae.repl.exec import async_exec
 
