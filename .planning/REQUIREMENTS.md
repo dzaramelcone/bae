@@ -99,49 +99,49 @@ Deferred to v8.0+. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RSP-01 | — | Pending |
-| RSP-02 | — | Pending |
-| RSP-03 | — | Pending |
-| RSP-04 | — | Pending |
-| RSP-05 | — | Pending |
-| RSP-06 | — | Pending |
-| RSP-07 | — | Pending |
-| RSP-08 | — | Pending |
-| RSP-09 | — | Pending |
-| RSP-10 | — | Pending |
-| RSP-11 | — | Pending |
-| RSP-12 | — | Pending |
-| SRC-01 | — | Pending |
-| SRC-02 | — | Pending |
-| SRC-03 | — | Pending |
-| SRC-04 | — | Pending |
-| SRC-05 | — | Pending |
-| TSK-01 | — | Pending |
-| TSK-02 | — | Pending |
-| TSK-03 | — | Pending |
-| TSK-04 | — | Pending |
-| TSK-05 | — | Pending |
-| TSK-06 | — | Pending |
-| TSK-07 | — | Pending |
-| TSK-08 | — | Pending |
-| MEM-01 | — | Pending |
-| MEM-02 | — | Pending |
-| MEM-03 | — | Pending |
-| MEM-04 | — | Pending |
-| MEM-05 | — | Pending |
-| SCH-01 | — | Pending |
-| SCH-02 | — | Pending |
-| SCH-03 | — | Pending |
-| SCH-04 | — | Pending |
-| DSC-01 | — | Pending |
-| DSC-02 | — | Pending |
-| DSC-03 | — | Pending |
+| RSP-01 | Phase 31 | Pending |
+| RSP-02 | Phase 31 | Pending |
+| RSP-03 | Phase 31 | Pending |
+| RSP-04 | Phase 31 | Pending |
+| RSP-05 | Phase 31 | Pending |
+| RSP-06 | Phase 31 | Pending |
+| RSP-07 | Phase 31 | Pending |
+| RSP-08 | Phase 31 | Pending |
+| RSP-09 | Phase 31 | Pending |
+| RSP-10 | Phase 31 | Pending |
+| RSP-11 | Phase 31 | Pending |
+| RSP-12 | Phase 36 | Pending |
+| SRC-01 | Phase 32 | Pending |
+| SRC-02 | Phase 32 | Pending |
+| SRC-03 | Phase 32 | Pending |
+| SRC-04 | Phase 32 | Pending |
+| SRC-05 | Phase 32 | Pending |
+| TSK-01 | Phase 33 | Pending |
+| TSK-02 | Phase 33 | Pending |
+| TSK-03 | Phase 33 | Pending |
+| TSK-04 | Phase 33 | Pending |
+| TSK-05 | Phase 33 | Pending |
+| TSK-06 | Phase 33 | Pending |
+| TSK-07 | Phase 33 | Pending |
+| TSK-08 | Phase 33 | Pending |
+| MEM-01 | Phase 34 | Pending |
+| MEM-02 | Phase 34 | Pending |
+| MEM-03 | Phase 34 | Pending |
+| MEM-04 | Phase 34 | Pending |
+| MEM-05 | Phase 34 | Pending |
+| SCH-01 | Phase 35 | Pending |
+| SCH-02 | Phase 35 | Pending |
+| SCH-03 | Phase 35 | Pending |
+| SCH-04 | Phase 35 | Pending |
+| DSC-01 | Phase 36 | Pending |
+| DSC-02 | Phase 36 | Pending |
+| DSC-03 | Phase 36 | Pending |
 
 **Coverage:**
 - v7.0 requirements: 37 total
-- Mapped to phases: 0
-- Unmapped: 37 (pending roadmap)
+- Mapped to phases: 37
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-16*
-*Last updated: 2026-02-16 after initial definition*
+*Last updated: 2026-02-16 after roadmap creation*

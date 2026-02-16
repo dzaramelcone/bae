@@ -8,6 +8,7 @@
 - v4.0 Cortex -- Phases 14-20 (shipped 2026-02-14)
 - v5.0 Stream Views -- Phases 21-25 (shipped 2026-02-14)
 - v6.0 Graph Runtime -- Phases 26-30 (shipped 2026-02-16)
+- v7.0 Hypermedia Resourcespace -- Phases 31-36 (in progress)
 
 ## Phases
 
@@ -77,7 +78,110 @@
 
 </details>
 
+### v7.0 Hypermedia Resourcespace (In Progress)
+
+- [ ] **Phase 31: Resource Protocol + Navigation** - Resourcespace protocol, registry, navigation state, tool dispatch routing, output pruning
+- [ ] **Phase 32: Source Resourcespace** - Project-scoped file operations proving the resourcespace pattern end-to-end
+- [ ] **Phase 33: Task Resourcespace** - Persistent task CRUD with FTS search and cross-session persistence
+- [ ] **Phase 34: Memory Resourcespace** - Session history as navigable, searchable, taggable resources
+- [ ] **Phase 35: Search Resourcespace** - Federated cross-resourcespace search with navigation hyperlinks
+- [ ] **Phase 36: Discovery + Integration** - Homespace dashboard, AI context injection, resource-scoped view summaries
+
+## Phase Details
+
+### Phase 31: Resource Protocol + Navigation
+**Goal**: Agent can navigate a self-describing resource tree where tools operate on the current resource context
+**Depends on**: Nothing (v7.0 foundation)
+**Requirements**: RSP-01, RSP-02, RSP-03, RSP-04, RSP-05, RSP-06, RSP-07, RSP-08, RSP-09, RSP-10, RSP-11
+**Success Criteria** (what must be TRUE):
+  1. Agent calls a resource as a function and enters it; on entry sees a functions table with procedural docstrings and Python hints for advanced operations
+  2. `.nav()` on any resource lists targets as `@resource()` hyperlinks; `@resource()` mentions are callable to navigate
+  3. `homespace()` returns agent to root from any depth; subresourcespaces nest via dotted calls (e.g., `source.meta()`)
+  4. Standard tools (read/write/edit/glob/grep) dispatch to the current resource's handlers; unsupported tools return clear errors
+  5. All resourcespace tool output is capped at 500 tokens via summary-based pruning; error outputs are never pruned
+**Plans**: TBD
+
+Plans:
+- [ ] 31-01: TBD
+- [ ] 31-02: TBD
+- [ ] 31-03: TBD
+
+### Phase 32: Source Resourcespace
+**Goal**: Agent can navigate into project source and operate on files with path-safe, context-scoped tools
+**Depends on**: Phase 31
+**Requirements**: SRC-01, SRC-02, SRC-03, SRC-04, SRC-05
+**Success Criteria** (what must be TRUE):
+  1. Agent calls `source()` and enters source resourcespace scoped to project directory
+  2. All 5 tools resolve paths relative to project root; out-of-scope paths (absolute, `../` traversal) are rejected with clear errors
+  3. `read()` shows a budget-aware project file tree within 500 token cap
+  4. `source.meta()` enters a subresourcespace for editing the resourcespace's own code
+**Plans**: TBD
+
+Plans:
+- [ ] 32-01: TBD
+- [ ] 32-02: TBD
+
+### Phase 33: Task Resourcespace
+**Goal**: Agent can manage persistent tasks through a navigable resource with CRUD and search
+**Depends on**: Phase 31
+**Requirements**: TSK-01, TSK-02, TSK-03, TSK-04, TSK-05, TSK-06, TSK-07, TSK-08
+**Success Criteria** (what must be TRUE):
+  1. Agent calls `tasks()` and enters task resourcespace; can create tasks with `.add()` and mark them done with `.done()`
+  2. Agent can list all tasks, read individual task details, and update fields (status, priority, tags) via `.update()`
+  3. Agent can search tasks via FTS with `.search()`
+  4. Tasks persist across cortex sessions (SQLite-backed)
+  5. Homespace entry shows outstanding task count
+**Plans**: TBD
+
+Plans:
+- [ ] 33-01: TBD
+- [ ] 33-02: TBD
+
+### Phase 34: Memory Resourcespace
+**Goal**: Agent can explore, search, and tag session history as navigable resources
+**Depends on**: Phase 31
+**Requirements**: MEM-01, MEM-02, MEM-03, MEM-04, MEM-05
+**Success Criteria** (what must be TRUE):
+  1. Agent calls `memory()` and enters memory resourcespace showing sessions organized by date/ID
+  2. Agent can search across sessions via FTS5 and read individual session entries
+  3. Agent can tag session entries for retrieval
+**Plans**: TBD
+
+Plans:
+- [ ] 34-01: TBD
+- [ ] 34-02: TBD
+
+### Phase 35: Search Resourcespace
+**Goal**: Agent can search across all resourcespaces and navigate directly to results
+**Depends on**: Phase 32, Phase 33, Phase 34
+**Requirements**: SCH-01, SCH-02, SCH-03, SCH-04
+**Success Criteria** (what must be TRUE):
+  1. Agent calls `search()` and enters search resourcespace
+  2. Search federates across source, tasks, and memory; results grouped by resourcespace with `@resource()` navigation hyperlinks
+  3. Results capped per-resourcespace to stay within token budget
+**Plans**: TBD
+
+Plans:
+- [ ] 35-01: TBD
+
+### Phase 36: Discovery + Integration
+**Goal**: Homespace serves as a dynamic HATEOAS entry point and AI always knows its current resource context
+**Depends on**: Phase 33, Phase 35
+**Requirements**: RSP-12, DSC-01, DSC-02, DSC-03
+**Success Criteria** (what must be TRUE):
+  1. Homespace `read()` shows all available resourcespaces with descriptions (HATEOAS entry point)
+  2. AI prompt includes current resource location, state, tools, and affordances on every invocation (not just first)
+  3. Tool summaries in UserView include resource context (e.g., `[source] read ai.py (42 lines)`)
+**Plans**: TBD
+
+Plans:
+- [ ] 36-01: TBD
+- [ ] 36-02: TBD
+
 ## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 31 -> 32 -> 33 -> 34 -> 35 -> 36
 
 | Phase | Milestone | Plans | Status | Completed |
 |-------|-----------|-------|--------|-----------|
@@ -111,5 +215,11 @@
 | 28. Input Gates | v6.0 | 3/3 | Complete | 2026-02-15 |
 | 29. Observability | v6.0 | 5/5 | Complete | 2026-02-15 |
 | 30. Agent Core Extraction | v6.0 | 2/2 | Complete | 2026-02-15 |
+| 31. Resource Protocol + Navigation | v7.0 | 0/TBD | Not started | - |
+| 32. Source Resourcespace | v7.0 | 0/TBD | Not started | - |
+| 33. Task Resourcespace | v7.0 | 0/TBD | Not started | - |
+| 34. Memory Resourcespace | v7.0 | 0/TBD | Not started | - |
+| 35. Search Resourcespace | v7.0 | 0/TBD | Not started | - |
+| 36. Discovery + Integration | v7.0 | 0/TBD | Not started | - |
 
 ---
