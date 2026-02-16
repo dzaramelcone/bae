@@ -110,6 +110,19 @@ def make_mem_widget() -> ToolbarWidget:
     return widget
 
 
+def make_gates_widget(shell) -> ToolbarWidget:
+    """Built-in widget: pending input gate count (hidden when zero)."""
+
+    def widget():
+        n = shell.engine.pending_gate_count()
+        if n == 0:
+            return []
+        label = f" {n} gate{'s' if n != 1 else ''} "
+        return [("class:toolbar.gates", label)]
+
+    return widget
+
+
 def make_view_widget(shell) -> ToolbarWidget:
     """Built-in widget: active view mode (hidden in default user view)."""
     def widget():

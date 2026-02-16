@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 from bae.repl.toolbar import (
     ToolbarConfig,
     make_cwd_widget,
+    make_gates_widget,
     make_mem_widget,
     make_mode_widget,
     make_tasks_widget,
@@ -141,6 +142,24 @@ class TestBuiltinWidgets:
         shell.view_mode.value = "ai-self"
         widget = make_view_widget(shell)
         assert widget() == [("class:toolbar.view", " ai-self ")]
+
+    def test_make_gates_widget_hidden_when_zero(self):
+        shell = MagicMock()
+        shell.engine.pending_gate_count.return_value = 0
+        widget = make_gates_widget(shell)
+        assert widget() == []
+
+    def test_make_gates_widget_shows_count(self):
+        shell = MagicMock()
+        shell.engine.pending_gate_count.return_value = 3
+        widget = make_gates_widget(shell)
+        assert widget() == [("class:toolbar.gates", " 3 gates ")]
+
+    def test_make_gates_widget_singular(self):
+        shell = MagicMock()
+        shell.engine.pending_gate_count.return_value = 1
+        widget = make_gates_widget(shell)
+        assert widget() == [("class:toolbar.gates", " 1 gate ")]
 
     def test_make_mem_widget(self):
         widget = make_mem_widget()

@@ -36,6 +36,7 @@ from bae.repl.toolbar import (
     TASKS_PER_PAGE,
     ToolbarConfig,
     make_cwd_widget,
+    make_gates_widget,
     make_mem_widget,
     make_mode_widget,
     make_tasks_widget,
@@ -242,11 +243,13 @@ class CortexShell:
         self._active_session: str = "1"
         self.ai = self._get_or_create_session("1")
         self.namespace["ai"] = self.ai
+        self.shush_gates: bool = False
         self.namespace["engine"] = self.engine
         self.toolbar = ToolbarConfig()
         self.toolbar.add("mode", make_mode_widget(self))
         self.toolbar.add("view", make_view_widget(self))
         self.toolbar.add("tasks", make_tasks_widget(self))
+        self.toolbar.add("gates", make_gates_widget(self))
         self.toolbar.add("mem", make_mem_widget())
         self.toolbar.add("cwd", make_cwd_widget())
         self.namespace["toolbar"] = self.toolbar
@@ -267,6 +270,7 @@ class CortexShell:
                     "toolbar.mode": "bg:#303030 #ffffff bold",
                     "toolbar.view": "bg:#303030 #ffaf87",
                     "toolbar.tasks": "fg:ansiyellow bold",
+                    "toolbar.gates": "fg:ansimagenta bold",
                     "toolbar.mem": "#808080",
                     "toolbar.cwd": "#808080",
                 }
