@@ -9,7 +9,6 @@ nav trees, and error messages with @resource() hyperlinks.
 from __future__ import annotations
 
 import difflib
-from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from rich.tree import Tree
@@ -48,12 +47,13 @@ class Resourcespace(Protocol):
         ...
 
 
-@dataclass
-class ResourceError:
+class ResourceError(Exception):
     """Protocol-level error with navigation hints."""
 
-    message: str
-    hints: list[str] = field(default_factory=list)
+    def __init__(self, message: str, hints: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.hints = hints or []
 
     def __str__(self) -> str:
         parts = [self.message]
