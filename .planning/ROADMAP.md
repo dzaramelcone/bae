@@ -173,11 +173,11 @@ Plans:
   3. Agent can search tasks via FTS with `.search()`
   4. Tasks persist across cortex sessions (SQLite-backed)
   5. Homespace entry shows outstanding task count
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 33-01: TBD
-- [ ] 33-02: TBD
+- [ ] 33-01-PLAN.md — TaskStore data layer (SQLite schema, CRUD, FTS5) + custom tool cleanup
+- [ ] 33-02-PLAN.md — TaskResourcespace service, view, shell registration, homespace count
 
 ### Phase 34: Memory Resourcespace
 **Goal**: Agent can explore, search, and tag session history as navigable resources
