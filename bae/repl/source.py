@@ -14,6 +14,7 @@ import importlib
 import re
 import subprocess
 import textwrap
+import tomllib
 from pathlib import Path
 
 from bae.repl.resource import ResourceError, Resourcespace
@@ -225,24 +226,264 @@ def _hot_reload(module_dotted: str, filepath: Path, old_source: str) -> None:
 _GLOB_VALID = re.compile(r"^[a-zA-Z0-9_.*]+(\.[a-zA-Z0-9_.*]+)*$")
 
 
-class _StubSubresource:
-    """Minimal Resourcespace stub for not-yet-implemented subresources."""
+class DepsSubresource:
+    """Project dependencies from pyproject.toml."""
 
-    def __init__(self, name: str, description: str) -> None:
-        self.name = name
-        self.description = description
+    name = "deps"
+    description = "Project dependencies"
+
+    def __init__(self, project_root: Path) -> None:
+        self._root = project_root
+
+    def _read_pyproject(self) -> dict:
+        path = self._root / "pyproject.toml"
+        if not path.exists():
+            raise ResourceError("pyproject.toml not found")
+        return tomllib.loads(path.read_text())
 
     def enter(self) -> str:
-        raise ResourceError(f"{self.name}: not yet implemented")
+        data = self._read_pyproject()
+        deps = data.get("project", {}).get("dependencies", [])
+        return f"Project dependencies ({len(deps)} packages)\n\nread() to list, write(name) to add"
 
     def nav(self) -> str:
-        raise ResourceError(f"{self.name}: not yet implemented")
+        data = self._read_pyproject()
+        deps = data.get("project", {}).get("dependencies", [])
+        return "\n".join(deps) if deps else "(no dependencies)"
 
     def read(self, target: str = "") -> str:
-        raise ResourceError(f"{self.name}: not yet implemented")
+        data = self._read_pyproject()
+        deps = data.get("project", {}).get("dependencies", [])
+        if not target:
+            return "\n".join(deps) if deps else "(no dependencies)"
+        matches = [d for d in deps if target.lower() in d.lower()]
+        return "\n".join(matches) if matches else f"(no dependency matching '{target}')"
+
+    def write(self, target: str, content: str = "") -> str:
+        result = subprocess.run(
+            ["uv", "add", target],
+            capture_output=True,
+            text=True,
+            cwd=self._root,
+        )
+        if result.returncode != 0:
+            raise ResourceError(f"Failed to add {target}: {result.stderr.strip()}")
+        return f"Added {target}"
 
     def supported_tools(self) -> set[str]:
-        return set()
+        return {"read", "write"}
+
+    def children(self) -> dict[str, Resourcespace]:
+        return {}
+
+
+class ConfigSubresource:
+    """Project configuration from pyproject.toml."""
+
+    name = "config"
+    description = "Project configuration (pyproject.toml)"
+
+    def __init__(self, project_root: Path) -> None:
+        self._root = project_root
+
+    def _read_pyproject(self) -> dict:
+        path = self._root / "pyproject.toml"
+        if not path.exists():
+            raise ResourceError("pyproject.toml not found")
+        return tomllib.loads(path.read_text())
+
+    def enter(self) -> str:
+        data = self._read_pyproject()
+        sections = list(data.keys())
+        return f"pyproject.toml ({len(sections)} sections)\n\nSections: {', '.join(sections)}"
+
+    def nav(self) -> str:
+        data = self._read_pyproject()
+        return "\n".join(data.keys())
+
+    def read(self, target: str = "") -> str:
+        data = self._read_pyproject()
+        if not target:
+            return "\n".join(data.keys())
+        if target not in data:
+            raise ResourceError(
+                f"Section '{target}' not found",
+                hints=[f"Available: {', '.join(data.keys())}"],
+            )
+        import json
+
+        result = json.dumps(data[target], indent=2)
+        if len(result) > CHAR_CAP:
+            raise ResourceError(
+                f"Section '{target}' is {len(result)} chars (cap {CHAR_CAP}). "
+                "Read a subsection key instead."
+            )
+        return result
+
+    def supported_tools(self) -> set[str]:
+        return {"read"}
+
+    def children(self) -> dict[str, Resourcespace]:
+        return {}
+
+
+class TestsSubresource:
+    """Test suite discovery and search."""
+
+    name = "tests"
+    description = "Test suite"
+
+    def __init__(self, project_root: Path) -> None:
+        self._root = project_root
+
+    def _test_dir(self) -> Path:
+        return self._root / "tests"
+
+    def _discover_test_modules(self) -> list[str]:
+        test_dir = self._test_dir()
+        if not test_dir.exists():
+            return []
+        modules = []
+        for py_file in sorted(test_dir.rglob("*.py")):
+            if py_file.name.startswith("test_") or py_file.name == "conftest.py":
+                rel = py_file.relative_to(self._root)
+                parts = list(rel.parts)
+                if parts[-1].endswith(".py"):
+                    parts[-1] = parts[-1][:-3]
+                modules.append(".".join(parts))
+        return modules
+
+    def enter(self) -> str:
+        modules = self._discover_test_modules()
+        return (
+            f"Test suite ({len(modules)} modules)\n\n"
+            "read() to list modules, grep(pattern) to search tests"
+        )
+
+    def nav(self) -> str:
+        modules = self._discover_test_modules()
+        return "\n".join(modules) if modules else "(no test modules)"
+
+    def read(self, target: str = "") -> str:
+        if not target:
+            modules = self._discover_test_modules()
+            return "\n".join(modules) if modules else "(no test modules)"
+        # Read specific test module
+        test_dir = self._test_dir()
+        # target could be like "test_source" or "tests.test_source"
+        parts = target.replace("tests.", "").split(".")
+        filepath = test_dir / (parts[0] + ".py")
+        if not filepath.exists():
+            raise ResourceError(
+                f"Test module '{target}' not found",
+                hints=["read() to list available test modules"],
+            )
+        source = filepath.read_text()
+        if len(source) > CHAR_CAP:
+            # Show summary instead
+            tree = ast.parse(source)
+            lines = []
+            for node in ast.iter_child_nodes(tree):
+                if isinstance(node, ast.ClassDef):
+                    lines.append(f"class {node.name}")
+                    for child in ast.iter_child_nodes(node):
+                        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            lines.append(f"  {child.name}")
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    lines.append(node.name)
+            return "\n".join(lines)
+        return source
+
+    def grep(self, pattern: str, path: str = "") -> str:
+        """Search test files for pattern."""
+        try:
+            regex = re.compile(pattern)
+        except re.error as e:
+            raise ResourceError(f"Invalid regex: {e}")
+        test_dir = self._test_dir()
+        if not test_dir.exists():
+            return "(no test directory)"
+        matches = []
+        files = sorted(test_dir.rglob("*.py"))
+        if path:
+            files = [f for f in files if path in f.name]
+        for filepath in files:
+            try:
+                lines = filepath.read_text().splitlines()
+            except Exception:
+                continue
+            rel = filepath.relative_to(self._root)
+            mod = ".".join(rel.with_suffix("").parts)
+            for lineno, line in enumerate(lines, 1):
+                if regex.search(line):
+                    matches.append(f"{mod}:{lineno}: {line.strip()}")
+                    if len(matches) > 50:
+                        break
+            if len(matches) > 50:
+                break
+        if not matches:
+            return "(no matches)"
+        result = "\n".join(matches[:50])
+        if len(matches) > 50:
+            result += "\n[50+ matches, narrow search]"
+        return result
+
+    def supported_tools(self) -> set[str]:
+        return {"read", "grep"}
+
+    def children(self) -> dict[str, Resourcespace]:
+        return {}
+
+
+class MetaSubresource:
+    """Source resourcespace implementation -- reads/edits its own code."""
+
+    name = "meta"
+    description = "Source resourcespace implementation"
+
+    def __init__(self, project_root: Path) -> None:
+        self._root = project_root
+        self._module_path = "bae.repl.source"
+
+    def _source_file(self) -> Path:
+        return _module_to_path(self._root, self._module_path)
+
+    def enter(self) -> str:
+        return (
+            "Source resourcespace implementation (bae.repl.source)\n\n"
+            "read() for summary, read(symbol) for symbol source, edit(symbol, new_source) to modify"
+        )
+
+    def nav(self) -> str:
+        filepath = self._source_file()
+        source = filepath.read_text()
+        tree = ast.parse(source)
+        lines = []
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, ast.ClassDef):
+                lines.append(f"class {node.name}")
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                lines.append(node.name)
+        return "\n".join(lines)
+
+    def read(self, target: str = "") -> str:
+        if not target:
+            return _module_summary(self._root, self._module_path)
+        # Read a specific symbol from source.py
+        return _read_symbol(self._root, f"{self._module_path}.{target}")
+
+    def edit(self, target: str, new_source: str = "") -> str:
+        """Edit a symbol in source.py."""
+        filepath = self._source_file()
+        old_source = filepath.read_text()
+        symbol_parts = target.split(".")
+        new_full = _replace_symbol(old_source, symbol_parts, new_source)
+        filepath.write_text(new_full)
+        _hot_reload(self._module_path, filepath, old_source)
+        return f"Edited {target} in {self._module_path}"
+
+    def supported_tools(self) -> set[str]:
+        return {"read", "edit"}
 
     def children(self) -> dict[str, Resourcespace]:
         return {}
@@ -257,10 +498,10 @@ class SourceResourcespace:
     def __init__(self, project_root: Path) -> None:
         self._root = project_root
         self._children = {
-            "meta": _StubSubresource("meta", "Resourcespace implementation source"),
-            "deps": _StubSubresource("deps", "Project dependencies (pyproject.toml)"),
-            "config": _StubSubresource("config", "Project configuration (pyproject.toml)"),
-            "tests": _StubSubresource("tests", "Test modules and runner"),
+            "meta": MetaSubresource(project_root),
+            "deps": DepsSubresource(project_root),
+            "config": ConfigSubresource(project_root),
+            "tests": TestsSubresource(project_root),
         }
 
     def enter(self) -> str:

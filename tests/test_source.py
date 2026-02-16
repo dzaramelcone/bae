@@ -1,5 +1,5 @@
 """Tests for SourceResourcespace: protocol, path resolution, safety, read, enter/nav,
-glob, grep, write, edit, hot-reload, rollback, and undo."""
+glob, grep, write, edit, hot-reload, rollback, undo, and subresources."""
 
 import subprocess
 import sys
@@ -390,3 +390,81 @@ class TestUndo:
         )
         result = src.undo()
         assert "revert" in result.lower() or "reverted" in result.lower()
+
+
+# --- Subresources ---
+
+
+class TestDepsSubresource:
+    def test_read_lists_dependencies(self, src):
+        result = src.children()["deps"].read()
+        # Should list project dependencies from pyproject.toml
+        assert "pydantic" in result
+
+    def test_read_filters_by_target(self, src):
+        result = src.children()["deps"].read("pydantic")
+        assert "pydantic" in result
+
+    def test_enter_shows_count(self, src):
+        result = src.children()["deps"].enter()
+        assert "dependencies" in result.lower()
+
+    def test_supported_tools(self, src):
+        assert src.children()["deps"].supported_tools() == {"read", "write"}
+
+
+class TestConfigSubresource:
+    def test_read_lists_sections(self, src):
+        result = src.children()["config"].read()
+        assert "project" in result
+        assert "build-system" in result
+
+    def test_read_project_section(self, src):
+        result = src.children()["config"].read("project")
+        assert "bae" in result
+
+    def test_enter_shows_sections(self, src):
+        result = src.children()["config"].enter()
+        assert "pyproject.toml" in result
+
+    def test_read_nonexistent_section_raises(self, src):
+        with pytest.raises(ResourceError, match="not found"):
+            src.children()["config"].read("nonexistent_section")
+
+    def test_supported_tools(self, src):
+        assert src.children()["config"].supported_tools() == {"read"}
+
+
+class TestTestsSubresource:
+    def test_read_lists_test_modules(self, src):
+        result = src.children()["tests"].read()
+        assert "test_source" in result
+
+    def test_enter_shows_count(self, src):
+        result = src.children()["tests"].enter()
+        assert "test" in result.lower()
+
+    def test_supported_tools(self, src):
+        assert src.children()["tests"].supported_tools() == {"read", "grep"}
+
+
+class TestMetaSubresource:
+    def test_read_shows_summary(self, src):
+        result = src.children()["meta"].read()
+        assert "bae.repl.source" in result
+
+    def test_read_symbol(self, src):
+        result = src.children()["meta"].read("DepsSubresource")
+        assert "class DepsSubresource" in result
+
+    def test_nav_lists_symbols(self, src):
+        result = src.children()["meta"].nav()
+        assert "SourceResourcespace" in result
+        assert "DepsSubresource" in result
+
+    def test_enter_shows_description(self, src):
+        result = src.children()["meta"].enter()
+        assert "source" in result.lower()
+
+    def test_supported_tools(self, src):
+        assert src.children()["meta"].supported_tools() == {"read", "edit"}
