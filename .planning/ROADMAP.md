@@ -105,11 +105,11 @@ Plans:
   3. `cancel <id>` stops a running graph and cleans up its resources
   4. `inspect <id>` displays the full execution trace with node timings and field values
   5. `trace <id>` shows node transition history for a running or completed graph
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 27-01: TBD
-- [ ] 27-02: TBD
+- [ ] 27-01-PLAN.md -- Graph.params property, GraphRun.result field, engine submit_coro
+- [ ] 27-02-PLAN.md -- GRAPH mode command dispatcher (run/list/cancel/inspect/trace)
 
 ### Phase 28: Input Gates
 **Goal**: Graphs can pause for human input and Dzara can respond from any mode
@@ -173,7 +173,7 @@ Plans:
 | 24. Execution Display | v5.0 | 1/1 | Complete | 2026-02-14 |
 | 25. Views Completion | v5.0 | 3/3 | Complete | 2026-02-14 |
 | 26. Engine Foundation | v6.0 | 4/4 | Complete | 2026-02-15 |
-| 27. Graph Mode | v6.0 | 0/TBD | Not started | - |
+| 27. Graph Mode | v6.0 | 0/2 | Not started | - |
 | 28. Input Gates | v6.0 | 0/TBD | Not started | - |
 | 29. Observability | v6.0 | 0/TBD | Not started | - |
 
