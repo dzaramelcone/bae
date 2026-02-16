@@ -66,6 +66,8 @@ Recent:
 - v7.0: Resources provide Python hints on entry for advanced `<run>` operations
 - v7.0 32-02: fnmatch on dotted module paths for glob; grep caps at 50 matches with overflow indicator
 - [Phase 32]: Package detection uses filepath.name == '__init__.py' to branch summary format; packages show subpackage/module counts
+- [Phase 32.2]: Error detection uses dual approach: structured is_error flag + _is_error_output heuristic fallback
+- [Phase 32.2]: Intermediate response suppression by removing mid-loop writes, single write after loop
 
 ### Pending Todos
 
@@ -99,6 +101,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32.2-02-PLAN.md (typed XML signatures in resource entry functions table)
+Stopped at: Completed 32.2-01-PLAN.md (tool summary format + response filtering)
 Branch: main
-Resume file: .planning/phases/32.2-userview-tool-call-stripping/32.2-02-SUMMARY.md
+Resume file: .planning/phases/32.2-userview-tool-call-stripping/32.2-01-SUMMARY.md
