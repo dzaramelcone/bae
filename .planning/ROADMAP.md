@@ -155,10 +155,12 @@ Plans:
 
 **Goal:** Strip tool call content from UserView and AI context history; prune everything but tool I/O and agent's last message; resource entry shows AI-native tool tags with docstring summaries
 **Depends on:** Phase 32.1
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 32.2 to break down)
+- [ ] 32.2-01-PLAN.md — Reformat tool summaries to `◆ name(args) -> type` and suppress intermediate AI responses
+- [ ] 32.2-02-PLAN.md — Functions table with typed XML signatures and docstrings on resource entry
+- [ ] 32.2-03-PLAN.md — Pydantic parameter validation on ToolRouter dispatch with helpful errors
 
 ### Phase 33: Task Resourcespace
 **Goal**: Agent can manage persistent tasks through a navigable resource with CRUD and search
