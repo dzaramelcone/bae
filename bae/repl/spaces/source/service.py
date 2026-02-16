@@ -282,21 +282,17 @@ class SourceResourcespace:
         except re.error as e:
             raise ResourceError(f"Invalid regex: {e}")
 
-        # Determine files to search
         if path:
-            _validate_module_path(path)
-            try:
-                filepath = _module_to_path(self._root, path)
-                if filepath.name == "__init__.py":
-                    # Package: search all modules in it
-                    pkg_prefix = path + "."
-                    all_mods = _discover_all_modules(self._root)
-                    targets = [(m, _module_to_path(self._root, m))
-                               for m in all_mods if m == path or m.startswith(pkg_prefix)]
-                else:
-                    targets = [(path, filepath)]
-            except ResourceError:
-                raise
+            filepath = _module_to_path(self._root, path)
+            if filepath.is_dir():
+                # Package: search all modules in it
+                pkg_prefix = path + "."
+                all_mods = _discover_all_modules(self._root)
+                targets = [(m, _module_to_path(self._root, m))
+                           for m in all_mods if m == path or m.startswith(pkg_prefix)]
+            else:
+                # Single module
+                targets = [(path, filepath)]
         else:
             all_mods = _discover_all_modules(self._root)
             targets = [(m, _module_to_path(self._root, m)) for m in all_mods]
@@ -305,14 +301,14 @@ class SourceResourcespace:
         match_cap = 50
         for mod_path, filepath in targets:
             try:
-                lines = filepath.read_text().splitlines()
+                source = filepath.read_text()
             except Exception:
                 continue
-            for lineno, line in enumerate(lines, 1):
+            for lineno, line in enumerate(source.splitlines(), 1):
                 if regex.search(line):
                     matches.append(f"{mod_path}:{lineno}: {line.strip()}")
-                    if len(matches) > match_cap:
-                        break
+                if len(matches) > match_cap:
+                    break
             if len(matches) > match_cap:
                 break
 
@@ -328,6 +324,10 @@ class SourceResourcespace:
             result += f"\n[{match_cap}+ matches, narrow with path argument]"
 
         if len(result) > CHAR_CAP:
+            if path:
+                raise ResourceError(
+                    f"Too many matches. Narrow with a more specific regex pattern."
+                )
             raise ResourceError(
                 f"Too many matches. Narrow with path argument, e.g. grep('{pattern}', 'bae.repl')"
             )

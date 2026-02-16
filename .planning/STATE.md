@@ -91,6 +91,8 @@ Recent:
 - AI `<tool_call>` JSON syntax: AI sometimes emits `{"name": "Read", "arguments": {...}}` instead of `<run>` blocks — not handled
 - Session tag/indicator: disappeared at some point during testing — investigate
 - REPL tracebacks: consider Rich traceback formatting for nicer error display
+- Source read: add line-range support — when symbol exceeds CHAR_CAP, allow `read("module", lines="276-335")` or similar
+- Hot-reload limitation: editing `bae.repl.spaces.source.service` doesn't take effect in running session (service module provides the tools — known limitation, document it)
 
 ### Roadmap Evolution
 
