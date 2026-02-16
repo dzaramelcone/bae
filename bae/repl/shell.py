@@ -340,11 +340,33 @@ class CortexShell:
             self.router.write("graph", "(no graph in namespace)", mode="GRAPH")
             return
         try:
-            run = self.engine.submit(graph, self.tm, lm=self._lm, text=text)
+            run = self.engine.submit(graph, self.tm, lm=self._lm)
             self.router.write(
                 "graph", f"submitted {run.run_id}", mode="GRAPH",
                 metadata={"type": "lifecycle", "run_id": run.run_id},
             )
+            # Surface background task completion/failure through [graph] channel
+            active = self.tm.active()
+            for tt in active:
+                if tt.name.startswith(f"graph:{run.run_id}:"):
+                    def _on_graph_done(task, _run=run):
+                        if task.cancelled():
+                            self.router.write(
+                                "graph", f"{_run.run_id} cancelled", mode="GRAPH",
+                                metadata={"type": "lifecycle", "run_id": _run.run_id},
+                            )
+                        elif task.exception() is not None:
+                            self.router.write(
+                                "graph", f"{_run.run_id} failed: {_run.error}", mode="GRAPH",
+                                metadata={"type": "error", "run_id": _run.run_id},
+                            )
+                        else:
+                            self.router.write(
+                                "graph", f"{_run.run_id} done", mode="GRAPH",
+                                metadata={"type": "lifecycle", "run_id": _run.run_id},
+                            )
+                    tt.task.add_done_callback(_on_graph_done)
+                    break
         except Exception:
             tb = traceback.format_exc()
             self.router.write("graph", tb.rstrip("\n"), mode="GRAPH", metadata={"type": "error"})
