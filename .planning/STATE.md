@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 Phase: 32.1.1 of 36 (Subresource Packages + Shim Removal)
 Plan: 3 of 4 in current phase
 Status: In Progress
-Last activity: 2026-02-16 -- Completed 32.1.1-03 (home view/service convention)
+Last activity: 2026-02-16 -- Completed 32.1.1-02 (subresource package extraction)
 
 Progress: [█████████████████████████████████░░░░░░░░░░░░░] 75% of 32.1.1
 
@@ -35,6 +35,8 @@ See PROJECT.md Key Decisions table for full history.
 
 Recent:
 - v7.0 32.1.1-03: Include _LINE_RANGE_RE in home __init__.py exports (ai.py imports it)
+- v7.0 32.1.1-02: Meta _module_path stays as service module (needs AST defs); enter() references package for orientation
+- v7.0 32.1.1-02: Subresource packages follow {name}/{__init__.py, view.py, service.py}; view delegates to stateless service functions
 - v7.0 32.1.1-01: Within spaces/ package, import from view.py directly to avoid __init__.py circular dependency
 - v7.0 32.1.1-01: Protocol definition site is bae.repl.spaces.view; external code imports from bae.repl.spaces
 - v7.0 32.1-02: Tests import from bae.repl.spaces (canonical); production infrastructure keeps importing from bae.repl.resource (definition site)
@@ -95,6 +97,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32.1.1-03-PLAN.md (home view/service convention)
+Stopped at: Completed 32.1.1-02-PLAN.md (subresource package extraction)
 Branch: main
 Resume file: .planning/phases/32.1.1-subresource-packages-shim-removal/32.1.1-03-SUMMARY.md
