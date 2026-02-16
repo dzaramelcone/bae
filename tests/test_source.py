@@ -468,3 +468,27 @@ class TestMetaSubresource:
 
     def test_supported_tools(self, src):
         assert src.children()["meta"].supported_tools() == {"read", "edit"}
+
+
+# --- Shell registration ---
+
+
+class TestShellRegistration:
+    def test_resource_handle_navigates(self, src):
+        from bae.repl.resource import ResourceHandle, ResourceRegistry
+
+        registry = ResourceRegistry()
+        registry.register(src)
+        handle = ResourceHandle("source", registry)
+        result = handle()
+        assert "source" in result.lower() or "Python" in result
+
+    def test_dotted_access_to_meta(self, src):
+        from bae.repl.resource import ResourceHandle, ResourceRegistry
+
+        registry = ResourceRegistry()
+        registry.register(src)
+        handle = ResourceHandle("source", registry)
+        meta_handle = handle.meta
+        result = meta_handle()
+        assert "source" in result.lower() or "bae.repl.source" in result

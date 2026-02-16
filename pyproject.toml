@@ -9,6 +9,7 @@ dependencies = [
     "prompt-toolkit>=3.0.50",
     "pygments>=2.19",
     "rich>=14.3",
+    "tomlkit>=0.14.0",
 ]
 
 [project.scripts]

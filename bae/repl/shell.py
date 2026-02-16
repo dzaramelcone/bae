@@ -25,6 +25,7 @@ from bae.repl.bash import dispatch_bash
 from bae.repl.engine import GraphRegistry
 from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, toggle_channels
 from bae.repl.resource import ResourceRegistry, ResourceHandle
+from bae.repl.source import SourceResourcespace
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
 from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mode
@@ -231,7 +232,9 @@ class CortexShell:
         self._tool_router = ToolRouter(self.registry)
         self.namespace["homespace"] = lambda: self.registry.homespace()
         self.namespace["back"] = lambda: self.registry.back()
-        # Seed resource handles for registered resourcespaces dynamically
+        source_rs = SourceResourcespace(Path.cwd())
+        self.registry.register(source_rs)
+        self.namespace["source"] = ResourceHandle("source", self.registry)
         self._ai_sessions: dict[str, AI] = {}
         self._active_session: str = "1"
         self.ai = self._get_or_create_session("1")
