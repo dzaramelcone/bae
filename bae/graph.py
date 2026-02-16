@@ -548,10 +548,17 @@ def graph(start: type[Node]):
         if lm is None and dep_cache is None:
             from bae.repl.engine import _graph_ctx
 
+            # Already inside engine execution (e.g. via GRAPH mode `run`) —
+            # just run directly; hooks come from _engine_dep_cache contextvar
+            if _engine_dep_cache.get(None) is not None:
+                ctx = _graph_ctx.get(None)
+                ctx_lm = ctx[2] if ctx else None
+                return await g.arun(lm=ctx_lm, **arun_kwargs)
+
             ctx = _graph_ctx.get(None)
             if ctx is not None:
                 engine, tm, ctx_lm, notify = ctx
-                coro = g.arun(lm=ctx_lm, dep_cache=dep_cache, **arun_kwargs)
+                coro = g.arun(lm=ctx_lm, **arun_kwargs)
                 run = engine.submit_coro(
                     coro, tm, name=start.__name__, notify=notify,
                 )

@@ -243,30 +243,21 @@ def run_graph(
 
     graph = _load_graph_from_module(module)
 
-    # Get the start node class
-    start_cls = graph.start
-
     # Parse input
     if input_json:
         try:
             data = json.loads(input_json)
         except json.JSONDecodeError as e:
             raise typer.BadParameter(f"Invalid JSON: {e}")
-        start_node = start_cls(**data)
     else:
-        # Try to create with defaults
-        try:
-            start_node = start_cls()
-        except TypeError:
-            typer.echo(f"Error: {start_cls.__name__} requires input. Use --input with JSON.")
-            raise typer.Exit(1)
+        data = {}
 
     from bae import ClaudeCLIBackend
 
     lm = ClaudeCLIBackend()
 
     typer.echo(f"Running {graph.start.__name__}...")
-    result = graph.run(start_node, lm=lm)
+    result = graph.run(**data, lm=lm)
 
     typer.echo("\nTrace:")
     for i, node in enumerate(result.trace):

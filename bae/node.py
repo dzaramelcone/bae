@@ -155,6 +155,9 @@ class NodeConfig(TypedDict, total=False):
     lm: LM
     """LM instance pinned to this node class (overrides graph-level LM)."""
 
+    tools: list[str]
+    """Claude CLI tool names enabled during fill (e.g. ["WebSearch", "Bash"])."""
+
 
 class Node(BaseModel):
     """Base class for graph nodes.

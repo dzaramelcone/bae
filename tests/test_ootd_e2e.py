@@ -35,8 +35,11 @@ class TestOotdCLI:
     async def run(self):
         """Run the graph once, share result across tests."""
         lm = ClaudeCLIBackend(model="claude-haiku-4-5-20251001", timeout=60)
+        from examples.ootd import UserInfo
+
         result = await graph.arun(
-            IsTheUserGettingDressed(user_message="ugh i just got up"),
+            user_info=UserInfo(),
+            user_message="ugh i just got up",
             lm=lm,
         )
         return result

@@ -316,7 +316,7 @@ class TestGraphRunAutoRouting:
         graph = Graph(start=StartUnionNode)
         lm = MockLM(sequence=[TerminalTarget(), None])
 
-        result = await graph.arun(StartUnionNode(content="test"), lm=lm)
+        result = await graph.arun(content="test", lm=lm)
 
         # v2: decide strategy calls choose_type then fill
         assert len(lm.choose_type_calls) == 1
@@ -327,7 +327,7 @@ class TestGraphRunAutoRouting:
         graph = Graph(start=StartSingleNode)
         lm = MockLM(sequence=[TerminalTarget(), None])
 
-        result = await graph.arun(StartSingleNode(data="test"), lm=lm)
+        result = await graph.arun(data="test", lm=lm)
 
         # v2: make strategy calls fill directly (no choose_type)
         assert len(lm.fill_calls) == 1
@@ -339,7 +339,7 @@ class TestGraphRunAutoRouting:
         graph = Graph(start=StartCustomNode)
         lm = MockLM(sequence=[TerminalTarget(), None])
 
-        result = await graph.arun(StartCustomNode(data="test"), lm=lm)
+        result = await graph.arun(data="test", lm=lm)
 
         # Custom __call__ calls lm.make internally (v1 method)
         assert len(lm.make_calls) == 1
@@ -352,7 +352,7 @@ class TestGraphRunAutoRouting:
         graph = Graph(start=PureTerminalNode)
         lm = MockLM(sequence=[])  # No LM calls needed
 
-        result = await graph.arun(PureTerminalNode(), lm=lm)
+        result = await graph.arun(lm=lm)
 
         # Should return GraphResult with node=None
         assert isinstance(result, GraphResult)
@@ -369,7 +369,7 @@ class TestGraphRunAutoRouting:
         terminal = TerminalTarget()
         lm = MockLM(sequence=[terminal, None])
 
-        result = await graph.arun(StartSingleNode(data="test"), lm=lm)
+        result = await graph.arun(data="test", lm=lm)
 
         # Should return GraphResult
         assert isinstance(result, GraphResult)
@@ -379,15 +379,14 @@ class TestGraphRunAutoRouting:
     async def test_trace_includes_all_nodes(self):
         """GraphResult.trace includes all visited nodes in order."""
         graph = Graph(start=StartSingleNode)
-        start = StartSingleNode(data="test")
         mid = MidNode()
         end = TerminalTarget()
         lm = MockLM(sequence=[mid, end, None])
 
-        result = await graph.arun(start, lm=lm)
+        result = await graph.arun(data="test", lm=lm)
 
         assert isinstance(result, GraphResult)
         assert len(result.trace) == 3
-        assert result.trace[0] is start
+        assert result.trace[0].data == "test"
         assert result.trace[1] is mid
         assert result.trace[2] is end

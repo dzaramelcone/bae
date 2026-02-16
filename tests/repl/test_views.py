@@ -11,7 +11,7 @@ from bae.repl.ai import _tool_summary
 from bae.repl.views import (
     UserView, DebugView, AISelfView,
     ViewMode, VIEW_CYCLE, VIEW_FORMATTERS,
-    _rich_to_ansi, _strip_executable,
+    _rich_to_ansi, _strip_executable, linkify_paths,
 )
 
 
@@ -39,24 +39,29 @@ def test_user_view_flushes_grouped_panel(mock_pft):
 
 @patch("bae.repl.views.print_formatted_text")
 def test_user_view_fallback_for_stdout(mock_pft):
-    """stdout metadata renders with [py] prefix via FormattedText."""
+    """stdout metadata renders with [py] prefix then ANSI content."""
     view = UserView()
     view.render("py", "#87ff87", "hello", metadata={"type": "stdout"})
-    mock_pft.assert_called_once()
-    fragments = list(mock_pft.call_args[0][0])
+    assert mock_pft.call_count == 2  # label + content
+    # First call: label as FormattedText
+    label_ft = mock_pft.call_args_list[0][0][0]
+    fragments = list(label_ft)
     assert fragments[0] == ("#87ff87 bold", "[py]")
-    assert fragments[2] == ("", "hello")
+    # Second call: content as ANSI
+    content_arg = mock_pft.call_args_list[1][0][0]
+    assert isinstance(content_arg, ANSI)
+    assert "hello" in content_arg.value
 
 
 @patch("bae.repl.views.print_formatted_text")
 def test_user_view_fallback_no_metadata(mock_pft):
-    """No metadata renders with standard [py] prefix."""
+    """No metadata renders with [py] prefix then ANSI content."""
     view = UserView()
     view.render("py", "#87ff87", "hello", metadata=None)
-    mock_pft.assert_called_once()
-    fragments = list(mock_pft.call_args[0][0])
+    assert mock_pft.call_count == 2  # label + content
+    label_ft = mock_pft.call_args_list[0][0][0]
+    fragments = list(label_ft)
     assert fragments[0] == ("#87ff87 bold", "[py]")
-    assert fragments[2] == ("", "hello")
 
 
 @patch("bae.repl.views.print_formatted_text")
@@ -156,28 +161,30 @@ def test_rich_to_ansi_uses_terminal_width(mock_size):
 
 @patch("bae.repl.views.print_formatted_text")
 def test_user_view_tool_translated_shows_summary(mock_pft):
-    """tool_translated metadata renders concise tool_summary, not raw tag."""
+    """tool_translated metadata renders concise tool_summary as ANSI."""
     view = UserView()
     view.render("py", "#87ff87", "<R:foo.py>", metadata={
         "type": "tool_translated",
         "tool_summary": "read foo.py (42 lines)",
     })
     mock_pft.assert_called_once()
-    fragments = list(mock_pft.call_args[0][0])
-    assert fragments[0] == ("#87ff87 bold", "[py]")
-    assert fragments[2] == ("fg:#808080 italic", "read foo.py (42 lines)")
+    arg = mock_pft.call_args[0][0]
+    assert isinstance(arg, ANSI)
+    assert "[py]" in arg.value
+    assert "read foo.py (42 lines)" in arg.value
 
 
 @patch("bae.repl.views.print_formatted_text")
 def test_user_view_tool_translated_fallback(mock_pft):
-    """tool_translated without tool_summary falls back to raw content."""
+    """tool_translated without tool_summary falls back to raw content as ANSI."""
     view = UserView()
     view.render("py", "#87ff87", "<R:foo.py>", metadata={
         "type": "tool_translated",
     })
     mock_pft.assert_called_once()
-    fragments = list(mock_pft.call_args[0][0])
-    assert fragments[2] == ("fg:#808080 italic", "<R:foo.py>")
+    arg = mock_pft.call_args[0][0]
+    assert isinstance(arg, ANSI)
+    assert "<R:foo.py>" in arg.value
 
 
 def test_tool_summary_read():
@@ -230,15 +237,15 @@ def test_debug_view_no_metadata(mock_pft):
 
 @patch("bae.repl.views.print_formatted_text")
 def test_debug_view_content_lines_indented(mock_pft):
-    """DebugView prints 1 header + N content lines, each with indent prefix."""
+    """DebugView prints 1 header + N content lines as ANSI with indent."""
     view = DebugView()
     view.render("py", "#87ff87", "line1\nline2", metadata=None)
     assert mock_pft.call_count == 3  # 1 header + 2 content lines
-    # Check content lines have indent prefix
+    # Content lines are ANSI-rendered with indent
     for call in mock_pft.call_args_list[1:]:
-        ft = call[0][0]
-        fragments = list(ft)
-        assert fragments[0] == ("fg:#808080", "  ")
+        arg = call[0][0]
+        assert isinstance(arg, ANSI)
+        assert arg.value.startswith("  ")
 
 
 def test_debug_view_satisfies_protocol():
@@ -374,8 +381,11 @@ def test_user_view_response_strips_run(mock_pft):
     mock_pft.assert_called()
     all_text = ""
     for call in mock_pft.call_args_list:
-        ft = call[0][0]
-        all_text += "".join(text for _, text in ft)
+        arg = call[0][0]
+        if isinstance(arg, ANSI):
+            all_text += arg.value
+        else:
+            all_text += "".join(text for _, text in arg)
     assert "<run>" not in all_text
     assert "x = 1" not in all_text
     assert "Hello" in all_text
@@ -390,8 +400,54 @@ def test_ai_self_view_response_strips_tools(mock_pft):
                 metadata={"type": "response"})
     all_text = ""
     for call in mock_pft.call_args_list:
-        ft = call[0][0]
-        all_text += "".join(text for _, text in ft)
+        arg = call[0][0]
+        if isinstance(arg, ANSI):
+            all_text += arg.value
+        else:
+            all_text += "".join(text for _, text in arg)
     assert "<R:bae/node.py>" not in all_text
     assert "Checking:" in all_text
     assert "Found it." in all_text
+
+
+# --- linkify_paths tests ---
+
+
+def test_linkify_absolute_path():
+    """Absolute paths get wrapped in OSC 8 vscode:// hyperlinks."""
+    result = linkify_paths("see /foo/bar.py for details")
+    assert "\033]8;;vscode://file/foo/bar.py\033\\" in result
+    assert "/foo/bar.py" in result
+    assert "\033]8;;\033\\" in result
+
+
+def test_linkify_path_with_line():
+    """Paths with :line get line number in vscode:// URI."""
+    result = linkify_paths("error at /foo/bar.py:42")
+    assert "vscode://file/foo/bar.py:42" in result
+
+
+def test_linkify_path_with_line_col():
+    """Paths with :line:col get both in vscode:// URI."""
+    result = linkify_paths("error at /foo/bar.py:42:8")
+    assert "vscode://file/foo/bar.py:42:8" in result
+
+
+def test_linkify_traceback():
+    """Python traceback File lines get linked."""
+    line = '  File "/Users/me/app.py", line 10, in foo'
+    result = linkify_paths(line)
+    assert "vscode://file/Users/me/app.py:10" in result
+
+
+def test_linkify_no_match():
+    """Plain text without paths passes through unchanged."""
+    text = "hello world 42"
+    assert linkify_paths(text) == text
+
+
+def test_linkify_relative_path():
+    """Relative paths starting with ./ get resolved to absolute."""
+    result = linkify_paths("see ./bae/node.py")
+    assert "vscode://file/" in result
+    assert "bae/node.py" in result

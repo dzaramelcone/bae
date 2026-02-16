@@ -15,6 +15,7 @@ import os
 import re
 from enum import Enum
 from io import StringIO
+from pathlib import Path
 
 from prompt_toolkit import print_formatted_text
 from prompt_toolkit.formatted_text import ANSI, FormattedText
@@ -24,6 +25,66 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.text import Text
+
+
+# File path pattern: path ending in known extension, optionally with :line[:col]
+_SOURCE_EXTS = (
+    ".py", ".js", ".ts", ".tsx", ".jsx", ".rs", ".go", ".rb", ".lua",
+    ".sh", ".bash", ".zsh", ".c", ".h", ".cpp", ".hpp", ".java", ".swift",
+    ".json", ".yaml", ".yml", ".toml", ".md", ".txt", ".cfg", ".ini",
+    ".html", ".css", ".scss", ".sql", ".xml", ".svg", ".conf", ".env",
+)
+_EXT_PAT = "|".join(re.escape(e) for e in _SOURCE_EXTS)
+
+# Standalone paths: /foo/bar.py:42:3 or ./foo.py or ~/bar.md
+_PATH_RE = re.compile(
+    r"(?<!\033)(?<!\w)"
+    r"((?:[/~]|\.\.?/)[^\s:\"]+?(?:" + _EXT_PAT + r"))"
+    r"(?::(\d+)(?::(\d+))?)?"
+    r"(?=[\s,)\]}>\"']|$)"
+)
+
+# Python traceback: File "path.py", line N
+_TB_RE = re.compile(
+    r'(File ")((?:[^"]+?(?:' + _EXT_PAT + r')))", line (\d+)'
+)
+
+
+def _osc8(uri: str, display: str) -> str:
+    """Wrap display text in an OSC 8 hyperlink."""
+    return f"\033]8;;{uri}\033\\{display}\033]8;;\033\\"
+
+
+def _vscode_uri(filepath: str, line: str | None = None, col: str | None = None) -> str:
+    """Build vscode://file/ URI from a path and optional line/col."""
+    p = Path(filepath).expanduser()
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    uri = f"vscode://file{p}"
+    if line:
+        uri += f":{line}"
+        if col:
+            uri += f":{col}"
+    return uri
+
+
+def linkify_paths(text: str) -> str:
+    """Wrap file paths in OSC 8 terminal hyperlinks opening in VS Code."""
+    # Traceback lines first (more specific pattern)
+    def _tb_replace(m):
+        prefix, filepath, line = m.group(1), m.group(2), m.group(3)
+        uri = _vscode_uri(filepath, line)
+        linked_path = _osc8(uri, f'{filepath}"), line {line}')
+        return f'{prefix}{linked_path}'
+
+    def _path_replace(m):
+        filepath, line, col = m.group(1), m.group(2), m.group(3)
+        uri = _vscode_uri(filepath, line, col)
+        return _osc8(uri, m.group(0))
+
+    text = _TB_RE.sub(_tb_replace, text)
+    text = _PATH_RE.sub(_path_replace, text)
+    return text
 
 
 def _rich_to_ansi(renderable, width=None):
@@ -98,13 +159,10 @@ class UserView:
             return
 
         if content_type == "tool_translated":
-            summary = meta.get("tool_summary", content)
-            text = FormattedText([
-                (f"{color} bold", f"[{channel_name}]"),
-                ("", " "),
-                ("fg:#808080 italic", summary),
-            ])
-            print_formatted_text(text)
+            summary = linkify_paths(meta.get("tool_summary", content))
+            print_formatted_text(ANSI(
+                f"\033[1m[{channel_name}]\033[0m \033[3;38;5;244m{summary}\033[0m"
+            ))
             return
 
         if content_type == "lifecycle" and channel_name == "graph":
@@ -129,7 +187,7 @@ class UserView:
         parts = [Syntax(code, "python", theme="monokai")]
         if output and output != "(no output)":
             parts.append(Rule(style="dim"))
-            parts.append(Text(output))
+            parts.append(Text.from_ansi(linkify_paths(output)))
         else:
             parts.append(Rule(style="dim"))
             parts.append(Text("(executed)", style="dim italic"))
@@ -168,19 +226,17 @@ class UserView:
         label = f"[{channel_name}]"
         if meta and "label" in meta:
             label = f"[{channel_name}:{meta['label']}]"
-        lines = content.splitlines()
+        linked = linkify_paths(content)
+        lines = linked.splitlines()
         if not lines:
             return
         print_formatted_text(FormattedText([
             (f"{color} bold", label),
             ("", " "),
-            ("", lines[0]),
-        ]))
+        ]), end="")
+        print_formatted_text(ANSI(lines[0]))
         for line in lines[1:]:
-            print_formatted_text(FormattedText([
-                ("fg:#808080", "  "),
-                ("", line),
-            ]))
+            print_formatted_text(ANSI(f"  {line}"))
 
 
 class DebugView:
@@ -201,11 +257,9 @@ class DebugView:
         meta_str = " ".join(f"{k}={v}" for k, v in sorted(meta.items()))
         header = f"[{channel_name}] {meta_str}" if meta_str else f"[{channel_name}]"
         print_formatted_text(FormattedText([(f"{color} bold", header)]))
-        for line in content.splitlines():
-            print_formatted_text(FormattedText([
-                ("fg:#808080", "  "),
-                ("", line),
-            ]))
+        linked = linkify_paths(content)
+        for line in linked.splitlines():
+            print_formatted_text(ANSI(f"  {line}"))
 
 
 class AISelfView:
@@ -236,11 +290,9 @@ class AISelfView:
             return
         display = _strip_executable(content) if content_type == "response" else content
         print_formatted_text(FormattedText([("fg:#b0b040 bold", f"[{tag}]")]))
-        for line in display.splitlines():
-            print_formatted_text(FormattedText([
-                ("fg:#808080", "  "),
-                ("", line),
-            ]))
+        linked = linkify_paths(display)
+        for line in linked.splitlines():
+            print_formatted_text(ANSI(f"  {line}"))
 
 
 class ViewMode(Enum):

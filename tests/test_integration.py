@@ -102,8 +102,7 @@ class TestClaudeCLIBackend:
         """Run a simple graph to completion."""
         graph = Graph(start=Question)
 
-        question = Question(text="What is the capital of France?")
-        result = await graph.arun(question, lm=lm, max_iters=5)
+        result = await graph.arun(text="What is the capital of France?", lm=lm, max_iters=5)
 
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminated successfully
@@ -122,8 +121,7 @@ class TestClaudeCLIBackend:
         lm = ClaudeCLIBackend(model="claude-sonnet-4-20250514", timeout=60)
         graph = Graph(start=Task)
 
-        task = Task(description="Make a peanut butter sandwich")
-        result = await graph.arun(task, lm=lm, max_iters=10)
+        result = await graph.arun(description="Make a peanut butter sandwich", lm=lm, max_iters=10)
 
         assert isinstance(result, GraphResult)
         assert result.node is None  # Terminated successfully

@@ -106,7 +106,6 @@ class TestDepResolutionOnStartNode:
         graph = Graph(start=StartWithDep)
 
         result = await graph.arun(
-            StartWithDep.model_construct(),
             lm=MockV2LM(responses={}),
         )
 
@@ -167,10 +166,7 @@ class TestMultiNodeWithDepsAndRecalls:
         )
         lm = MockV2LM(responses={Analyze: analyze_node})
 
-        result = await graph.arun(
-            GatherInfo.model_construct(),
-            lm=lm,
-        )
+        result = await graph.arun(lm=lm)
 
         assert isinstance(result, GraphResult)
         assert len(result.trace) == 3
@@ -226,7 +222,6 @@ class TestCustomCallWithResolvedDeps:
         graph = Graph(start=CustomWithDep)
 
         result = await graph.arun(
-            CustomWithDep.model_construct(),
             lm=MockV2LM(responses={}),
         )
 
@@ -273,7 +268,6 @@ class TestDepFailureRaisesDepError:
 
         with pytest.raises(DepError) as exc_info:
             await graph.arun(
-                NodeWithFailingDep.model_construct(),
                 lm=MockV2LM(responses={}),
             )
 
@@ -316,18 +310,17 @@ class TestIterationGuard:
         """graph.run with max_iters=5 raises BaeError after 5 iterations."""
         graph = Graph(start=LoopNode)
 
-        loop_node = LoopNode.model_construct(counter=0)
-        lm = MockV2LM(responses={LoopNode: loop_node})
+        lm = MockV2LM(responses={LoopNode: LoopNode.model_construct(counter=0)})
 
         with pytest.raises(BaeError, match="exceeded 5 iterations"):
-            await graph.arun(loop_node, lm=lm, max_iters=5)
+            await graph.arun(lm=lm, max_iters=5)
 
     async def test_max_iters_zero_means_infinite(self):
         """graph.run with max_iters=0 does NOT raise (sentinel for infinite)."""
         graph = Graph(start=CountdownNode)
 
         result = await graph.arun(
-            CountdownNode(steps_left=3),
+            steps_left=3,
             lm=MockV2LM(responses={}),
             max_iters=0,
         )
@@ -366,7 +359,7 @@ class TestTerminalNodeInTrace:
         graph = Graph(start=SimpleTerminal)
 
         result = await graph.arun(
-            SimpleTerminal(message="the end"),
+            message="the end",
             lm=MockV2LM(responses={}),
         )
 
@@ -380,7 +373,6 @@ class TestTerminalNodeInTrace:
         graph = Graph(start=NodeBeforeTerminal)
 
         result = await graph.arun(
-            NodeBeforeTerminal(),
             lm=MockV2LM(responses={}),
         )
 
@@ -423,7 +415,7 @@ class TestRecallInDeps:
         graph = Graph(start=SourceNode)
 
         result = await graph.arun(
-            SourceNode(value="hello"),
+            value="hello",
             lm=MockV2LM(responses={
                 ConsumerNode: ConsumerNode(derived="placeholder"),
             }),

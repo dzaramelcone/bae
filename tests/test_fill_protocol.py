@@ -90,7 +90,7 @@ class TestPromptStructure:
 
         captured_args = {}
 
-        async def capture_cli(prompt, schema):
+        async def capture_cli(prompt, schema, **kwargs):
             captured_args["prompt"] = prompt
             captured_args["schema"] = schema
             return {"vibe": {"mood": "groggy", "cues": "just woke up"}}
@@ -117,7 +117,7 @@ class TestPromptStructure:
 
         captured_args = {}
 
-        async def capture_cli(prompt, schema):
+        async def capture_cli(prompt, schema, **kwargs):
             captured_args["schema"] = schema
             return {"top": "Navy sweater", "bottom": "Chinos"}
 
@@ -201,7 +201,7 @@ class TestGraphFillIntegration:
         lm = CapturingLM(responses={MiddleNode: middle, EndNode: end})
 
         result = await graph.arun(
-            StartNode(user_message="ugh i just got up"),
+            user_message="ugh i just got up",
             lm=lm,
         )
 
@@ -228,7 +228,7 @@ class TestGraphFillIntegration:
 
         lm = CapturingLM(responses={})
 
-        result = await graph.arun(EndNode(top="Tee", bottom="Jeans"), lm=lm)
+        result = await graph.arun(top="Tee", bottom="Jeans", lm=lm)
 
         # Terminal node -- no fill() calls at all
         assert len(lm.fill_calls) == 0
@@ -246,7 +246,7 @@ class TestGraphFillIntegration:
         end = EndNode.model_construct(top="Navy sweater", bottom="Chinos")
 
         lm = CapturingLM(responses={MiddleNode: middle, EndNode: end})
-        await graph.arun(StartNode(user_message="test"), lm=lm)
+        await graph.arun(user_message="test", lm=lm)
 
         # MiddleNode has no docstring -- class name only
         assert lm.fill_calls[0]["instruction"] == "MiddleNode"
@@ -288,7 +288,7 @@ class TestFillNestedModelPreservation:
             ),
         }
 
-        async def mock_cli(prompt, schema):
+        async def mock_cli(prompt, schema, **kwargs):
             return {
                 "vibe": {
                     "mood": "groggy",

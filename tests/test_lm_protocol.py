@@ -129,7 +129,7 @@ class TestClaudeCLIBackendFill:
 
         captured_schema = {}
 
-        async def capture(prompt, schema):
+        async def capture(prompt, schema, **kwargs):
             captured_schema.update(schema)
             return {"name": "Alice", "greeting": "Hi"}
 

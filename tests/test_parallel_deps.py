@@ -353,7 +353,7 @@ class TestDepErrorWrapping:
         """graph.arun raises DepError when a dep fails."""
         graph = Graph(start=FailingDepNode)
         with pytest.raises(DepError) as exc_info:
-            await graph.arun(FailingDepNode.model_construct(bad=""))
+            await graph.arun()
 
         err = exc_info.value
         assert err.node_type is FailingDepNode
@@ -363,7 +363,7 @@ class TestDepErrorWrapping:
         """DepError.__cause__ is the original ConnectionError."""
         graph = Graph(start=FailingDepNode)
         with pytest.raises(DepError) as exc_info:
-            await graph.arun(FailingDepNode.model_construct(bad=""))
+            await graph.arun()
 
         err = exc_info.value
         assert err.__cause__ is not None
@@ -385,14 +385,14 @@ class TestRunArunAPI:
     async def test_arun_works_from_async_context(self):
         """graph.arun() called with await in async test."""
         graph = Graph(start=SimpleNode)
-        result = await graph.arun(SimpleNode(value="hello"))
+        result = await graph.arun(value="hello")
         assert len(result.trace) == 1
         assert result.trace[0].value == "hello"
 
     def test_run_works_from_sync_context(self):
         """graph.run() called without await from sync test."""
         graph = Graph(start=SimpleNode)
-        result = graph.run(SimpleNode(value="hello"))
+        result = graph.run(value="hello")
         assert len(result.trace) == 1
         assert result.trace[0].value == "hello"
 
@@ -405,4 +405,4 @@ class TestRunArunAPI:
         """
         graph = Graph(start=SimpleNode)
         with pytest.raises(RuntimeError):
-            graph.run(SimpleNode(value="hello"))
+            graph.run(value="hello")

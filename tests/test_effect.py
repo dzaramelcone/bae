@@ -220,7 +220,7 @@ class TestEffectExecution:
             Done(summary="done"),
         ])
         g = Graph(start=SingleEffect)
-        await g.arun(SingleEffect(data="x"), lm=lm, max_iters=10)
+        await g.arun(data="x", lm=lm, max_iters=10)
         assert ("sync", "Target") in effect_log
 
     @pytest.mark.asyncio
@@ -231,7 +231,7 @@ class TestEffectExecution:
             Done(summary="done"),
         ])
         g = Graph(start=AsyncEffect)
-        await g.arun(AsyncEffect(data="x"), lm=lm, max_iters=10)
+        await g.arun(data="x", lm=lm, max_iters=10)
         assert ("async", "Target") in effect_log
 
     @pytest.mark.asyncio
@@ -243,7 +243,7 @@ class TestEffectExecution:
             Done(summary="done"),
         ])
         g = Graph(start=UnionEffect)
-        await g.arun(UnionEffect(data="x"), lm=lm, max_iters=10)
+        await g.arun(data="x", lm=lm, max_iters=10)
         assert effect_log == []  # AltTarget has no effect
 
     @pytest.mark.asyncio
@@ -255,7 +255,7 @@ class TestEffectExecution:
             Done(summary="done"),
         ])
         g = Graph(start=UnionEffect)
-        await g.arun(UnionEffect(data="x"), lm=lm, max_iters=10)
+        await g.arun(data="x", lm=lm, max_iters=10)
         assert ("sync", "Target") in effect_log
 
     @pytest.mark.asyncio
@@ -266,5 +266,5 @@ class TestEffectExecution:
             Done(summary="done"),
         ])
         g = Graph(start=AliasEffect)
-        await g.arun(AliasEffect(data="x"), lm=lm, max_iters=10)
+        await g.arun(data="x", lm=lm, max_iters=10)
         assert ("sync", "Target") in effect_log

@@ -1,76 +1,60 @@
 # Codebase Cleanup Audit
 
-Date: 2026-02-15
-Scope: All .py files under bae/ (excluding tests/, examples/, .planning/)
+Date: 2026-02-15 (revised 2026-02-15)
+Scope: All 33 .py files under bae/ (excluding tests/, examples/, .planning/)
 
-```xml
-<assumptions>
-  <assumption claim="bae/work/ graphs are representative of intended design patterns" risk="low - they're the only concrete work graphs in the codebase"/>
-  <assumption claim="netflix/dispatch style means: flat modules, domain grouping, no scattered utils, clear single-responsibility" risk="low - standard interpretation"/>
-  <assumption claim="REPL code is in-scope despite being a separate concern from the graph engine" risk="medium - REPL is large and may have its own cleanup cadence"/>
-  <assumption claim="Stubs in work/deps.py are intentionally deferred, not forgotten" risk="medium - scan_secrets() and detect_brownfield() return hardcoded values"/>
-</assumptions>
+## Summary
 
-<reasoning>
-I read every .py file under bae/ and categorized findings by severity and theme.
 The codebase has a clean core (node.py, markers.py, exceptions.py, result.py, agent.py)
-but accumulates debt in three zones:
+and clean work graphs (execute_phase.py, plan_phase.py, quick.py, new_project.py, map_codebase.py).
+Debt concentrates in three zones:
 
-1. **Scattered shared utilities** -- _unwrap_annotated(), _get_base_type(), and
-   strip-regex patterns are reimplemented across 3+ files. There's no shared
-   location, so each file grows its own copy.
+1. **`_get_base_type()` duplication** -- lm.py:121 and graph.py:25 implement the same
+   Annotated-unwrap logic but graph.py's version also handles union types. These
+   should converge.
 
-2. **resolver.py** -- The most complex module. build_dep_dag() and the DAG walk
-   inside resolve_fields() are near-duplicates. _resolve_one() is 50 lines doing
-   two jobs (Node-as-Dep vs callable-Dep).
+2. **resolver.py structural duplication** -- `build_dep_dag()` and `_build_fn_dag()`
+   share an identical walk pattern. `_resolve_one()` does two jobs. `_execute()` and
+   `_wrap_coro()` in engine.py duplicate lifecycle boilerplate.
 
-3. **REPL shell.py** -- _build_key_bindings() is 102 lines of nested closures.
-   _dispatch() mixes PY/NL/GRAPH/BASH concerns in one long method.
-   _contains_coroutines() and _count_and_close_coroutines() walk the same
-   structure with identical logic.
+3. **REPL shell.py** -- `_build_key_bindings()` is 102 lines. `_dispatch()` is 78 lines
+   mixing PY/NL/BASH. Coroutine walk functions duplicate traversal logic.
 
-4. **Trivial abstractions** -- _build_context() and _build_instruction() in graph.py
-   are 1-liners that add indirection without value. Seven gate functions in
-   work/prompt.py differ only in their prompt string.
+4. **work/prompt.py boilerplate** -- Seven gate functions and seven Annotated aliases
+   differ only in their prompt string.
 
-5. **Overly broad catches** -- graph.py:345, repl/engine.py:117, repl/tasks.py:90
-   all catch bare Exception or (ProcessLookupError, OSError) without documenting why.
+## Priority 1: Consolidate `_get_base_type()`
 
-6. **work/prompt.py boilerplate** -- Seven confirm_* functions and their Annotated
-   aliases are copy-paste with different strings. A factory or registry would
-   collapse them.
-</reasoning>
+- `lm.py:121-125` -- simple Annotated unwrap
+- `graph.py:25-43` -- Annotated unwrap + union (X | None) handling
 
-<answer>
-## Priority 1: Consolidate duplicated utilities
+These are genuine duplicates with slight divergence. Converge into one shared function.
 
-**Scattered helpers** -- Create `bae/_typing.py` (or similar):
-- `_unwrap_annotated()` -- currently in node.py:81 AND graph.py:18
-- `_get_base_type()` -- currently in lm.py:121 AND graph.py:25 (identical logic)
-- `_extract_types_from_hint()` -- node.py:88, partially reimplemented in graph.py
-
-**Strip regexes** -- `_STRIP_WRITE_RE`, `_STRIP_RUN_RE`, `_STRIP_EDIT_RE` defined in
-both `repl/ai.py` and `repl/views.py`. Extract to `repl/_patterns.py`.
+Note: `_unwrap_annotated()` (node.py:81) is NOT duplicated -- graph.py:18 imports it.
+Note: `_extract_types_from_hint()` (node.py:88) is NOT reimplemented in graph.py --
+graph.py's `_get_routing_strategy()` does different work (strategy routing, not type extraction).
 
 ## Priority 2: Deduplicate resolver.py
 
-- `build_dep_dag()` (line 128) and the DAG walk inside `resolve_fields()` (line 402)
-  share the same topo-sort-then-gather pattern. Extract the common walk.
-- `_resolve_one()` (line 260, 50 lines) does two distinct jobs: Node-as-Dep resolution
-  and callable-Dep resolution. Split into two functions.
+- `build_dep_dag()` (line 141) and `_build_fn_dag()` (line 326) are near-identical
+  TopologicalSorter-building walks. `build_dep_dag` seeds from a node class's fields,
+  `_build_fn_dag` seeds from a single callable. Unify with a shared walk + different
+  seed logic.
+- `_resolve_one()` (line 273, 51 lines) does two jobs: Node-as-Dep resolution
+  (lines 291-296) and callable-Dep resolution (lines 298-323). Split into two functions.
 
 ## Priority 3: Collapse work/prompt.py boilerplate
 
-Seven gate functions (`confirm_continue`, `confirm_refresh`, `confirm_commit`, etc.)
-differ only in their prompt string. Replace with:
+Seven gate functions (`confirm_continue`, `confirm_refresh`, `confirm_secrets`,
+`confirm_failures`, `confirm_blockers`, `confirm_approve`, `confirm_brownfield`)
+differ only in their prompt string. Replace with factory:
 ```python
-def _gate(msg: str) -> Callable:
-    async def gate(prompt: Prompt) -> bool:
+def _gate(msg: str):
+    async def gate(prompt: PromptDep) -> bool:
         return await prompt.confirm(msg)
     return gate
 
-confirm_continue = _gate("Continue to next phase?")
-# ... etc
+confirm_continue = _gate("Continue?")
 ```
 
 Same for the seven `Annotated[bool, Dep(...)]` aliases -- generate from a dict.
@@ -79,135 +63,144 @@ Same for the seven `Annotated[bool, Dep(...)]` aliases -- generate from a dict.
 
 | Function | Lines | Fix |
 |----------|-------|-----|
-| `repl/shell.py:_build_key_bindings()` | 102 | Split by concern (mode toggle, task menu, interrupt) |
-| `repl/shell.py:_dispatch()` | 45 | Extract `_run_py()` for PY mode |
-| `resolver.py:resolve_fields()` | 76 | Extract topo-sort-and-gather |
-| `repl/graph_commands.py:_cmd_inspect()` | 56 | Extract timing lookup helper |
-| `lm.py:transform_schema()` | 77 | Split by schema type (object/array/string) |
+| `repl/shell.py:_build_key_bindings()` | 102 (113-215) | Split by concern (mode toggle, task menu, interrupt) |
+| `repl/shell.py:_dispatch()` | 78 (392-469) | Extract `_run_py()` for PY mode (sync + async paths) |
+| `lm.py:transform_schema()` | 77 (33-110) | Split by schema type (object/array/string) |
+| `repl/engine.py:_execute()` | 70 (214-288) | See Priority 5 |
 
-## Priority 5: Inline trivial abstractions
+## Priority 5: Deduplicate engine.py lifecycle
 
-- `graph.py:_build_context()` (line 46) -- 1-liner dict comprehension, inline at call site
-- `graph.py:_build_instruction()` (line 55) -- returns `target_type.__name__`, inline it
+`_execute()` (line 214) and `_wrap_coro()` (line 313) share identical:
+- `_emit()` closure setup
+- `_dep_timing_hook()` closure
+- log handler attach/detach
+- RSS measurement
+- state transitions (DONE/CANCELLED/FAILED)
+- notify calls for start/complete/fail/cancel
 
-## Priority 6: Tighten exception handling
+Extract a shared lifecycle context manager or helper.
 
-- `graph.py:345` -- catches bare `Exception`, converts to `DepError`. Catch specific dep failures.
-- `repl/engine.py:117` -- catches `Exception` in `_execute()`. Should distinguish graph errors from system errors.
-- `repl/shell.py:_contains_coroutines()` and `_count_and_close_coroutines()` -- same walk logic, merge into one function with a callback.
+## Priority 6: Merge coroutine walk functions
 
-## Priority 7: Minor cleanup
+`_contains_coroutines()` (shell.py:52-71) and `_count_and_close_coroutines()` (shell.py:74-93)
+traverse the same data structures with identical recursion. Merge into one walk with
+a mode parameter or callback.
+
+## Priority 7: Inline trivial abstractions
+
+- `graph.py:_build_context()` (line 46) -- dict comprehension over model_fields, called
+  once at line 431. Inline at call site.
+- `graph.py:_build_instruction()` (line 55) -- returns `target_type.__name__`, called at
+  lines 408, 441. Inline both.
+
+## Priority 8: Minor cleanup
 
 - `cli.py:242` -- duplicate `import json` (already at line 13)
-- `repl/engine.py:TimingLM` -- `fill()` and `make()` duplicate timing logic; extract to decorator or wrapper
-- `repl/graph_commands.py` -- timing_map construction duplicated between `_cmd_inspect()` and `_cmd_trace()`
-- `node.py:191` -- `__call__` accepts `*_args, **_kwargs` that are never passed; remove
-- `work/models.py:RoadmapData.phases` is `list[dict]` -- should be a typed model
-</answer>
-
-<completeness_check>
-Covered: all 34 .py files under bae/, including repl/, work/, and root modules.
-NOT covered: tests/ (out of scope per instructions), examples/, .planning/.
-Edge cases checked: import chains (no circular deps from consolidation),
-REPL's extract_executable dependency (confirmed intact after agent.py cleanup).
-Missing from audit: performance characteristics, async safety of shared state
-in repl/exec.py (_ensure_cortex_module modifies sys.modules globally).
-</completeness_check>
-
-<confidence>0.80 - High coverage of source files but some REPL modules were only
-partially read by the subagent (channels.py, store.py, toolbar.py). The core
-engine findings (resolver, graph, lm, node) are solid. Work graph findings
-are directional -- the stubs may be intentionally deferred.</confidence>
-```
+- `node.py:194` -- `__call__` accepts `*_args, **_kwargs` never passed by graph.py
+- `repl/engine.py:TimingLM` -- `fill()` (139-147) and `make()` (152-160) duplicate
+  timing wrap logic; extract a `_timed()` helper
+- `work/models.py:17` -- `RoadmapData.phases` is `list[dict]`, should be typed
+- `work/models.py:13` -- `ProjectState.status` is bare `str`, could be Enum
+- `work/deps.py:68` -- `scan_secrets()` is a stub returning hardcoded `clean=True`
+- `work/deps.py:106` -- `detect_brownfield()` is a stub returning empty result
+- `repl/exec.py:14-25` -- `_ensure_cortex_module()` modifies `sys.modules` globally;
+  not thread-safe (acceptable for single-process REPL)
 
 ## Per-file detail
 
 ### Clean files (no action needed)
 
-| File | Notes |
-|------|-------|
-| `bae/__init__.py` | Clean exports |
-| `bae/markers.py` | Minimal, correct |
-| `bae/exceptions.py` | Good inheritance, cause chaining |
-| `bae/result.py` | Clean generic |
-| `bae/agent.py` | Single function after AgenticBackend removal |
-| `bae/work/__init__.py` | Clean exports |
-| `bae/work/execute_phase.py` | Clean node graph |
-| `bae/work/plan_phase.py` | Clean node graph |
-| `bae/work/quick.py` | Simple, correct |
-| `bae/repl/__init__.py` | Clean |
+| File | Lines | Notes |
+|------|-------|-------|
+| `bae/__init__.py` | 37 | Clean exports |
+| `bae/markers.py` | 75 | Minimal, correct |
+| `bae/exceptions.py` | 78 | Good inheritance, cause chaining |
+| `bae/result.py` | 32 | Clean generic |
+| `bae/agent.py` | 27 | Single function, correct |
+| `bae/work/__init__.py` | 16 | Clean exports |
+| `bae/work/execute_phase.py` | 99 | Clean node graph, good topology |
+| `bae/work/plan_phase.py` | 106 | Clean node graph |
+| `bae/work/quick.py` | 65 | Simple linear graph |
+| `bae/work/new_project.py` | 276 | Complex but well-structured; custom __call__ justified |
+| `bae/work/map_codebase.py` | 135 | map_one() closure creating Graph+LM is the intended dep pattern |
+| `bae/repl/__init__.py` | 17 | Clean |
+| `bae/repl/bash.py` | 47 | Clean, correct error handling |
+| `bae/repl/channels.py` | 218 | Well-structured Protocol + dataclass |
+| `bae/repl/complete.py` | 29 | Minimal rlcompleter wrapper |
+| `bae/repl/modes.py` | 32 | Clean enum + dicts |
+| `bae/repl/namespace.py` | 177 | Clean introspection, well-factored methods |
+| `bae/repl/store.py` | 163 | Clean SQLite, FTS5, proper schema |
+| `bae/repl/tasks.py` | 102 | Clean TaskManager, correct process group handling |
+| `bae/repl/toolbar.py` | 162 | Well-structured widget system |
 
 ### Files with findings
 
-#### bae/cli.py
-- Line 242: duplicate `import json` (already at line 13)
-- Lines 130-138 vs 168-169: `_encode_mermaid_for_live()` call pattern duplicated between `graph_show()` and `graph_export()`
-- Lines 170-206: `graph_export()` doesn't validate output path writability or create parent dirs
+#### bae/graph.py (578 lines)
+- Lines 25-43: `_get_base_type()` duplicates lm.py:121-125 (with extra union handling)
+- Lines 46-52: `_build_context()` trivial, called once (line 431), inline it
+- Lines 55-57: `_build_instruction()` returns class name, called twice (408, 441), inline it
+- Lines 350: bare `except Exception as e:` after RecallError catch, converts to DepError
+- Lines 487-577: `graph()` wrapper is 90 lines; complex but justified (signature introspection)
 
-#### bae/graph.py
-- Lines 25-43: `_get_base_type()` duplicates `lm.py:121-125`
-- Lines 46-52: `_build_context()` is a 1-liner dict comprehension; inline it
-- Lines 55-57: `_build_instruction()` just returns `target_type.__name__`; inline it
-- Lines 339-352: bare `Exception` catch converted to `DepError`
-- Lines 381-403: duplicate field resolution logic between custom-call and ellipsis paths
-- Lines 416-444: ellipsis routing branch is 28 lines of nested logic
-- Lines 489-543: `graph()` wrapper is long and stateful
+#### bae/node.py (220 lines)
+- Line 194: `__call__` accepts `*_args, **_kwargs` never used
 
-#### bae/node.py
-- Lines 81-85: `_unwrap_annotated()` duplicated in graph.py:18
-- Lines 88-111: `_extract_types_from_hint()` partially reimplemented in graph.py
-- Lines 191-204: `__call__` accepts `*_args, **_kwargs` never passed by graph.py
-
-#### bae/lm.py
-- Lines 33-110: `transform_schema()` is 77 lines; split by schema type
+#### bae/lm.py (529 lines)
+- Lines 33-110: `transform_schema()` is 77 lines -- could split by schema type
 - Lines 121-125: `_get_base_type()` duplicated in graph.py:25-43
 
-#### bae/resolver.py
-- Lines 128-187 vs 313-355: `build_dep_dag()` and `_build_fn_dag()` near-identical walk
-- Lines 260-310: `_resolve_one()` is 50 lines doing two jobs
-- Lines 402-478: `resolve_fields()` duplicates topo-sort-and-gather from `resolve_dep()`
-- Lines 467-476: walks hints a third time to build resolved dict
+#### bae/resolver.py (524 lines)
+- Lines 141-200 vs 326-368: `build_dep_dag()` and `_build_fn_dag()` near-identical walk
+- Lines 273-323: `_resolve_one()` is 51 lines doing two jobs (Node-as-Dep vs callable)
 
-#### bae/work/deps.py
-- Lines 68-71: `scan_secrets()` is a stub returning hardcoded `clean=True`
-- Lines 106-109: `detect_brownfield()` is a stub returning empty result
-- Lines 112-120: Annotated dep aliases inconsistent (some have defaults, some don't)
+#### bae/cli.py (275 lines)
+- Line 242: duplicate `import json` (already at line 13)
 
-#### bae/work/models.py
-- Lines 16-18: `RoadmapData.phases` is `list[dict]` -- should be typed
-- Lines 10-13: `ProjectState.status` is a bare string -- should be Enum
-
-#### bae/work/prompt.py
-- Lines 79-111: 7 gate functions differ only in prompt string -- use factory
+#### bae/work/prompt.py (121 lines)
+- Lines 79-111: 7 gate functions differ only in prompt string
 - Lines 114-120: 7 Annotated gate aliases -- generate from dict
 
-#### bae/work/new_project.py
-- Lines 92-108: `save_project_roadmap()` accesses deep nested attrs without null checks
-- Lines 200-210: magic strings `["no", "n", "done", ""]` for input validation
+#### bae/work/deps.py (165 lines)
+- Lines 68-71: `scan_secrets()` stub
+- Lines 106-109: `detect_brownfield()` stub
 
-#### bae/work/map_codebase.py
-- Lines 53-61: `map_one()` closure creates its own Graph and LM; signature looks suspicious
+#### bae/work/models.py (78 lines)
+- Line 13: `ProjectState.status` is bare `str`
+- Line 17: `RoadmapData.phases` is `list[dict]`
 
-#### bae/repl/shell.py
-- Lines 52-94: `_contains_coroutines()` and `_count_and_close_coroutines()` duplicate walk logic
+#### bae/repl/shell.py (522 lines)
+- Lines 52-93: `_contains_coroutines()` and `_count_and_close_coroutines()` duplicate walk
 - Lines 113-215: `_build_key_bindings()` is 102 lines of nested closures
-- Lines 362-406: `_dispatch()` mixes PY/NL/GRAPH/BASH in 45 lines
-- Lines 324-351: `_run_nl()` and `_run_bash()` duplicate error handling
+- Lines 392-469: `_dispatch()` is 78 lines mixing PY/NL/BASH
 
-#### bae/repl/engine.py
-- Lines 52-84: `TimingLM` duplicates timing logic between `fill()` and `make()`
-- Lines 103-126 vs 146-166: `_execute()` and `_wrap_coro()` duplicate error handling
+#### bae/repl/engine.py (458 lines)
+- Lines 132-164: `TimingLM.fill()` and `.make()` duplicate timing logic
+- Lines 214-288 vs 313-382: `_execute()` and `_wrap_coro()` duplicate lifecycle boilerplate
 
-#### bae/repl/views.py
-- Lines 42-59: strip regexes duplicated from ai.py
-- Lines 112-133: `_render_grouped_panel()` and `_render_code_panel()` nearly identical
+#### bae/repl/views.py (312 lines)
+- Lines 182-223: `_render_grouped_panel()` and `_render_code_panel()` share structure
+  (title, Syntax, Rule, Panel construction) -- could extract shared panel builder
 
-#### bae/repl/graph_commands.py
-- Lines 157-214 vs 232-234: timing_map building duplicated between `_cmd_inspect()` and `_cmd_trace()`
-- Lines 85-106: string-based task name matching is fragile
+#### bae/repl/ai.py (548 lines)
+- Lines 32-61: regex patterns are NOT duplicated from views.py -- they serve different
+  purposes (ai.py detects/executes tool calls; views.py strips tags for display)
 
-#### bae/repl/ai.py
-- Lines 37-46: `_STRIP_*` regex patterns duplicated from views.py
+#### bae/repl/exec.py (69 lines)
+- Lines 14-25: `_ensure_cortex_module()` modifies `sys.modules` globally; acceptable
+  for single-process REPL but worth noting
 
-#### bae/repl/exec.py
-- Lines 14-25: `_ensure_cortex_module()` modifies `sys.modules` globally; not thread-safe
+## Corrections from original audit
+
+1. **WRONG: `_unwrap_annotated()` duplicated in graph.py** -- graph.py:18 imports it from node.py
+2. **WRONG: `_extract_types_from_hint()` reimplemented in graph.py** -- different functions
+3. **WRONG: Strip regexes duplicated between ai.py and views.py** -- ai.py has tool-detection
+   regexes (`_EXEC_BLOCK_RE`, `_TOOL_TAG_RE`, `_WRITE_TAG_RE`, `_EDIT_REPLACE_RE`, `_OSC8_TOOL_RE`);
+   views.py has display-stripping regexes (`_STRIP_RUN_RE`, `_STRIP_TOOL_RE`, `_STRIP_WRITE_RE`).
+   Different patterns for different purposes.
+4. **WRONG: `build_dep_dag()` duplicates DAG walk in `resolve_fields()`** -- `resolve_fields()`
+   calls `build_dep_dag()`, it doesn't reimplement it. The actual duplication is
+   `build_dep_dag()` vs `_build_fn_dag()` (both build TopologicalSorters with identical walk).
+5. **WRONG: `repl/graph_commands.py` references** -- this file does not exist
+6. **WRONG: `_encode_mermaid_for_live()` duplicated between graph_show/graph_export** --
+   graph_export uses mmdc subprocess, not mermaid encoding at all
+7. **WRONG: File count "34"** -- there are 33 .py files under bae/

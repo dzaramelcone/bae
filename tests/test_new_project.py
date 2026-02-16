@@ -164,7 +164,7 @@ class TestNewProjectHappyPath:
         monkeypatch.setattr(Path, "cwd", staticmethod(lambda: tmp_path))
 
         result = await new_project.arun(
-            AgreeOnProblem.model_construct(description="Build a task tracker"),
+            description="Build a task tracker",
             lm=lm,
             max_iters=30,
         )
@@ -188,7 +188,7 @@ class TestNewProjectHappyPath:
         monkeypatch.setattr(Path, "cwd", staticmethod(lambda: tmp_path))
 
         result = await new_project.arun(
-            AgreeOnProblem.model_construct(description="Build a task tracker"),
+            description="Build a task tracker",
             lm=lm,
             max_iters=30,
         )
@@ -207,7 +207,7 @@ class TestNewProjectHappyPath:
         monkeypatch.setattr(Path, "cwd", staticmethod(lambda: tmp_path))
 
         result = await new_project.arun(
-            AgreeOnProblem.model_construct(description="Build a task tracker"),
+            description="Build a task tracker",
             lm=lm,
             max_iters=30,
         )
@@ -226,7 +226,7 @@ class TestNewProjectHappyPath:
         monkeypatch.setattr(Path, "cwd", staticmethod(lambda: tmp_path))
 
         result = await new_project.arun(
-            AgreeOnProblem.model_construct(description="Build a task tracker"),
+            description="Build a task tracker",
             lm=lm,
             max_iters=30,
         )
@@ -242,7 +242,7 @@ class TestNewProjectHappyPath:
         monkeypatch.setattr(Path, "cwd", staticmethod(lambda: tmp_path))
 
         await new_project.arun(
-            AgreeOnProblem.model_construct(description="Build a task tracker"),
+            description="Build a task tracker",
             lm=lm,
             max_iters=30,
         )
@@ -266,7 +266,7 @@ class TestNewProjectHappyPath:
         monkeypatch.setattr(Path, "cwd", staticmethod(lambda: tmp_path))
 
         await new_project.arun(
-            AgreeOnProblem.model_construct(description="Build a task tracker"),
+            description="Build a task tracker",
             lm=lm,
             max_iters=30,
         )
@@ -287,7 +287,7 @@ class TestNewProjectHappyPath:
         monkeypatch.setattr(Path, "cwd", staticmethod(lambda: tmp_path))
 
         await new_project.arun(
-            AgreeOnProblem.model_construct(description="Build a task tracker"),
+            description="Build a task tracker",
             lm=lm,
             max_iters=30,
         )
@@ -380,7 +380,7 @@ class TestExaminationLoop:
         monkeypatch.setattr(Path, "cwd", staticmethod(lambda: tmp_path))
 
         result = await new_project.arun(
-            AgreeOnProblem.model_construct(description="Build a task tracker"),
+            description="Build a task tracker",
             lm=lm,
             max_iters=30,
         )

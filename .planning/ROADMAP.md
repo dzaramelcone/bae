@@ -148,8 +148,8 @@ Plans:
 - [x] 29-01-PLAN.md -- Engine instrumentation: OutputPolicy, dep timing hook, RSS measurement, event emission
 - [x] 29-02-PLAN.md -- Display + commands: view rendering, debug command, enhanced inspect, output policy flags
 - [x] 29-03-PLAN.md -- Stress test + verification: 10+ concurrent graphs, store persistence, cross-session history
-- [ ] 29-04-PLAN.md -- Fix duplicate done notification, gate submitted/resolved by output policy (gap closure)
-- [ ] 29-05-PLAN.md -- Verbose per-node transition events via EVENT_HOOK_KEY (gap closure)
+- [x] 29-04 -- Fix duplicate done notification, gate submitted/resolved by output policy (101a5d8)
+- [x] 29-05 -- Verbose per-node transition events via logger + _NotifyHandler (101a5d8)
 
 ## Progress
 
@@ -183,6 +183,6 @@ Plans:
 | 26. Engine Foundation | v6.0 | 4/4 | Complete | 2026-02-15 |
 | 27. Graph Mode | v6.0 | 6/6 | Complete | 2026-02-15 |
 | 28. Input Gates | v6.0 | 3/3 | Complete | 2026-02-15 |
-| 29. Observability | v6.0 | 3/5 | In Progress | - |
+| 29. Observability | v6.0 | 5/5 | Complete | 2026-02-15 |
 
 ---
