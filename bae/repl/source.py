@@ -57,13 +57,34 @@ def _path_to_module(project_root: Path, filepath: Path) -> str:
 
 
 def _module_summary(project_root: Path, module_path: str) -> str:
-    """One-line summary: module path, docstring, class/function counts."""
+    """One-line summary: module path, docstring, and content counts.
+
+    Packages show subpackage/module counts; plain modules show class/function counts.
+    """
     filepath = _module_to_path(project_root, module_path)
     source = filepath.read_text()
     tree = ast.parse(source)
 
     docstring = ast.get_docstring(tree) or ""
     first_line = docstring.splitlines()[0] if docstring else "(no docstring)"
+
+    if filepath.name == "__init__.py":
+        # Package: count immediate children
+        pkg_dir = filepath.parent
+        subpackages = 0
+        modules = 0
+        for child in pkg_dir.iterdir():
+            if child.is_dir() and (child / "__init__.py").exists():
+                subpackages += 1
+            elif child.is_file() and child.suffix == ".py" and child.name != "__init__.py":
+                modules += 1
+        parts = []
+        if subpackages:
+            parts.append(f"{subpackages} subpackages")
+        if modules:
+            parts.append(f"{modules} modules")
+        counts = ", ".join(parts) if parts else "empty"
+        return f"{module_path} -- {first_line} ({counts})"
 
     classes = [n for n in ast.iter_child_nodes(tree) if isinstance(n, ast.ClassDef)]
     functions = [

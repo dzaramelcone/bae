@@ -470,6 +470,62 @@ class TestMetaSubresource:
         assert src.children()["meta"].supported_tools() == {"read", "edit"}
 
 
+# --- Module summary: package vs module ---
+
+
+class TestModuleSummary:
+    def test_package_shows_subpackage_counts(self, tmp_project):
+        """Package summary shows subpackage/module counts, not class/function counts."""
+        from bae.repl.source import _module_summary
+
+        # tmp_project has mylib/ with __init__.py and core.py
+        result = _module_summary(tmp_project, "mylib")
+        assert "mylib" in result
+        assert "1 modules" in result
+        # Should NOT show class/function counts
+        assert "classes" not in result
+        assert "functions" not in result
+
+    def test_package_with_subpackage(self, tmp_project):
+        """Package with subdirectory packages shows subpackage count."""
+        from bae.repl.source import _module_summary
+
+        # Create a subpackage
+        sub = tmp_project / "mylib" / "sub"
+        sub.mkdir()
+        (sub / "__init__.py").write_text("")
+        result = _module_summary(tmp_project, "mylib")
+        assert "1 subpackages" in result
+        assert "1 modules" in result
+
+    def test_module_still_shows_class_function_counts(self, tmp_project):
+        """Plain .py modules still show class and function counts."""
+        from bae.repl.source import _module_summary
+
+        result = _module_summary(tmp_project, "mylib.core")
+        assert "mylib.core" in result
+        assert "1 classes" in result
+        assert "1 functions" in result
+
+    def test_real_project_package_has_nonzero_counts(self, src):
+        """The real bae package should show nonzero subpackage/module counts."""
+        from bae.repl.source import _module_summary
+
+        result = _module_summary(PROJECT_ROOT, "bae")
+        assert "bae" in result
+        # bae has subpackages (repl) and/or modules -- should not be empty
+        assert "0 classes" not in result
+        assert "0 functions" not in result
+        # Should contain subpackages or modules
+        assert "subpackages" in result or "modules" in result
+
+    def test_read_root_shows_package_counts(self, src):
+        """read('') at root should show package counts, not 0 classes / 0 functions."""
+        result = src.read("")
+        assert "bae" in result
+        assert "0 classes, 0 functions" not in result
+
+
 # --- Shell registration ---
 
 
