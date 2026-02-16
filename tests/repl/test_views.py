@@ -99,6 +99,32 @@ def test_user_view_label_in_panel_title(mock_pft):
     assert "ai:2" in ansi_str
 
 
+@patch("bae.repl.views.print_formatted_text")
+def test_user_view_lifecycle_graph_event(mock_pft):
+    """Lifecycle graph events render with [graph:run_id] prefix and color styling."""
+    view = UserView()
+    view.render("graph", "#d7afff", "g1 done (2.3s)", metadata={
+        "type": "lifecycle", "event": "complete", "run_id": "g1",
+    })
+    mock_pft.assert_called_once()
+    fragments = list(mock_pft.call_args[0][0])
+    assert fragments[0] == ("#d7afff bold", "[graph:g1]")
+    assert fragments[2] == ("fg:#87ff87", "g1 done (2.3s)")
+
+
+@patch("bae.repl.views.print_formatted_text")
+def test_user_view_lifecycle_start_event(mock_pft):
+    """Start lifecycle events render with dim style."""
+    view = UserView()
+    view.render("graph", "#d7afff", "g2 started", metadata={
+        "type": "lifecycle", "event": "start", "run_id": "g2",
+    })
+    mock_pft.assert_called_once()
+    fragments = list(mock_pft.call_args[0][0])
+    assert fragments[0] == ("#d7afff bold", "[graph:g2]")
+    assert fragments[2] == ("fg:#808080", "g2 started")
+
+
 def test_user_view_satisfies_protocol():
     """UserView satisfies ViewFormatter protocol via structural typing."""
     assert isinstance(UserView(), ViewFormatter)

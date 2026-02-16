@@ -158,7 +158,7 @@ class GraphRegistry:
     ) -> GraphRun:
         run_id = f"g{self._next_id}"
         self._next_id += 1
-        run = GraphRun(run_id=run_id, graph=graph)
+        run = GraphRun(run_id=run_id, graph=graph, policy=policy)
         self._runs[run_id] = run
         coro = self._execute(run, lm=lm, notify=notify, policy=policy, **kwargs)
         tm.submit(coro, name=f"graph:{run_id}:{graph.start.__name__}", mode="graph")
@@ -271,7 +271,7 @@ class GraphRegistry:
         """
         run_id = f"g{self._next_id}"
         self._next_id += 1
-        run = GraphRun(run_id=run_id, graph=None)
+        run = GraphRun(run_id=run_id, graph=None, policy=policy)
         self._runs[run_id] = run
         wrapped = self._wrap_coro(run, coro, notify=notify, policy=policy)
         tm.submit(wrapped, name=f"graph:{run_id}:{name}", mode="graph")

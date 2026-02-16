@@ -520,6 +520,120 @@ class TestCrossModeGateResolve:
         assert not should_route_gate
 
 
+# --- TestNotify ---
+
+
+class TestNotify:
+    def test_notify_carries_metadata(self, shell):
+        """_make_notify passes structured metadata through to router.write."""
+        from bae.repl.graph_commands import _make_notify
+
+        notify = _make_notify(shell)
+        meta = {"type": "lifecycle", "event": "start", "run_id": "g1"}
+        notify("g1 started", meta)
+        assert len(shell.router.writes) == 1
+        ch, content, written_meta = shell.router.writes[0]
+        assert ch == "graph"
+        assert content == "g1 started"
+        assert written_meta == meta
+
+    def test_notify_shush_only_gates(self, shell):
+        """Shush mode suppresses gate events but allows lifecycle events."""
+        from bae.repl.graph_commands import _make_notify
+
+        shell.shush_gates = True
+        notify = _make_notify(shell)
+        # Gate event: suppressed
+        notify("gate prompt", {"type": "gate", "run_id": "g1"})
+        assert len(shell.router.writes) == 0
+        # Lifecycle event: not suppressed
+        notify("g1 started", {"type": "lifecycle", "event": "start"})
+        assert len(shell.router.writes) == 1
+
+
+# --- TestCmdDebug ---
+
+
+class TestCmdDebug:
+    async def test_cmd_debug_not_running(self, shell):
+        """debug <id> on a completed run reports 'not active'."""
+        g = Graph(start=TStart)
+        shell.engine.submit(g, shell.tm, lm=shell._lm, message="hi")
+        await _drain(shell.tm)
+        await dispatch_graph("debug g1", shell)
+        out = _output(shell.router)
+        assert "not active" in out
+
+    async def test_cmd_debug_no_arg(self, shell):
+        """debug with no argument shows usage."""
+        await dispatch_graph("debug", shell)
+        out = _output(shell.router)
+        assert "usage" in out.lower()
+
+    async def test_cmd_debug_nonexistent(self, shell):
+        """debug with unknown id shows 'no run'."""
+        await dispatch_graph("debug g99", shell)
+        out = _output(shell.router)
+        assert "no run g99" in out
+
+
+# --- TestInspectEnhanced ---
+
+
+class TestInspectEnhanced:
+    async def test_inspect_shows_dep_timings(self, shell):
+        """inspect shows dep timings section when present on run."""
+        g = Graph(start=TStart)
+        shell.engine.submit(g, shell.tm, lm=shell._lm, message="hi")
+        await _drain(shell.tm)
+        # Manually add dep timings to the completed run
+        run = shell.engine.get("g1")
+        run.dep_timings = [("fetch_user", 42.5), ("load_config", 8.1)]
+        await dispatch_graph("inspect g1", shell)
+        out = _output(shell.router)
+        assert "Dep timings:" in out
+        assert "fetch_user" in out
+        assert "load_config" in out
+
+    async def test_inspect_shows_rss_delta(self, shell):
+        """inspect shows RSS delta when non-zero."""
+        g = Graph(start=TStart)
+        shell.engine.submit(g, shell.tm, lm=shell._lm, message="hi")
+        await _drain(shell.tm)
+        run = shell.engine.get("g1")
+        run.rss_delta_bytes = 5 * 1024 * 1024  # 5MB
+        await dispatch_graph("inspect g1", shell)
+        out = _output(shell.router)
+        assert "RSS delta:" in out
+        assert "5.0MB" in out
+
+    async def test_inspect_no_dep_timings_section_when_empty(self, shell):
+        """inspect omits dep timings section when none recorded."""
+        g = Graph(start=TStart)
+        shell.engine.submit(g, shell.tm, lm=shell._lm, message="hi")
+        await _drain(shell.tm)
+        await dispatch_graph("inspect g1", shell)
+        out = _output(shell.router)
+        assert "Dep timings:" not in out
+
+
+# --- TestOutputPolicy ---
+
+
+class TestOutputPolicy:
+    async def test_run_verbose_flag(self, shell):
+        """run --verbose sets VERBOSE policy on the graph run."""
+        shell.namespace["g"] = Graph(start=TStart)
+        await dispatch_graph("run g --verbose", shell)
+        out = _output(shell.router)
+        assert "submitted g1" in out
+        run = shell.engine.get("g1")
+        # Run may still be executing; check policy before drain
+        from bae.repl.engine import OutputPolicy
+        assert run.policy == OutputPolicy.VERBOSE
+        await _drain(shell.tm)
+
+
 # --- Helpers ---
 
 
