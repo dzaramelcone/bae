@@ -80,6 +80,17 @@ Recent:
 - Source write/edit: coverage check on the unit test if not too heavy/slow
 - Functions table: sort order should match system tools display order; tags should use system tool names (R/W/E/G/Grep)
 - Resource navigation: track which resources agent session has entered, show condensed re-entry info ("left a → reentered b") instead of full entry display on revisit
+- Tool discoverability: entry banner should clarify tools are top-level functions (not methods on resource handle); `source.read("bae")` feels natural but fails — consider making ResourceHandle forward tool calls
+- ns() should show tool functions (read, glob, grep, etc.) alongside namespace objects (engine, toolbar)
+- grep error guidance: "too many matches" suggests narrowing to broader path — guidance should suggest narrowing to a more specific submodule
+- write() discoverability: no hint that bare name creates subresource vs dotted path creates module; consider `write --help` or better entry docs
+- Navigation error consistency: sometimes "Try: source()", sometimes method suggestions; `source.read()` gives dead-end "No resource" error
+- Error type in tool summary: show specific exception class name (ResourceError) not generic "Error" — use __class__.__name__
+- Diamond bullet brightness: cosmetic — consider brighter color for tool summaries
+- Navigation output verbosity: reduce re-entry display when revisiting resources
+- AI `<tool_call>` JSON syntax: AI sometimes emits `{"name": "Read", "arguments": {...}}` instead of `<run>` blocks — not handled
+- Session tag/indicator: disappeared at some point during testing — investigate
+- REPL tracebacks: consider Rich traceback formatting for nicer error display
 
 ### Roadmap Evolution
 
