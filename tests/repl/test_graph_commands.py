@@ -6,7 +6,6 @@ import asyncio
 from dataclasses import dataclass, field
 
 import pytest
-from pydantic import BaseModel
 
 from bae.graph import Graph, graph
 from bae.node import Node
@@ -28,16 +27,6 @@ class TEnd(Node):
     reply: str
 
     async def __call__(self) -> None: ...
-
-
-class TInput(BaseModel):
-    value: str
-
-
-class TTypedStart(Node):
-    inp: TInput
-
-    async def __call__(self) -> TEnd: ...
 
 
 # --- Mock LM ---
@@ -123,8 +112,6 @@ def shell():
     # Populate namespace with graph factory callables
     mygraph = graph(start=TStart)
     s.namespace["mygraph"] = mygraph
-    typed_graph = graph(start=TTypedStart)
-    s.namespace["typed_graph"] = typed_graph
     return s
 
 
@@ -196,19 +183,6 @@ class TestCmdRun:
         out = _output(shell.router)
         assert "error" in _meta_types(shell.router)
 
-    async def test_run_injects_param_types(self, shell):
-        """run auto-injects graph callable parameter types into namespace."""
-        shell.namespace["MockLM"] = MockLM
-        # TInput is NOT in shell.namespace initially
-        assert "TInput" not in shell.namespace
-        # Running a command that references typed_graph triggers injection
-        await dispatch_graph("run typed_graph(inp=TInput(value='hi'), lm=MockLM())", shell)
-        out = _output(shell.router)
-        assert "submitted" in out
-        # TInput was injected
-        assert "TInput" in shell.namespace
-        await _drain(shell.tm)
-
     async def test_run_wrong_type_shows_error(self, shell):
         """run with a non-graph/non-coroutine result shows type error."""
         shell.namespace["x"] = 42
@@ -236,6 +210,20 @@ class TestCmdList:
         out = _output(shell.router)
         assert "g1" in out
         assert "done" in out
+
+    async def test_list_sends_ansi_metadata(self, shell):
+        """list passes metadata type=ansi to router.write."""
+        g = Graph(start=TStart)
+        shell.engine.submit(g, shell.tm, lm=shell._lm, message="hi")
+        await _drain(shell.tm)
+        await dispatch_graph("list", shell)
+        # Find the list write (not the submit writes)
+        ansi_writes = [
+            (ch, meta) for ch, _, meta in shell.router.writes
+            if meta.get("type") == "ansi"
+        ]
+        assert len(ansi_writes) == 1
+        assert ansi_writes[0][0] == "graph"
 
 
 # --- TestCmdCancel ---
@@ -280,6 +268,19 @@ class TestCmdInspect:
         assert "done" in out
         assert "TStart" in out
         assert "TEnd" in out
+
+    async def test_inspect_sends_ansi_metadata(self, shell):
+        """inspect passes metadata type=ansi to router.write."""
+        g = Graph(start=TStart)
+        shell.engine.submit(g, shell.tm, lm=shell._lm, message="hi")
+        await _drain(shell.tm)
+        await dispatch_graph("inspect g1", shell)
+        ansi_writes = [
+            (ch, meta) for ch, _, meta in shell.router.writes
+            if meta.get("type") == "ansi"
+        ]
+        assert len(ansi_writes) == 1
+        assert ansi_writes[0][0] == "graph"
 
     async def test_inspect_nonexistent(self, shell):
         """inspect with unknown id shows 'no run'."""

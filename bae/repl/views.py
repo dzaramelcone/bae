@@ -74,6 +74,10 @@ class UserView:
         meta = metadata or {}
         content_type = meta.get("type", "")
 
+        if content_type == "ansi":
+            print_formatted_text(ANSI(content))
+            return
+
         if content_type == "ai_exec":
             if self._pending_code is not None:
                 self._render_code_panel(self._pending_code, self._pending_meta or {})
@@ -176,6 +180,12 @@ class DebugView:
 
     def render(self, channel_name, color, content, *, metadata=None):
         meta = metadata or {}
+        if meta.get("type") == "ansi":
+            meta_str = " ".join(f"{k}={v}" for k, v in sorted(meta.items()))
+            header = f"[{channel_name}] {meta_str}"
+            print_formatted_text(FormattedText([(f"{color} bold", header)]))
+            print_formatted_text(ANSI(content))
+            return
         meta_str = " ".join(f"{k}={v}" for k, v in sorted(meta.items()))
         header = f"[{channel_name}] {meta_str}" if meta_str else f"[{channel_name}]"
         print_formatted_text(FormattedText([(f"{color} bold", header)]))
@@ -208,6 +218,10 @@ class AISelfView:
         tag = self._tag_map.get(content_type, content_type or channel_name)
         if "label" in meta:
             tag = f"{tag}:{meta['label']}"
+        if content_type == "ansi":
+            print_formatted_text(FormattedText([("fg:#b0b040 bold", f"[{tag}]")]))
+            print_formatted_text(ANSI(content))
+            return
         display = _strip_executable(content) if content_type == "response" else content
         print_formatted_text(FormattedText([("fg:#b0b040 bold", f"[{tag}]")]))
         for line in display.splitlines():
