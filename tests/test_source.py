@@ -1,5 +1,9 @@
-"""Tests for SourceResourcespace: protocol, path resolution, safety, read, enter/nav, glob, grep."""
+"""Tests for SourceResourcespace: protocol, path resolution, safety, read, enter/nav,
+glob, grep, write, edit, hot-reload, rollback, and undo."""
 
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -181,7 +185,7 @@ class TestGlob:
 
 class TestGrep:
     def test_grep_finds_matches(self, src):
-        result = src.grep("ResourceError")
+        result = src.grep("ResourceError", "bae.repl")
         # Should find in bae.repl.resource with module:line: format
         assert "bae.repl.resource:" in result
 
@@ -199,7 +203,7 @@ class TestGrep:
         assert result == "(no matches)"
 
     def test_grep_no_filesystem_paths(self, src):
-        result = src.grep("ResourceError")
+        result = src.grep("ResourceError", "bae.repl")
         assert "/" not in result
 
     def test_grep_budget_overflow_raises(self, src):
@@ -209,3 +213,171 @@ class TestGrep:
         # Either fits in budget or raises ResourceError
         if isinstance(result, str) and len(result) > 2000:
             pytest.fail("Grep output exceeded CHAR_CAP without raising ResourceError")
+
+
+# --- Temporary project fixture for write/edit/undo tests ---
+
+
+CORE_PY = textwrap.dedent("""\
+    \"\"\"Core module with a class and function.\"\"\"
+
+
+    class Greeter:
+        \"\"\"A simple greeter.\"\"\"
+
+        def greet(self):
+            return "hi"
+
+        def farewell(self):
+            return "bye"
+
+
+    def standalone():
+        return 1
+    """)
+
+
+@pytest.fixture
+def tmp_project(tmp_path):
+    """Minimal Python package in a temp git repo for write/edit/undo tests."""
+    pkg = tmp_path / "mylib"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text('from mylib.core import Greeter\n')
+    (pkg / "core.py").write_text(CORE_PY)
+
+    # Initialize git so undo() works
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
+        env={**dict(__import__("os").environ), "GIT_AUTHOR_NAME": "test",
+             "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "test",
+             "GIT_COMMITTER_EMAIL": "t@t"},
+    )
+
+    # Add tmp_path to sys.path so hot-reload can import mylib
+    sys.path.insert(0, str(tmp_path))
+    yield tmp_path
+    sys.path.remove(str(tmp_path))
+    # Clean up sys.modules entries for mylib
+    for key in list(sys.modules):
+        if key == "mylib" or key.startswith("mylib."):
+            del sys.modules[key]
+
+
+# --- Write operations ---
+
+
+class TestWrite:
+    def test_write_creates_module(self, tmp_project):
+        src = SourceResourcespace(tmp_project)
+        result = src.write("mylib.utils", "def helper():\n    return 42\n")
+        assert "mylib.utils" in result
+        assert (tmp_project / "mylib" / "utils.py").exists()
+        content = (tmp_project / "mylib" / "utils.py").read_text()
+        assert "def helper" in content
+
+    def test_write_rejects_invalid_python(self, tmp_project):
+        src = SourceResourcespace(tmp_project)
+        with pytest.raises(ResourceError):
+            src.write("mylib.utils", "not valid python {{{")
+
+    def test_write_updates_init(self, tmp_project):
+        src = SourceResourcespace(tmp_project)
+        src.write("mylib.utils", "def helper():\n    return 42\n")
+        init_content = (tmp_project / "mylib" / "__init__.py").read_text()
+        assert "utils" in init_content
+
+
+# --- Edit operations ---
+
+
+class TestEdit:
+    def test_edit_replaces_method(self, tmp_project):
+        src = SourceResourcespace(tmp_project)
+        src.edit(
+            "mylib.core.Greeter.greet",
+            new_source="    def greet(self):\n        return 'hello'\n",
+        )
+        content = (tmp_project / "mylib" / "core.py").read_text()
+        assert "'hello'" in content
+        assert "'hi'" not in content
+
+    def test_edit_read_roundtrip(self, tmp_project):
+        src = SourceResourcespace(tmp_project)
+        src.edit(
+            "mylib.core.Greeter.greet",
+            new_source="    def greet(self):\n        return 'hello'\n",
+        )
+        result = src.read("mylib.core.Greeter.greet")
+        assert "'hello'" in result
+
+    def test_edit_rejects_invalid_python(self, tmp_project):
+        src = SourceResourcespace(tmp_project)
+        original = (tmp_project / "mylib" / "core.py").read_text()
+        with pytest.raises(ResourceError):
+            src.edit("mylib.core.Greeter.greet", new_source="not valid python")
+        # File unchanged
+        assert (tmp_project / "mylib" / "core.py").read_text() == original
+
+    def test_edit_nonexistent_symbol_raises(self, tmp_project):
+        src = SourceResourcespace(tmp_project)
+        with pytest.raises(ResourceError):
+            src.edit("mylib.core.nonexistent_thing", new_source="def x(): pass")
+
+
+# --- Hot-reload + Rollback ---
+
+
+class TestHotReload:
+    def test_edit_reloads_module(self, tmp_project):
+        src = SourceResourcespace(tmp_project)
+        src.edit(
+            "mylib.core.Greeter.greet",
+            new_source="    def greet(self):\n        return 'reloaded'\n",
+        )
+        # Import after edit to verify reload happened
+        import mylib.core
+
+        g = mylib.core.Greeter()
+        assert g.greet() == "reloaded"
+
+    def test_failed_reload_rolls_back(self, tmp_project):
+        src = SourceResourcespace(tmp_project)
+        original = (tmp_project / "mylib" / "core.py").read_text()
+        # Edit that writes valid Python but breaks on reload (bad import)
+        with pytest.raises(ResourceError, match="[Rr]eload|[Rr]olled"):
+            src.edit(
+                "mylib.core.standalone",
+                new_source="def standalone():\n    import nonexistent_module_xyz\n    return 1\n",
+            )
+        # File should be rolled back
+        assert (tmp_project / "mylib" / "core.py").read_text() == original
+
+
+# --- Undo ---
+
+
+class TestUndo:
+    def test_undo_reverts_edit(self, tmp_project):
+        src = SourceResourcespace(tmp_project)
+        original = (tmp_project / "mylib" / "core.py").read_text()
+        src.edit(
+            "mylib.core.Greeter.greet",
+            new_source="    def greet(self):\n        return 'changed'\n",
+        )
+        assert (tmp_project / "mylib" / "core.py").read_text() != original
+        src.undo()
+        assert (tmp_project / "mylib" / "core.py").read_text() == original
+
+    def test_undo_returns_confirmation(self, tmp_project):
+        src = SourceResourcespace(tmp_project)
+        src.edit(
+            "mylib.core.Greeter.greet",
+            new_source="    def greet(self):\n        return 'changed'\n",
+        )
+        result = src.undo()
+        assert "revert" in result.lower() or "reverted" in result.lower()
