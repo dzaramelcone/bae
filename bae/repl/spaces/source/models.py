@@ -52,10 +52,23 @@ def _path_to_module(project_root: Path, filepath: Path) -> str:
     return ".".join(parts)
 
 
+def _role_label(filename: str) -> str:
+    """Map a filename to its role in the view/service convention."""
+    return {
+        "view.py": "protocol",
+        "service.py": "implementation",
+        "models.py": "data",
+        "schemas.py": "data",
+        "__init__.py": "exports",
+    }.get(filename, "")
+
+
 def _module_summary(project_root: Path, module_path: str) -> str:
     """One-line summary: module path, docstring, and content counts.
 
-    Packages show subpackage/module counts; plain modules show class/function counts.
+    Convention-following packages (with view.py) show role-grouped files.
+    Other packages show subpackage/module counts.
+    Plain modules show class/function counts.
     """
     filepath = _module_to_path(project_root, module_path)
     source = filepath.read_text()
@@ -65,8 +78,22 @@ def _module_summary(project_root: Path, module_path: str) -> str:
     first_line = docstring.splitlines()[0] if docstring else "(no docstring)"
 
     if filepath.name == "__init__.py":
-        # Package: count immediate children
         pkg_dir = filepath.parent
+
+        # Convention-following package: has view.py
+        if (pkg_dir / "view.py").exists():
+            roles: dict[str, list[str]] = {}
+            for child in sorted(pkg_dir.iterdir()):
+                if child.is_file() and child.suffix == ".py" and child.name != "__init__.py":
+                    role = _role_label(child.name)
+                    if role:
+                        roles.setdefault(role, []).append(child.stem)
+                elif child.is_dir() and (child / "__init__.py").exists():
+                    roles.setdefault("subresource", []).append(child.name)
+            role_parts = [f"{role}: {', '.join(names)}" for role, names in roles.items()]
+            return f"{module_path} -- {first_line} ({'; '.join(role_parts)})"
+
+        # Non-convention package: count immediate children
         subpackages = 0
         modules = 0
         for child in pkg_dir.iterdir():

@@ -13,6 +13,7 @@ import fnmatch
 import re
 import subprocess
 from pathlib import Path
+from string.templatelib import Template
 from typing import Callable
 
 from bae.repl.spaces.view import ResourceError, Resourcespace
@@ -33,6 +34,26 @@ from bae.repl.spaces.source.deps import DepsSubresource
 from bae.repl.spaces.source.config import ConfigSubresource
 from bae.repl.spaces.source.tests import TestsSubresource
 from bae.repl.spaces.source.meta import MetaSubresource
+
+
+def _render(template: Template) -> str:
+    """Render a tstring template to a plain string."""
+    parts = []
+    for i, s in enumerate(template.strings):
+        parts.append(s)
+        if i < len(template.interpolations):
+            parts.append(str(template.interpolations[i].value))
+    return "".join(parts)
+
+
+def _subresource_templates(name: str, description: str) -> dict[str, Template]:
+    """Tstring templates for a new subresource package."""
+    cls = name.title() + "Subresource"
+    return {
+        "__init__.py": t'from bae.repl.spaces.source.{name}.view import {cls}\n\n__all__ = ["{cls}"]\n',
+        "view.py": t'"""{description} subresource view: protocol wrapper delegating to service functions."""\n\nfrom __future__ import annotations\n\nfrom pathlib import Path\nfrom typing import Callable\n\nfrom bae.repl.spaces.source.{name} import service\nfrom bae.repl.spaces.view import Resourcespace\n\n\nclass {cls}:\n    """{description}."""\n\n    name = "{name}"\n    description = "{description}"\n\n    def __init__(self, project_root: Path) -> None:\n        self._root = project_root\n\n    def enter(self) -> str:\n        return "{description}\\n\\nread() for details"\n\n    def nav(self) -> str:\n        return ""\n\n    def read(self, target: str = "") -> str:\n        return service.read(self._root, target)\n\n    def supported_tools(self) -> set[str]:\n        return {{"read"}}\n\n    def tools(self) -> dict[str, Callable]:\n        return {{"read": self.read}}\n\n    def children(self) -> dict[str, Resourcespace]:\n        return {{}}\n',
+        "service.py": t'"""{description} service implementations."""\n\nfrom __future__ import annotations\n\nfrom pathlib import Path\n\n\ndef read(project_root: Path, target: str = "") -> str:\n    return "(not yet implemented)"\n',
+    }
 
 
 class SourceResourcespace:
@@ -113,16 +134,23 @@ class SourceResourcespace:
         return _read_symbol(self._root, target)
 
     def write(self, target: str, content: str = "") -> str:
-        """Create a new module with validated Python source."""
+        """Create a new module or subresource package.
+
+        Simple identifier (no dots): creates a subresource package from tstring template.
+        Dotted path: creates a plain module with validated Python source.
+        """
         _validate_module_path(target)
 
-        # Validate content is valid Python
+        # Simple identifier = new subresource package
+        if "." not in target:
+            return self._write_subresource(target, content)
+
+        # Dotted path = plain module creation
         try:
             ast.parse(content)
         except SyntaxError as e:
             raise ResourceError(f"Invalid Python: {e}")
 
-        # Resolve filesystem path (module shouldn't exist yet)
         parts = target.split(".")
         filepath = self._root / Path(*parts).with_suffix(".py")
         filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -148,6 +176,33 @@ class SourceResourcespace:
             pass  # Reload failure on new module is non-fatal
 
         return f"Created {target}"
+
+    def _write_subresource(self, name: str, description: str = "") -> str:
+        """Create a new subresource package from tstring template."""
+        if name in self._children:
+            raise ResourceError(f"Subresource '{name}' already exists")
+
+        description = description or name.replace("_", " ").title()
+        pkg_dir = Path(__file__).parent / name
+        if pkg_dir.exists():
+            raise ResourceError(f"Directory '{name}' already exists under source/")
+
+        templates = _subresource_templates(name, description)
+        pkg_dir.mkdir()
+        for filename, template in templates.items():
+            (pkg_dir / filename).write_text(_render(template))
+
+        # Auto-register into children (dynamic import of the view class)
+        module_path = f"bae.repl.spaces.source.{name}.view"
+        cls_name = name.title() + "Subresource"
+        try:
+            mod = __import__(module_path, fromlist=[cls_name])
+            cls = getattr(mod, cls_name)
+            self._children[name] = cls(self._root)
+        except Exception:
+            pass  # Registration failure is non-fatal; restart will pick it up
+
+        return f"Created subresource '{name}' at source/{name}/"
 
     def edit(self, target: str, new_source: str = "") -> str:
         """Replace a symbol's source by name with AST-based line replacement."""
