@@ -82,6 +82,8 @@
 
 - [x] **Phase 31: Resource Protocol + Navigation** - Resourcespace protocol, registry, navigation state, tool dispatch routing, output pruning (completed 2026-02-16)
 - [x] **Phase 32: Source Resourcespace** - Project-scoped file operations proving the resourcespace pattern end-to-end (completed 2026-02-16)
+- [ ] **Phase 32.1: Resourcespace Package Structure** - Restructure into bae/repl/spaces/ with per-space packages (INSERTED)
+- [ ] **Phase 32.2: UserView Tool Call Stripping** - Strip tool calls from AI output, show AI-native tool tags with docstring summaries (INSERTED)
 - [ ] **Phase 33: Task Resourcespace** - Persistent task CRUD with FTS search and cross-session persistence
 - [ ] **Phase 34: Memory Resourcespace** - Session history as navigable, searchable, taggable resources
 - [ ] **Phase 35: Search Resourcespace** - Federated cross-resourcespace search with navigation hyperlinks
@@ -125,6 +127,25 @@ Plans:
 - [x] 32-05-PLAN.md — Gap closure: fix navigation stack replacement and inject tool callables into namespace
 - [ ] 32-06-PLAN.md — Gap closure: fix package listing counts (submodules instead of class/function)
 - [ ] 32-07-PLAN.md — Gap closure: rename homespace() to home() and make home a resource with tools
+
+### Phase 32.1: Resourcespace Package Structure (INSERTED)
+
+**Goal:** Restructure resourcespace code into bae/repl/spaces/ with dedicated home/ and source/ packages, preserving all behavior
+**Depends on:** Phase 32
+**Plans:** 2 plans
+
+Plans:
+- [ ] 32.1-01-PLAN.md — Create spaces/ package structure, move source and home code, backward-compat re-exports
+- [ ] 32.1-02-PLAN.md — Migrate test imports to new paths, clean up ai.py, final audit
+
+### Phase 32.2: UserView Tool Call Stripping (INSERTED)
+
+**Goal:** AI tool calls stripped from UserView output; resource entry shows AI-native tool tags with docstring summaries
+**Depends on:** Phase 32.1
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 32.2 to break down)
 
 ### Phase 33: Task Resourcespace
 **Goal**: Agent can manage persistent tasks through a navigable resource with CRUD and search
@@ -222,6 +243,7 @@ Phases execute in numeric order: 31 -> 32 -> 33 -> 34 -> 35 -> 36
 | 30. Agent Core Extraction | v6.0 | 2/2 | Complete | 2026-02-15 |
 | 31. Resource Protocol + Navigation | v7.0 | Complete    | 2026-02-16 | - |
 | 32. Source Resourcespace | v7.0 | Complete    | 2026-02-16 | - |
+| 32.1. Resourcespace Package Structure | v7.0 | 0/2 | In progress | - |
 | 33. Task Resourcespace | v7.0 | 0/TBD | Not started | - |
 | 34. Memory Resourcespace | v7.0 | 0/TBD | Not started | - |
 | 35. Search Resourcespace | v7.0 | 0/TBD | Not started | - |
