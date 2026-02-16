@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from bae.repl.resource import ResourceError, Resourcespace
-from bae.repl.source import SourceResourcespace
+from bae.repl.spaces import ResourceError, Resourcespace
+from bae.repl.spaces.source import SourceResourcespace
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -39,31 +39,31 @@ class TestProtocol:
 
 class TestPathResolution:
     def test_module_to_path_file(self, src):
-        from bae.repl.source import _module_to_path
+        from bae.repl.spaces.source.models import _module_to_path
 
         result = _module_to_path(PROJECT_ROOT, "bae.repl.resource")
         assert result == PROJECT_ROOT / "bae" / "repl" / "resource.py"
 
     def test_module_to_path_package(self, src):
-        from bae.repl.source import _module_to_path
+        from bae.repl.spaces.source.models import _module_to_path
 
         result = _module_to_path(PROJECT_ROOT, "bae.repl")
         assert result == PROJECT_ROOT / "bae" / "repl" / "__init__.py"
 
     def test_module_to_path_nonexistent(self, src):
-        from bae.repl.source import _module_to_path
+        from bae.repl.spaces.source.models import _module_to_path
 
         with pytest.raises(ResourceError):
             _module_to_path(PROJECT_ROOT, "bae.nonexistent")
 
     def test_path_to_module_file(self, src):
-        from bae.repl.source import _path_to_module
+        from bae.repl.spaces.source.models import _path_to_module
 
         result = _path_to_module(PROJECT_ROOT, PROJECT_ROOT / "bae" / "repl" / "resource.py")
         assert result == "bae.repl.resource"
 
     def test_path_to_module_init(self, src):
-        from bae.repl.source import _path_to_module
+        from bae.repl.spaces.source.models import _path_to_module
 
         result = _path_to_module(PROJECT_ROOT, PROJECT_ROOT / "bae" / "repl" / "__init__.py")
         assert result == "bae.repl"
@@ -74,24 +74,24 @@ class TestPathResolution:
 
 class TestPathSafety:
     def test_valid_module_path(self):
-        from bae.repl.source import _validate_module_path
+        from bae.repl.spaces.source.models import _validate_module_path
 
         _validate_module_path("bae.repl.resource")  # no exception
 
     def test_traversal_rejected(self):
-        from bae.repl.source import _validate_module_path
+        from bae.repl.spaces.source.models import _validate_module_path
 
         with pytest.raises(ResourceError):
             _validate_module_path("../etc/passwd")
 
     def test_absolute_path_rejected(self):
-        from bae.repl.source import _validate_module_path
+        from bae.repl.spaces.source.models import _validate_module_path
 
         with pytest.raises(ResourceError):
             _validate_module_path("/absolute/path")
 
     def test_empty_segment_rejected(self):
-        from bae.repl.source import _validate_module_path
+        from bae.repl.spaces.source.models import _validate_module_path
 
         with pytest.raises(ResourceError):
             _validate_module_path("bae..repl")
@@ -344,7 +344,7 @@ class TestHotReload:
         assert g.greet() == "reloaded"
 
     def test_failed_reload_rolls_back(self, tmp_project):
-        from bae.repl.source import _hot_reload
+        from bae.repl.spaces.source.models import _hot_reload
 
         # Create a module, commit it, then corrupt and test rollback
         good = "import os\n\ndef helper():\n    return os.getcwd()\n"
@@ -476,7 +476,7 @@ class TestMetaSubresource:
 class TestModuleSummary:
     def test_package_shows_subpackage_counts(self, tmp_project):
         """Package summary shows subpackage/module counts, not class/function counts."""
-        from bae.repl.source import _module_summary
+        from bae.repl.spaces.source.models import _module_summary
 
         # tmp_project has mylib/ with __init__.py and core.py
         result = _module_summary(tmp_project, "mylib")
@@ -488,7 +488,7 @@ class TestModuleSummary:
 
     def test_package_with_subpackage(self, tmp_project):
         """Package with subdirectory packages shows subpackage count."""
-        from bae.repl.source import _module_summary
+        from bae.repl.spaces.source.models import _module_summary
 
         # Create a subpackage
         sub = tmp_project / "mylib" / "sub"
@@ -500,7 +500,7 @@ class TestModuleSummary:
 
     def test_module_still_shows_class_function_counts(self, tmp_project):
         """Plain .py modules still show class and function counts."""
-        from bae.repl.source import _module_summary
+        from bae.repl.spaces.source.models import _module_summary
 
         result = _module_summary(tmp_project, "mylib.core")
         assert "mylib.core" in result
@@ -509,7 +509,7 @@ class TestModuleSummary:
 
     def test_real_project_package_has_nonzero_counts(self, src):
         """The real bae package should show nonzero subpackage/module counts."""
-        from bae.repl.source import _module_summary
+        from bae.repl.spaces.source.models import _module_summary
 
         result = _module_summary(PROJECT_ROOT, "bae")
         assert "bae" in result
@@ -531,7 +531,7 @@ class TestModuleSummary:
 
 class TestShellRegistration:
     def test_resource_handle_navigates(self, src):
-        from bae.repl.resource import ResourceHandle, ResourceRegistry
+        from bae.repl.spaces import ResourceHandle, ResourceRegistry
 
         registry = ResourceRegistry()
         registry.register(src)
@@ -540,7 +540,7 @@ class TestShellRegistration:
         assert "source" in result.lower() or "Python" in result
 
     def test_dotted_access_to_meta(self, src):
-        from bae.repl.resource import ResourceHandle, ResourceRegistry
+        from bae.repl.spaces import ResourceHandle, ResourceRegistry
 
         registry = ResourceRegistry()
         registry.register(src)

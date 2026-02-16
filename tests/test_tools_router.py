@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from bae.repl.resource import (
+from bae.repl.spaces import (
     ResourceError,
     ResourceRegistry,
     Resourcespace,
