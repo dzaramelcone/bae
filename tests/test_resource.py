@@ -124,11 +124,11 @@ class TestRegistry:
         # Should return root nav, not crash
         assert result is not None
 
-    def test_homespace_clears_stack(self):
+    def test_home_clears_stack(self):
         reg = ResourceRegistry()
         reg.register(StubSpace("source"))
         reg.navigate("source")
-        result = reg.homespace()
+        result = reg.home()
         assert reg.current is None
         assert result is not None
 
@@ -281,7 +281,7 @@ class TestNavTree:
         reg = ResourceRegistry()
         reg.register(StubSpace("source"))
         reg.register(StubSpace("tasks"))
-        result = reg.homespace()
+        result = reg.home()
         assert "source()" in result
         assert "tasks()" in result
 
@@ -290,19 +290,19 @@ class TestNavTree:
         reg.register(StubSpace("source"))
         reg.register(StubSpace("tasks"))
         reg.navigate("source")
-        result = reg.homespace()
-        # After homespace, we're at root, so no marker
+        result = reg.home()
+        # After home, we're at root, so no marker
         # Navigate then check nav
         reg.navigate("source")
-        # root_nav is returned by homespace; but let's test via nav directly
+        # root_nav is returned by home; but let's test via nav directly
         # The nav tree from _root_nav should mark current position
-        # We test by navigating then getting homespace view
-        reg.homespace()
+        # We test by navigating then getting home view
+        reg.home()
         reg.navigate("source")
         # Now get the nav view -- navigate somewhere and check back
-        # Actually, the nav tree is rendered via _root_nav which homespace returns.
-        # Let's just verify that after navigation, homespace result includes marker
-        # since homespace clears stack, there won't be a marker after homespace.
+        # Actually, the nav tree is rendered via _root_nav which home returns.
+        # Let's just verify that after navigation, home result includes marker
+        # since home clears stack, there won't be a marker after home.
         # Instead, test the nav tree when called while navigated in:
         pass  # Covered by nav_tree_marks_current_position below
 
@@ -387,9 +387,9 @@ class TestNavResult:
         nr = NavResult("hello")
         assert isinstance(nr, str)
 
-    def test_homespace_returns_nav_result(self):
+    def test_home_returns_nav_result(self):
         reg = ResourceRegistry()
-        result = reg.homespace()
+        result = reg.home()
         assert isinstance(result, NavResult)
 
     def test_navigate_returns_nav_result(self):
@@ -435,16 +435,23 @@ class TestToolInjection:
         reg.navigate("source")
         assert ns["read"] is mock_read
 
-    def test_homespace_removes_tools(self):
+    def test_home_swaps_to_home_tools(self):
+        """Navigate to resource, then home(): resource tools removed, home tools injected."""
         ns = {}
         reg = ResourceRegistry(namespace=ns)
         mock_read = lambda: "content"
+        home_read = lambda arg: "home read"
+        home_glob = lambda pattern: "home glob"
+        home_grep = lambda arg: "home grep"
         space = StubSpace("source", tool_callables={"read": mock_read})
         reg.register(space)
+        reg._home_tools = {"read": home_read, "glob": home_glob, "grep": home_grep}
         reg.navigate("source")
-        assert "read" in ns
-        reg.homespace()
-        assert "read" not in ns
+        assert ns["read"] is mock_read
+        reg.home()
+        assert ns["read"] is home_read
+        assert ns["glob"] is home_glob
+        assert ns["grep"] is home_grep
 
     def test_navigate_swaps_tools(self):
         ns = {}
@@ -463,10 +470,45 @@ class TestToolInjection:
         assert ns["write"] is mock_write
         assert "glob" not in ns
 
+    def test_home_injects_tools(self):
+        """Set _home_tools on registry, call home(), verify tools in namespace."""
+        ns = {}
+        reg = ResourceRegistry(namespace=ns)
+        home_read = lambda arg: "home read"
+        home_glob = lambda pattern: "home glob"
+        home_grep = lambda arg: "home grep"
+        reg._home_tools = {"read": home_read, "glob": home_glob, "grep": home_grep}
+        reg.home()
+        assert ns["read"] is home_read
+        assert ns["glob"] is home_glob
+        assert ns["grep"] is home_grep
+
+    def test_home_returns_orientation(self):
+        """home() returns orientation string with resourcespaces and tools."""
+        ns = {}
+        reg = ResourceRegistry(namespace=ns)
+        reg.register(StubSpace("source", description="project source"))
+        reg._home_tools = {"read": lambda a: "", "glob": lambda a: "", "grep": lambda a: ""}
+        result = reg.home()
+        assert "Resourcespaces:" in result
+        assert "source()" in result
+        assert "Tools:" in result
+
+    def test_back_to_root_returns_orientation(self):
+        """Navigate then back() to root returns orientation content."""
+        ns = {}
+        reg = ResourceRegistry(namespace=ns)
+        reg.register(StubSpace("source", description="project source"))
+        reg._home_tools = {"read": lambda a: "", "glob": lambda a: ""}
+        reg.navigate("source")
+        result = reg.back()
+        assert "Resourcespaces:" in result
+        assert "source()" in result
+
     def test_no_namespace_no_crash(self):
         """Registry without namespace still works fine."""
         reg = ResourceRegistry()
         reg.register(StubSpace("source"))
         reg.navigate("source")  # should not crash
         reg.back()
-        reg.homespace()
+        reg.home()

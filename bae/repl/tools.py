@@ -1,4 +1,4 @@
-"""ToolRouter: dispatch tool calls to current resource or homespace filesystem.
+"""ToolRouter: dispatch tool calls to current resource or home filesystem.
 
 Routes read/write/edit/glob/grep to the current resource when navigated in,
 falls through to filesystem operations at root. Output over CHAR_CAP is
@@ -19,16 +19,16 @@ _LIST_ITEM_RE = re.compile(r"^\s*[-*+] ")
 
 
 class ToolRouter:
-    """Route tool calls to current resource or homespace filesystem."""
+    """Route tool calls to current resource or home filesystem."""
 
     def __init__(self, registry: ResourceRegistry) -> None:
         self._registry = registry
 
     def dispatch(self, tool: str, arg: str, **kwargs) -> str:
-        """Route tool call to current resource or homespace."""
+        """Route tool call to current resource or home."""
         current = self._registry.current
         if current is None:
-            return self._homespace_dispatch(tool, arg, **kwargs)
+            return self._home_dispatch(tool, arg, **kwargs)
 
         # Check if resource supports this tool
         if tool not in current.supported_tools():
@@ -43,8 +43,8 @@ class ToolRouter:
 
         return _prune(result)
 
-    def _homespace_dispatch(self, tool: str, arg: str, **kwargs) -> str:
-        """Dispatch to filesystem operations at root."""
+    def _home_dispatch(self, tool: str, arg: str, **kwargs) -> str:
+        """Dispatch to filesystem operations at home."""
         from bae.repl.ai import (
             _exec_glob,
             _exec_grep,
@@ -55,15 +55,15 @@ class ToolRouter:
         if tool == "read" and not arg.strip():
             return self._list_resourcespaces()
 
-        homespace = {
+        home = {
             "read": _exec_read,
             "glob": _exec_glob,
             "grep": _exec_grep,
         }
 
-        fn = homespace.get(tool)
+        fn = home.get(tool)
         if fn is None:
-            return f"Tool '{tool}' not available at homespace root."
+            return f"Tool '{tool}' not available at home."
 
         try:
             result = fn(arg)

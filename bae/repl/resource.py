@@ -88,6 +88,7 @@ class ResourceRegistry:
         self._spaces: dict[str, Resourcespace] = {}
         self._stack: list[Resourcespace] = []
         self._namespace = namespace
+        self._home_tools: dict[str, Callable] = {}
 
     @property
     def current(self) -> Resourcespace | None:
@@ -145,13 +146,13 @@ class ResourceRegistry:
         self._put_tools()
         if self._stack:
             return NavResult(self._entry_display(self._stack[-1]))
-        return self._root_nav()
+        return NavResult(self._build_orientation())
 
-    def homespace(self) -> str:
-        """Clear stack, return root nav tree."""
+    def home(self) -> str:
+        """Clear stack, inject home tools, return orientation."""
         self._stack.clear()
         self._put_tools()
-        return self._root_nav()
+        return NavResult(self._build_orientation())
 
     def breadcrumb(self) -> str:
         """Navigation path: 'home > source > meta'."""
@@ -169,6 +170,24 @@ class ResourceRegistry:
         current = self.current
         if current is not None:
             self._namespace.update(current.tools())
+        elif self._home_tools:
+            self._namespace.update(self._home_tools)
+
+    def _build_orientation(self) -> str:
+        """Build procedural orientation string for AI system prompt."""
+        lines = ["home"]
+        lines.append("")
+        if self._spaces:
+            lines.append("Resourcespaces:")
+            for name, space in sorted(self._spaces.items()):
+                lines.append(f"  {name}() -- {space.description}")
+        tools = sorted(self._home_tools.keys()) if self._home_tools else []
+        if tools:
+            lines.append("")
+            lines.append(f"Tools: {', '.join(tools)}")
+        lines.append("")
+        lines.append("Navigate: call a resourcespace as a function. back() to return.")
+        return "\n".join(lines)
 
     def _root_nav(self) -> str:
         """Render nav tree from root using Rich Tree."""

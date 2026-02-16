@@ -230,7 +230,13 @@ class CortexShell:
         self._lm = ClaudeCLIBackend()
         self.registry = ResourceRegistry(namespace=self.namespace)
         self._tool_router = ToolRouter(self.registry)
-        self.namespace["homespace"] = lambda: self.registry.homespace()
+        from bae.repl.ai import _exec_read, _exec_glob, _exec_grep
+        self.registry._home_tools = {
+            "read": _exec_read,
+            "glob": _exec_glob,
+            "grep": _exec_grep,
+        }
+        self.namespace["home"] = lambda: self.registry.home()
         self.namespace["back"] = lambda: self.registry.back()
         source_rs = SourceResourcespace(Path.cwd())
         self.registry.register(source_rs)

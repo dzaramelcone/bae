@@ -82,7 +82,7 @@ class TestConstants:
 # ---------------------------------------------------------------------------
 
 class TestDispatchRouting:
-    def test_root_read_calls_homespace(self, tmp_path):
+    def test_root_read_calls_home(self, tmp_path):
         """At root (registry.current is None), dispatch read goes to filesystem."""
         reg = ResourceRegistry()
         router = ToolRouter(reg)

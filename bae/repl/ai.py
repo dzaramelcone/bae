@@ -254,9 +254,12 @@ class AI:
         self._call_count = 0
 
     def _with_location(self, prompt: str) -> str:
-        """Prepend resource location to prompt when navigated into a resource."""
-        if self._registry is None or self._registry.current is None:
+        """Prepend resource context to prompt."""
+        if self._registry is None:
             return prompt
+        if self._registry.current is None:
+            orientation = self._registry._build_orientation()
+            return f"[Location: home]\n{orientation}\n\n{prompt}"
         return f"[Location: {self._registry.breadcrumb()}]\n{prompt}"
 
     async def fill(self, target: type[Node], context: dict | None = None) -> Node:
@@ -543,7 +546,7 @@ def _build_context(namespace: dict) -> str:
         "__builtins__", "ai", "ns", "store", "channels",
         "Node", "Graph", "Dep", "Recall", "GraphResult",
         "LM", "NodeConfig", "Annotated", "asyncio", "os",
-        "homespace", "back",
+        "home", "back",
     }
     user_vars: list[str] = []
     for name, obj in sorted(namespace.items()):

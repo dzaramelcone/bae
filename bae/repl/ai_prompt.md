@@ -38,6 +38,6 @@ ns(graph)
 
 ## Resources
 Navigate with `<run>source()</run>`, `<run>tasks()</run>`, etc. `@resource()` mentions are navigable.
-`<run>homespace()</run>` returns to root. `<run>back()</run>` returns to previous.
+`<run>home()</run>` returns to root. `<run>back()</run>` returns to previous.
 `<run>source.nav()</run>` shows navigation targets.
 Tools (R/W/E/G/Grep) operate on the current resource when navigated in.
