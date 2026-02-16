@@ -12,10 +12,31 @@ import contextvars
 import graphlib
 import inspect
 import time
-from typing import Annotated, get_args, get_origin, get_type_hints
+import types
+from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
 from bae.exceptions import RecallError
 from bae.markers import Dep, Gate, Recall
+
+def _get_base_type(hint: Any) -> type:
+    """Extract base type from Annotated or return hint as-is.
+
+    For union types like `X | None`, returns the non-None type.
+    """
+    if get_origin(hint) is Annotated:
+        hint = get_args(hint)[0]
+
+    # Handle union types (X | None) - extract the non-None type
+    if isinstance(hint, types.UnionType):
+        args = get_args(hint)
+        non_none_types = [arg for arg in args if arg is not type(None)]
+        if len(non_none_types) == 1:
+            return non_none_types[0]
+        if non_none_types:
+            return non_none_types[0]
+
+    return hint
+
 
 LM_KEY = object()  # sentinel for LM in dep cache
 GATE_HOOK_KEY = object()  # sentinel for gate hook callback in dep cache
@@ -138,6 +159,36 @@ def _dep_target(m: Dep, base_type: type) -> object | None:
     return None
 
 
+def _walk_dep_hints(
+    ts: graphlib.TopologicalSorter, visited: set, fn: object
+) -> None:
+    """Recursively walk Dep-annotated hints, adding edges to the sorter."""
+    if id(fn) in visited:
+        return
+    visited.add(id(fn))
+
+    ts.add(fn)
+
+    try:
+        hints = get_type_hints(fn, include_extras=True)
+    except Exception:
+        return
+
+    for param_name, hint in hints.items():
+        if param_name == "return":
+            continue
+        if get_origin(hint) is Annotated:
+            args = get_args(hint)
+            base_type = args[0]
+            for m in args[1:]:
+                if isinstance(m, Dep):
+                    target = _dep_target(m, base_type)
+                    if target is not None:
+                        ts.add(fn, target)
+                        _walk_dep_hints(ts, visited, target)
+                    break
+
+
 def build_dep_dag(node_cls: type) -> graphlib.TopologicalSorter:
     """Construct a TopologicalSorter from Dep-annotated fields and transitive deps.
 
@@ -155,34 +206,6 @@ def build_dep_dag(node_cls: type) -> graphlib.TopologicalSorter:
     ts = graphlib.TopologicalSorter()
     visited: set = set()
 
-    def walk(fn: object) -> None:
-        if id(fn) in visited:
-            return
-        visited.add(id(fn))
-
-        # Ensure leaf nodes appear in the DAG even with no deps
-        ts.add(fn)
-
-        try:
-            hints = get_type_hints(fn, include_extras=True)
-        except Exception:
-            return
-
-        for param_name, hint in hints.items():
-            if param_name == "return":
-                continue
-            if get_origin(hint) is Annotated:
-                args = get_args(hint)
-                base_type = args[0]
-                for m in args[1:]:
-                    if isinstance(m, Dep):
-                        target = _dep_target(m, base_type)
-                        if target is not None:
-                            ts.add(fn, target)  # fn depends on target
-                            walk(target)
-                        break
-
-    # Seed the DAG from node class fields
     hints = get_type_hints(node_cls, include_extras=True)
     for field_name, hint in hints.items():
         if field_name == "return":
@@ -194,7 +217,7 @@ def build_dep_dag(node_cls: type) -> graphlib.TopologicalSorter:
                 if isinstance(m, Dep):
                     target = _dep_target(m, base_type)
                     if target is not None:
-                        walk(target)
+                        _walk_dep_hints(ts, visited, target)
                     break
 
     return ts
@@ -270,32 +293,15 @@ def validate_node_deps(node_cls: type, *, is_start: bool) -> list[str]:
     return errors
 
 
-async def _resolve_one(fn: object, cache: dict, trace: list) -> object:
-    """Resolve a single dep (callable or Node-as-Dep) whose transitive deps are cached.
+async def _resolve_node_dep(fn: type, cache: dict, trace: list) -> object:
+    """Resolve a Node-as-Dep: resolve sub-fields then LM-fill plain fields."""
+    resolved = await resolve_fields(fn, trace, cache)
+    lm = cache[LM_KEY]
+    return await lm.fill(fn, resolved, fn.__name__)
 
-    For regular callables: inspects type hints for ``Dep``-annotated parameters,
-    looks up each in ``cache``, builds kwargs, and calls ``fn``.
 
-    For Node-as-Dep (fn is a Node subclass): recursively resolves the node's
-    own dep/recall fields, constructs a partial instance, and fills plain fields
-    via the LM from cache.
-
-    Args:
-        fn: The dep callable or Node subclass to resolve.
-        cache: Per-run cache with all transitive deps already resolved.
-        trace: Execution trace for Recall resolution (used by Node-as-Dep).
-
-    Returns:
-        The result of calling fn or the filled Node instance.
-    """
-    # Node-as-Dep: resolve sub-node's fields, then LM-fill plain fields
-    if _is_node_type(fn):
-        resolved = await resolve_fields(fn, trace, cache)
-        lm = cache[LM_KEY]
-        instruction = fn.__name__
-        return await lm.fill(fn, resolved, instruction)
-
-    # Regular callable dep
+async def _resolve_callable_dep(fn: object, cache: dict, trace: list) -> object:
+    """Resolve a regular callable dep: look up Dep/Recall params in cache, call fn."""
     try:
         hints = get_type_hints(fn, include_extras=True)
     except Exception:
@@ -323,48 +329,21 @@ async def _resolve_one(fn: object, cache: dict, trace: list) -> object:
     return fn(**kwargs)
 
 
+async def _resolve_one(fn: object, cache: dict, trace: list) -> object:
+    """Resolve a single dep whose transitive deps are already cached."""
+    if _is_node_type(fn):
+        return await _resolve_node_dep(fn, cache, trace)
+    return await _resolve_callable_dep(fn, cache, trace)
+
+
 def _build_fn_dag(fn: object) -> graphlib.TopologicalSorter:
     """Build a TopologicalSorter for a callable and its transitive deps.
 
-    Same walk logic as :func:`build_dep_dag` but seeded from a single
-    callable rather than a node class.
-
-    Args:
-        fn: The root callable or Node subclass to build the DAG from.
-
-    Returns:
-        A ``graphlib.TopologicalSorter`` ready for ``prepare()``.
+    Uses the same walk logic as :func:`build_dep_dag` but seeded from a
+    single callable rather than a node class.
     """
     ts = graphlib.TopologicalSorter()
-    visited: set = set()
-
-    def walk(f: object) -> None:
-        if id(f) in visited:
-            return
-        visited.add(id(f))
-
-        ts.add(f)
-
-        try:
-            hints = get_type_hints(f, include_extras=True)
-        except Exception:
-            return
-
-        for param_name, hint in hints.items():
-            if param_name == "return":
-                continue
-            if get_origin(hint) is Annotated:
-                args = get_args(hint)
-                base_type = args[0]
-                for m in args[1:]:
-                    if isinstance(m, Dep):
-                        target = _dep_target(m, base_type)
-                        if target is not None:
-                            ts.add(f, target)
-                            walk(target)
-                        break
-
-    walk(fn)
+    _walk_dep_hints(ts, set(), fn)
     return ts
 
 

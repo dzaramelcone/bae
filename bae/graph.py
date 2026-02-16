@@ -8,7 +8,7 @@ import inspect
 import logging
 import types
 from collections import deque
-from typing import Annotated, Any, get_args, get_origin, get_type_hints
+from typing import Annotated, get_args, get_origin, get_type_hints
 
 from pydantic.fields import FieldInfo
 
@@ -16,45 +16,13 @@ from bae.exceptions import BaeError, DepError, RecallError
 from bae.lm import LM
 from bae.markers import Effect
 from bae.node import Node, _has_ellipsis_body, _unwrap_annotated, _wants_lm
-from bae.resolver import LM_KEY, _engine_dep_cache, classify_fields, resolve_fields, validate_node_deps
+from bae.resolver import LM_KEY, _engine_dep_cache, _get_base_type, classify_fields, resolve_fields, validate_node_deps
 from bae.result import GraphResult
 
 logger = logging.getLogger(__name__)
 
 
-def _get_base_type(hint: Any) -> type:
-    """Extract base type from Annotated or return hint as-is.
 
-    For union types like `X | None`, returns the non-None type.
-    """
-    if get_origin(hint) is Annotated:
-        hint = get_args(hint)[0]
-
-    # Handle union types (X | None) - extract the non-None type
-    if isinstance(hint, types.UnionType):
-        args = get_args(hint)
-        non_none_types = [arg for arg in args if arg is not type(None)]
-        if len(non_none_types) == 1:
-            return non_none_types[0]
-        # Multiple non-None types - return first one (edge case)
-        if non_none_types:
-            return non_none_types[0]
-
-    return hint
-
-
-def _build_context(node: Node) -> dict[str, object]:
-    """Build context dict from node fields for LM fill."""
-    return {
-        name: getattr(node, name)
-        for name in node.__class__.model_fields
-        if hasattr(node, name)
-    }
-
-
-def _build_instruction(target_type: type) -> str:
-    """Build instruction string from class name."""
-    return target_type.__name__
 
 
 def _get_routing_strategy(
@@ -405,7 +373,7 @@ class Graph:
                                 target_resolved[name] = getattr(current, name)
                             current = await lm.fill(
                                 current.__class__, target_resolved,
-                                _build_instruction(current.__class__),
+                                current.__class__.__name__,
                                 source=source_node,
                             )
 
@@ -428,7 +396,11 @@ class Graph:
                         logger.info("%s -> fill %s", node_name, target_type.__name__)
                     elif strategy[0] == "decide":
                         types_list = list(strategy[1])
-                        context = _build_context(current)
+                        context = {
+                            name: getattr(current, name)
+                            for name in current.__class__.model_fields
+                            if hasattr(current, name)
+                        }
                         logger.info("%s -> decide [%s]", node_name, ", ".join(t.__name__ for t in types_list))
                         target_type = await lm.choose_type(types_list, context)
                     else:
@@ -438,7 +410,7 @@ class Graph:
 
                     # Resolve target's dep/recall fields before fill
                     target_resolved = await resolve_fields(target_type, trace, cache)
-                    instruction = _build_instruction(target_type)
+                    instruction = target_type.__name__
                     logger.info("fill %s", target_type.__name__)
                     current = await lm.fill(
                         target_type, target_resolved, instruction, source=current

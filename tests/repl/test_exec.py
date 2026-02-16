@@ -7,7 +7,7 @@ import asyncio
 import pytest
 
 from bae.repl.exec import async_exec
-from bae.repl.shell import _contains_coroutines, _count_and_close_coroutines
+from bae.repl.shell import _walk_coroutines
 
 
 @pytest.mark.asyncio
@@ -80,20 +80,20 @@ async def test_print_captures_stdout():
     assert stdout == "hello\n"
 
 
-# --- _contains_coroutines / _count_and_close_coroutines tests ---
+# --- _walk_coroutines tests ---
 
 
 def test_contains_coroutines_single():
     """Single coroutine detected."""
     coro = asyncio.sleep(0)
-    assert _contains_coroutines(coro) is True
+    assert _walk_coroutines(coro) is True
     coro.close()
 
 
 def test_contains_coroutines_list():
     """List of coroutines detected."""
     coros = [asyncio.sleep(0), asyncio.sleep(0)]
-    assert _contains_coroutines(coros) is True
+    assert _walk_coroutines(coros) is True
     for c in coros:
         c.close()
 
@@ -101,7 +101,7 @@ def test_contains_coroutines_list():
 def test_contains_coroutines_nested():
     """Nested lists of coroutines detected."""
     coros = [[asyncio.sleep(0)], [asyncio.sleep(0)]]
-    assert _contains_coroutines(coros) is True
+    assert _walk_coroutines(coros) is True
     for inner in coros:
         for c in inner:
             c.close()
@@ -110,29 +110,29 @@ def test_contains_coroutines_nested():
 def test_contains_coroutines_dict():
     """Dict values containing coroutines detected."""
     d = {"a": asyncio.sleep(0), "b": 42}
-    assert _contains_coroutines(d) is True
+    assert _walk_coroutines(d) is True
     d["a"].close()
 
 
 def test_contains_coroutines_plain():
     """Plain values return False."""
-    assert _contains_coroutines(42) is False
-    assert _contains_coroutines("hello") is False
-    assert _contains_coroutines([1, 2, 3]) is False
-    assert _contains_coroutines({"a": 1}) is False
-    assert _contains_coroutines(None) is False
+    assert _walk_coroutines(42) is False
+    assert _walk_coroutines("hello") is False
+    assert _walk_coroutines([1, 2, 3]) is False
+    assert _walk_coroutines({"a": 1}) is False
+    assert _walk_coroutines(None) is False
 
 
 def test_contains_coroutines_mixed():
     """Mixed list with ints and coroutines detected."""
     coro = asyncio.sleep(0)
     mixed = [1, "text", coro, 3.14]
-    assert _contains_coroutines(mixed) is True
+    assert _walk_coroutines(mixed) is True
     coro.close()
 
 
-def test_count_and_close_coroutines():
+def test_walk_coroutines_close():
     """Counts coroutines and closes them."""
     coros = [asyncio.sleep(0) for _ in range(5)]
-    n = _count_and_close_coroutines(coros)
+    n = _walk_coroutines(coros, close=True)
     assert n == 5

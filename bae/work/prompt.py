@@ -75,46 +75,41 @@ PromptDep = Annotated[Prompt, Dep(get_prompt)]
 
 # -- Gate Deps: user confirmation as injectable dependencies ------------------
 
-
-async def confirm_continue(prompt: PromptDep) -> bool:
-    """Generic continue gate."""
-    return await prompt.confirm("Continue?")
-
-
-async def confirm_refresh(prompt: PromptDep) -> bool:
-    """Refresh existing data gate."""
-    return await prompt.confirm("Maps exist. Refresh?")
-
-
-async def confirm_secrets(prompt: PromptDep) -> bool:
-    """Proceed despite secret findings gate."""
-    return await prompt.confirm("Proceed despite secrets?")
+_GATES: dict[str, tuple[str, str]] = {
+    "confirm_continue":   ("Continue?",                "Generic continue gate."),
+    "confirm_refresh":    ("Maps exist. Refresh?",     "Refresh existing data gate."),
+    "confirm_secrets":    ("Proceed despite secrets?",  "Proceed despite secret findings gate."),
+    "confirm_failures":   ("Continue despite failures?", "Continue despite failures gate."),
+    "confirm_blockers":   ("Continue despite blockers?", "Continue despite blockers gate."),
+    "confirm_approve":    ("Approve?",                  "Generic approval gate."),
+    "confirm_brownfield": ("Map codebase first?",       "Map existing codebase gate."),
+}
 
 
-async def confirm_failures(prompt: PromptDep) -> bool:
-    """Continue despite failures gate."""
-    return await prompt.confirm("Continue despite failures?")
+def _gate(name: str, msg: str, doc: str):
+    """Factory for gate confirmation functions."""
+    async def gate(prompt: PromptDep) -> bool:
+        return await prompt.confirm(msg)
+    gate.__name__ = name
+    gate.__qualname__ = name
+    gate.__module__ = __name__
+    gate.__doc__ = doc
+    return gate
 
 
-async def confirm_blockers(prompt: PromptDep) -> bool:
-    """Continue despite blockers gate."""
-    return await prompt.confirm("Continue despite blockers?")
+# Generate gate functions and Annotated aliases from the dict
+for _name, (_msg, _doc) in _GATES.items():
+    globals()[_name] = _gate(_name, _msg, _doc)
 
+_GATE_ALIASES = {
+    "ContinueGate":   "confirm_continue",
+    "RefreshGate":    "confirm_refresh",
+    "SecretsGate":    "confirm_secrets",
+    "FailuresGate":   "confirm_failures",
+    "BlockersGate":   "confirm_blockers",
+    "ApproveGate":    "confirm_approve",
+    "BrownfieldGate": "confirm_brownfield",
+}
 
-async def confirm_approve(prompt: PromptDep) -> bool:
-    """Generic approval gate."""
-    return await prompt.confirm("Approve?")
-
-
-async def confirm_brownfield(prompt: PromptDep) -> bool:
-    """Map existing codebase gate."""
-    return await prompt.confirm("Map codebase first?")
-
-
-ContinueGate = Annotated[bool, Dep(confirm_continue)]
-RefreshGate = Annotated[bool, Dep(confirm_refresh)]
-SecretsGate = Annotated[bool, Dep(confirm_secrets)]
-FailuresGate = Annotated[bool, Dep(confirm_failures)]
-BlockersGate = Annotated[bool, Dep(confirm_blockers)]
-ApproveGate = Annotated[bool, Dep(confirm_approve)]
-BrownfieldGate = Annotated[bool, Dep(confirm_brownfield)]
+for _alias, _fn_name in _GATE_ALIASES.items():
+    globals()[_alias] = Annotated[bool, Dep(globals()[_fn_name])]

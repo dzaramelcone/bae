@@ -21,7 +21,7 @@ from typing import (
 
 from pydantic import BaseModel, create_model
 
-from bae.resolver import classify_fields
+from bae.resolver import _get_base_type, classify_fields
 
 # String formats Claude's structured output API supports natively.
 _SUPPORTED_FORMATS = {
@@ -117,12 +117,6 @@ T = TypeVar("T", bound="Node")
 
 # ── Fill helpers ─────────────────────────────────────────────────────────
 
-
-def _get_base_type(hint: Any) -> Any:
-    """Extract base type from Annotated wrapper."""
-    if get_origin(hint) is Annotated:
-        return get_args(hint)[0]
-    return hint
 
 
 def _build_plain_model(target_cls: type) -> type[BaseModel]:

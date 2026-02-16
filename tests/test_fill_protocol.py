@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 from pydantic import BaseModel, HttpUrl
 
-from bae.graph import Graph, _build_instruction
+from bae.graph import Graph
 from bae.lm import ClaudeCLIBackend
 from bae.markers import Dep
 from bae.node import Node
@@ -308,11 +308,10 @@ class TestFillNestedModelPreservation:
 
 
 class TestBuildInstruction:
-    """Direct unit tests for _build_instruction."""
+    """Instruction is the class name (inlined from former _build_instruction)."""
 
     def test_returns_class_name_only(self):
-        """_build_instruction returns class name, ignoring __doc__."""
-        assert _build_instruction(EndNode) == "EndNode"
+        assert EndNode.__name__ == "EndNode"
 
     def test_returns_class_name_when_no_docstring(self):
-        assert _build_instruction(MiddleNode) == "MiddleNode"
+        assert MiddleNode.__name__ == "MiddleNode"

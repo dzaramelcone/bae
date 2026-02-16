@@ -49,48 +49,33 @@ from bae.repl.toolbar import (
 ANSI_SEQUENCES["\x1b[13;2u"] = (Keys.Escape, Keys.ControlM)
 
 
-def _contains_coroutines(obj, _seen=None):
-    """Recursively check if obj is or contains unawaited coroutines.
+def _walk_coroutines(obj, close=False, _seen=None):
+    """Recursively walk obj for unawaited coroutines.
 
-    Only traverses list, tuple, set, dict -- not arbitrary iterables.
-    Uses id-tracking to handle circular references.
+    When close=False: returns True/False (contains check).
+    When close=True: closes each coroutine, returns int count.
     """
     if _seen is None:
         _seen = set()
     obj_id = id(obj)
     if obj_id in _seen:
-        return False
+        return 0 if close else False
     _seen.add(obj_id)
 
     if asyncio.iscoroutine(obj):
+        if close:
+            obj.close()
+            return 1
         return True
     if isinstance(obj, (list, tuple, set)):
-        return any(_contains_coroutines(item, _seen) for item in obj)
+        if close:
+            return sum(_walk_coroutines(item, True, _seen) for item in obj)
+        return any(_walk_coroutines(item, False, _seen) for item in obj)
     if isinstance(obj, dict):
-        return any(_contains_coroutines(v, _seen) for v in obj.values())
-    return False
-
-
-def _count_and_close_coroutines(obj, _seen=None):
-    """Recursively find coroutines, close each, return count.
-
-    Closing prevents RuntimeWarning from garbage collection of unawaited coroutines.
-    """
-    if _seen is None:
-        _seen = set()
-    obj_id = id(obj)
-    if obj_id in _seen:
-        return 0
-    _seen.add(obj_id)
-
-    if asyncio.iscoroutine(obj):
-        obj.close()
-        return 1
-    if isinstance(obj, (list, tuple, set)):
-        return sum(_count_and_close_coroutines(item, _seen) for item in obj)
-    if isinstance(obj, dict):
-        return sum(_count_and_close_coroutines(v, _seen) for v in obj.values())
-    return 0
+        if close:
+            return sum(_walk_coroutines(v, True, _seen) for v in obj.values())
+        return any(_walk_coroutines(v, False, _seen) for v in obj.values())
+    return 0 if close else False
 
 
 def _print_task_menu(shell: CortexShell) -> None:
@@ -420,8 +405,8 @@ class CortexShell:
                         try:
                             val = await coro
                             if val is not None:
-                                if _contains_coroutines(val):
-                                    n = _count_and_close_coroutines(val)
+                                if _walk_coroutines(val):
+                                    n = _walk_coroutines(val, close=True)
                                     msg = f"<{n} unawaited coroutine{'s' if n != 1 else ''}>"
                                     self.router.write(
                                         "py", msg, mode="PY", metadata={"type": "warning"}
@@ -440,8 +425,8 @@ class CortexShell:
 
                     self.tm.submit(_py_task(result), name=f"py:{text[:30]}", mode="py")
                 elif result is not None:
-                    if _contains_coroutines(result):
-                        n = _count_and_close_coroutines(result)
+                    if _walk_coroutines(result):
+                        n = _walk_coroutines(result, close=True)
                         msg = f"<{n} unawaited coroutine{'s' if n != 1 else ''}>"
                         self.router.write("py", msg, mode="PY", metadata={"type": "warning"})
                         self.namespace.pop("_", None)
