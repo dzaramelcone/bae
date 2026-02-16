@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from examples.ootd import IsTheUserGettingDressed, graph
+from examples.ootd import ootd
 from bae.lm import ClaudeCLIBackend
 
 TRACES_DIR = Path(__file__).parent.parent / "tests" / "traces"
@@ -83,13 +83,13 @@ if __name__ == "__main__":
     print()
 
     try:
-        result = graph.run(
-            IsTheUserGettingDressed(
-                user_message="ugh i just got up",
-                user_info={"name": "Dzara", "gender": "woman"},
-            ),
+        import asyncio
+
+        result = asyncio.run(ootd(
+            user_message="ugh i just got up",
+            user_info={"name": "Dzara", "gender": "woman"},
             lm=lm,
-        )
+        ))
         print("\n── Result ──")
         terminal = result.trace[-1]
         print(terminal.model_dump_json(indent=2))

@@ -1,7 +1,7 @@
 """Bae: Type-driven agent graphs."""
 
 from bae.exceptions import BaeError, BaeLMError, BaeParseError, DepError, FillError, RecallError
-from bae.graph import Graph
+from bae.graph import Graph, graph
 from bae.lm import LM, AgenticBackend, ClaudeCLIBackend
 from bae.markers import Dep, Effect, Recall
 from bae.node import Node, NodeConfig
@@ -13,6 +13,7 @@ __all__ = [
     "Node",
     "NodeConfig",
     "Graph",
+    "graph",
     "GraphResult",
     # Markers
     "Dep",

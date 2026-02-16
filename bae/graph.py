@@ -4,6 +4,7 @@ The Graph class discovers topology from Node type hints and handles execution.
 """
 
 import asyncio
+import inspect
 import logging
 import types
 from collections import deque
@@ -466,3 +467,40 @@ class Graph:
                 lines.append(f"    {node_name} --> {succ_name}")
 
         return "\n".join(lines)
+
+
+def graph(start: type[Node]):
+    """Create a free-standing async callable from a node graph.
+
+    Discovers topology from `start`, builds a typed signature from the
+    start node's required plain fields, and returns an async function
+    that executes the graph. The internal Graph instance is fully
+    encapsulated inside the closure.
+
+    Usage::
+
+        ootd = graph(start=IsTheUserGettingDressed)
+        result = await ootd(user_info=UserInfo(), user_message="hi")
+    """
+    g = Graph(start=start)
+
+    async def wrapper(*, lm=None, dep_cache=None, **kwargs):
+        return await g.arun(lm=lm, dep_cache=dep_cache, **kwargs)
+
+    # Build typed signature from start node's required plain fields
+    params = [
+        inspect.Parameter(
+            name,
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            annotation=fi.annotation,
+        )
+        for name, fi in g._input_fields.items()
+    ]
+    params.append(inspect.Parameter("lm", kind=inspect.Parameter.KEYWORD_ONLY, default=None))
+    params.append(inspect.Parameter("dep_cache", kind=inspect.Parameter.KEYWORD_ONLY, default=None))
+    wrapper.__signature__ = inspect.Signature(params)
+    wrapper.__name__ = start.__name__
+    wrapper.__doc__ = f"Run {start.__name__} graph."
+    wrapper._name = start.__name__
+
+    return wrapper

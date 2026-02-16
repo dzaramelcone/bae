@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 from typing import Annotated
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from bae.exceptions import BaeError
-from bae.graph import Graph
+from bae.graph import Graph, graph
 from bae.markers import Dep
 from bae.node import Node
 from bae.lm import LM
@@ -292,3 +294,72 @@ class TestDepCache:
             await graph.arun(lm=lm)
 
         mock_sleep.assert_called_with(0)
+
+
+# =============================================================================
+# graph() factory tests
+# =============================================================================
+
+
+class FactoryStart(Node):
+    message: str
+
+    def __call__(self) -> FactoryEnd: ...
+
+
+class FactoryEnd(Node):
+    reply: str
+
+    async def __call__(self) -> None: ...
+
+
+class TestGraphFactory:
+    def test_graph_factory_returns_callable(self):
+        """graph() returns an async callable."""
+        fn = graph(start=FactoryStart)
+        assert callable(fn)
+        assert inspect.iscoroutinefunction(fn)
+
+    def test_graph_factory_signature(self):
+        """graph() callable has typed signature from start node fields."""
+        fn = graph(start=FactoryStart)
+        sig = inspect.signature(fn)
+        assert "message" in sig.parameters
+        p = sig.parameters["message"]
+        assert p.kind == inspect.Parameter.KEYWORD_ONLY
+        assert p.annotation is str
+
+    async def test_graph_factory_executes(self):
+        """graph() callable executes the graph and returns GraphResult."""
+        fn = graph(start=FactoryStart)
+        lm = MockV2LM()
+        result = await fn(message="hi", lm=lm)
+        assert isinstance(result, GraphResult)
+        assert len(result.trace) == 2
+
+    def test_graph_factory_has_name(self):
+        """graph() callable has _name display string, not a leaked Graph."""
+        fn = graph(start=FactoryStart)
+        assert fn._name == "FactoryStart"
+        assert not hasattr(fn, "_graph")
+
+    async def test_graph_factory_missing_field_raises(self):
+        """graph() callable raises TypeError for missing required fields."""
+        fn = graph(start=FactoryStart)
+        lm = MockV2LM()
+        with pytest.raises(TypeError, match="message"):
+            await fn(lm=lm)
+
+    def test_graph_factory_name(self):
+        """graph() callable has __name__ set to start class name."""
+        fn = graph(start=FactoryStart)
+        assert fn.__name__ == "FactoryStart"
+
+    def test_graph_factory_signature_includes_lm_and_dep_cache(self):
+        """graph() callable signature includes lm and dep_cache with defaults."""
+        fn = graph(start=FactoryStart)
+        sig = inspect.signature(fn)
+        assert "lm" in sig.parameters
+        assert sig.parameters["lm"].default is None
+        assert "dep_cache" in sig.parameters
+        assert sig.parameters["dep_cache"].default is None

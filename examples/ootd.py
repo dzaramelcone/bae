@@ -22,7 +22,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
-from bae import Dep, Graph, Node, Recall
+from bae import Dep, Graph, Node, Recall, graph
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -245,11 +245,10 @@ class RecommendOOTD(Node):
 # =============================================================================
 
 
-graph = Graph(start=IsTheUserGettingDressed)
+ootd = graph(start=IsTheUserGettingDressed)
 
 if __name__ == "__main__":
-    result = graph.run(
-        user_info=UserInfo(),
-        user_message="ugh i just got up",
-    )
+    import asyncio
+
+    result = asyncio.run(ootd(user_info=UserInfo(), user_message="ugh i just got up"))
     print(result.trace[-1].model_dump_json(indent=2))
