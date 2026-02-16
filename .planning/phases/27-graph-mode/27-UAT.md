@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 27-graph-mode
 source: [27-04-SUMMARY.md, 27-05-SUMMARY.md]
 started: 2026-02-15T21:40:00Z
@@ -47,12 +47,24 @@ skipped: 0
   reason: "User reported: flat params work and submits fine, but locks input -- can't type while graph runs, may be stealing stdin"
   severity: blocker
   test: 1
-  artifacts: []
-  missing: []
+  root_cause: "ClaudeCLIBackend subprocess (lm.py:384-389) omits stdin param in asyncio.create_subprocess_exec, so child process inherits parent's stdin. prompt_toolkit loses terminal access while claude CLI subprocess holds stdin."
+  artifacts:
+    - path: "bae/lm.py"
+      issue: "asyncio.create_subprocess_exec missing stdin=DEVNULL at line 384"
+  missing:
+    - "Add stdin=asyncio.subprocess.DEVNULL to subprocess creation"
+  debug_session: ".planning/debug/graph-run-blocks-input.md"
 - truth: "inspect shows per-node timings with well-formatted, indented field values"
   status: failed
   reason: "User reported: fields not aligned with nodes, no per-node timing, trace is wall of text lacking indenting and formatting"
   severity: major
   test: 3
-  artifacts: []
-  missing: []
+  root_cause: "_cmd_inspect shows timing in a separate section, not inline with nodes. Only terminal node shows fields (dumped as raw repr). No json.dumps(indent=2) or Rich formatting for nested structures."
+  artifacts:
+    - path: "bae/repl/graph_commands.py"
+      issue: "_cmd_inspect separates timing from trace, only terminal node has fields, raw dict repr"
+  missing:
+    - "Merge timing inline with each trace node"
+    - "Use json.dumps(indent=2) or Rich Syntax for field values"
+    - "Show fields for terminal node only, with proper formatting"
+  debug_session: ".planning/debug/inspect-formatting.md"
