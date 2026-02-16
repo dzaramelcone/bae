@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v7.0 Hypermedia Resourcespace -- Phase 32: Source Resourcespace
+**Current focus:** v7.0 Hypermedia Resourcespace -- Phase 32.1: Resourcespace Package Structure
 
 ## Current Position
 
-Phase: 32 of 36 (Source Resourcespace)
-Plan: 7 of 7 in current phase
-Status: Phase Complete
-Last activity: 2026-02-16 -- Completed 32-07 (gap closure: home() orientation builder)
+Phase: 32.1 of 36 (Resourcespace Package Structure)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-02-16 -- Completed 32.1-01 (spaces/ package structure)
 
-Progress: [█████████████████████] 100%
+Progress: [██████████████████████] ~50% of 32.1
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 108 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 9 v7.0)
+- Total plans completed: 109 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 10 v7.0)
 - v6.0 duration: 1 day (2026-02-15)
 - v5.0 duration: 1 day (2026-02-14)
 
@@ -34,6 +34,8 @@ Progress: [█████████████████████] 100%
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 32.1-01: MetaSubresource._module_path points to bae.repl.spaces.source.service (canonical location after move)
+- v7.0 32.1-01: spaces/ package layout: spaces/{name}/{__init__.py, service.py, models.py, schemas.py, view.py}; old modules become thin re-export shims
 - v7.0 32-05: Stack replacement uses identity comparison for common-prefix divergence; tools() returns bound methods for namespace injection
 - v7.0 32-04: Subresource classes are module-level; ConfigSubresource returns JSON; tomlkit added for TOML writes
 - v7.0 32-03: _replace_symbol auto-adjusts indentation via textwrap.dedent + col_offset re-indent
@@ -61,6 +63,11 @@ Recent:
 
 - Session store: conversation indexing agent (deferred)
 
+### Roadmap Evolution
+
+- Phase 32.1 inserted after Phase 32: Resourcespace Package Structure (URGENT) — restructure into spaces/ packages before adding more resourcespaces in 33+
+- Phase 32.2 inserted after Phase 32: UserView Tool Call Stripping (URGENT) — strip tool calls from AI output, show only session tag + execution + result
+
 ### Blockers/Concerns
 
 None.
@@ -83,6 +90,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32-07-PLAN.md (gap closure: home() orientation builder)
+Stopped at: Completed 32.1-01-PLAN.md (spaces/ package structure)
 Branch: main
-Resume file: .planning/phases/32-source-resourcespace/32-07-SUMMARY.md
+Resume file: .planning/phases/32.1-resourcespace-package-structure/32.1-01-SUMMARY.md
