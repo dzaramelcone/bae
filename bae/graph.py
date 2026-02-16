@@ -160,8 +160,15 @@ class Graph:
             start: The starting node type.
 
         Raises:
-            TypeError: If start node has Recall fields or invalid deps.
+            TypeError: If start is an instance instead of a class, or has
+                Recall fields or invalid deps.
         """
+        if not isinstance(start, type):
+            raise TypeError(
+                f"Graph(start=...) expects a Node class, got an instance of "
+                f"{type(start).__name__}. Use Graph(start={type(start).__name__}) "
+                f"instead of Graph(start={type(start).__name__}(...))"
+            )
         self.start = start
         self._nodes: dict[type[Node], set[type[Node]]] = {}
         self._discover()

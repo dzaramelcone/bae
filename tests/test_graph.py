@@ -130,6 +130,20 @@ class TestGraphValidation:
         assert any("no path to a terminal" in i for i in issues)
 
 
+class TestGraphInstanceGuard:
+    def test_graph_rejects_instance(self):
+        """Graph(start=instance) raises TypeError with helpful message."""
+        instance = Start(query="hello")
+        with pytest.raises(TypeError, match="expects a Node class, got an instance"):
+            Graph(start=instance)
+
+    def test_graph_rejects_instance_message_suggests_fix(self):
+        """Error message tells user to pass the class instead."""
+        instance = Start(query="hello")
+        with pytest.raises(TypeError, match=r"Use Graph\(start=Start\)"):
+            Graph(start=instance)
+
+
 class TestGraphMermaid:
     def test_mermaid_output(self):
         graph = Graph(start=Start)
