@@ -1,77 +1,126 @@
-# Technology Stack
+# Stack Research
 
-**Project:** Concurrent Graph Execution in Cortex REPL
-**Researched:** 2026-02-15
+**Domain:** Hypermedia resourcespace, context-scoped tools, agent navigation
+**Researched:** 2026-02-16
+**Confidence:** HIGH
 
 ## Recommendation: Zero New Dependencies
 
-The entire milestone -- concurrent graph execution, human-in-the-loop gates, observability, lifecycle management for 10+ concurrent instances -- can be built with Python 3.14 stdlib + existing dependencies (Rich 14.3.2, prompt-toolkit 3.0.52, Pydantic 2.12.5). No new packages needed.
+Like v6.0, this milestone requires no new packages. Hypermedia resourcespace is a design pattern over existing infrastructure, not a technology problem. The resource tree, context-scoped tools, navigation, and cross-resourcespace search all map to Python 3.14 stdlib + existing dependencies (Pydantic 2.12.5, Rich 14.3.2, SQLite/FTS5 via SessionStore).
 
-Python 3.14 ships two new asyncio introspection APIs (`capture_call_graph`, `print_call_graph`) that are purpose-built for the observability requirements. Everything else uses established stdlib primitives.
+The closest external temptation is a tree library or URL-routing framework. Neither is warranted. The resource tree is a shallow dict-of-dicts with path-based lookup -- `dict` and `str.split("/")` cover it. URL routing frameworks (Starlette, FastAPI router) solve HTTP dispatch, not in-process namespace navigation.
+
+**pyproject.toml: No changes.**
 
 ---
 
 ## Recommended Stack
 
-### Concurrent Graph Execution Engine
+### Resourcespace Core (Tree + Navigation)
 
 | Technology | Version | Purpose | Why |
 |------------|---------|---------|-----|
-| `asyncio.TaskGroup` | stdlib 3.14 | Structured concurrency for parallel graph runs | Cancels siblings on failure -- when a node errors, the entire graph run aborts cleanly. Performance parity with `gather()` since 3.14. ExceptionGroup error handling surfaces all failures, not just the first. |
-| `asyncio.Task` | stdlib 3.14 | Individual graph run tracking | TaskManager already wraps `asyncio.create_task()`. Graph runs become named tasks (`graph:run_id:GraphName`) tracked in existing TaskManager infrastructure. |
-| `asyncio.timeout` | stdlib 3.14 | Per-graph-run timeout | Context manager that converts CancelledError to TimeoutError. Nestable. Reschedule-able via `.reschedule()` for dynamic deadline adjustment. Prevents runaway LLM calls from blocking the REPL indefinitely. |
+| `dict[str, Resource]` | stdlib | Resource tree registry | Flat dict with `/`-delimited keys. Resources register at paths like `/home`, `/source/bae/node.py`, `/memory/sessions`. No need for actual tree nodes -- path prefix matching via `str.startswith()` handles subtree queries. Same pattern as ChannelRouter._channels. |
+| `Pydantic BaseModel` | 2.12.5 | Resource and Tool schema definitions | Resources declare their schema (what fields they expose) and tool schemas (what operations they support) as Pydantic models. Reuses the existing Node pattern -- resources ARE data frames, tools ARE typed operations. JSON schema generation via `.model_json_schema()` feeds the AI's tool awareness. |
+| `typing.Protocol` | stdlib 3.14 | Resource and Tool protocols | `Resource` protocol defines the interface (path, tools, children, repr). `Tool` protocol defines callable operations. Same pattern as `ViewFormatter` protocol in channels.py. Runtime-checkable for registration validation. |
+| `contextvars.ContextVar` | stdlib 3.14 | Current resource scope (working directory) | A contextvar holds the current resourcespace path. Navigation commands (`cd`, breadcrumbs) update it. Tool resolution reads it. Same pattern as `_graph_ctx` in engine.py. Async-safe, zero overhead when not navigating. |
 
-**Integration point:** TaskManager.submit() already creates tasks with name/mode. Extend it to accept a `graph_run_id` and associate graph lifecycle metadata. Do NOT replace TaskManager -- augment it.
+**Integration point:** The resource registry lives on CortexShell alongside `_graph_registry`. It seeds into the REPL namespace as a navigable object (replacing or wrapping the current flat namespace). `_build_context()` in ai.py reads the current scope to populate AI context with only the relevant tools and resources.
 
-**Why TaskGroup over gather:** `gather()` does not cancel other tasks if one fails. When a node in a graph run raises DepError or FillError, the graph should stop immediately, not let remaining LLM calls run to completion. TaskGroup's structured concurrency enforces this.
+**Why flat dict, not tree structure:** A tree (nested dicts, or a TreeNode class with children) requires traversal logic, parent pointers, and careful mutation handling. A flat dict with path keys gives O(1) lookup, trivial subtree listing via prefix scan, and zero structural overhead. The "tree" is implicit in the path strings -- same design as Redis keys or S3 object stores.
 
-**Why NOT separate TaskGroups per graph:** Each graph run is sequential (node A -> node B -> node C). TaskGroup is for managing multiple concurrent graph runs at the REPL level, not for parallelizing nodes within a single run. The current `arun()` loop stays sequential per-graph. Concurrency is between graphs, not within them.
-
-### Human-in-the-Loop Input Gates
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| `asyncio.Event` | stdlib 3.14 | Suspend graph execution until human responds | Textbook primitive for "wait until signaled." A gate node creates an Event, the graph runner awaits it. When the human responds, the REPL sets the Event. Zero overhead when not waiting. Thread-safe. |
-| `asyncio.Queue(maxsize=1)` | stdlib 3.14 | Carry human input back to the waiting gate | Event says "go", but the gate needs the answer too. Queue(maxsize=1) carries the response value. Graph awaits `queue.get()`, REPL does `queue.put_nowait(answer)`. Single-item queue prevents stale responses. |
-| `prompt_toolkit.patch_stdout` | 3.0.52 | Print gate notifications above the prompt | Already used in CortexShell.run(). Notifications from background graph tasks use `print_formatted_text()` inside the patch_stdout context -- output appears above the prompt without corrupting it. |
-
-**Integration point:** Gate notifications go through the existing Channel/ChannelRouter system. Graph channel writes with metadata `{"type": "gate_waiting", "run_id": "...", "prompt": "..."}` surface "Graph X is waiting for input" to the user. The REPL dispatches responses via a gate registry keyed by `(run_id, gate_id)`.
-
-**Why Event+Queue, not Condition:** `asyncio.Condition` is for notify-one/notify-all patterns with shared mutable state. Gate semantics are simpler: binary signal + single value. Event+Queue is two clear primitives composing into one clear pattern, vs Condition which bundles lock + notification into one opaque object.
-
-**Anti-pattern -- modal dialogs:** Do NOT use `prompt_toolkit.shortcuts.input_dialog`. Modal dialogs steal focus from the REPL prompt, blocking all other work. Instead, the human types a response at the normal prompt. A command syntax (e.g. `:gate run_3 yes` or routing via GRAPH mode) delivers the answer to the waiting graph. The REPL stays interactive while graphs wait.
-
-### Graph Observability / Metrics
+### Tool Call Pruning (I/O Only, 500 Token Cap)
 
 | Technology | Version | Purpose | Why |
 |------------|---------|---------|-----|
-| `time.perf_counter_ns()` | stdlib 3.14 | Nanosecond timing for node/dep/LM execution | Integer nanoseconds avoids floating-point drift in aggregations. Monotonic. Wrap each node step, dep call, and LM invocation with start/end timestamps. Convert to ms for display. |
-| `dataclasses.dataclass` | stdlib 3.14 | Metrics collection structs (NodeMetrics, RunMetrics, DepMetrics) | Lightweight, no validation overhead. Metrics are internal bookkeeping, not user-facing models. Frozen dataclasses for immutable snapshots after a run completes. |
-| `asyncio.capture_call_graph()` | stdlib 3.14 | Debug async task relationships at runtime | **NEW in 3.14.** Returns structured `FutureCallGraph` showing which tasks await which. Use for debugging stuck graphs: "Task graph:run_3 is awaiting gate:confirm_deploy". Zero instrumentation needed -- reads the runtime's own tracking. |
-| `asyncio.print_call_graph()` | stdlib 3.14 | Human-readable async call graph dump | **NEW in 3.14.** Prints the full async task tree. Route output to the `debug` channel via `format_call_graph()` (returns string instead of printing). |
-| Rich `Table` | 14.3.2 | Render metrics as formatted terminal tables | Already a dependency. Render NodeMetrics/RunMetrics as Rich Tables, convert to ANSI via `Console(file=StringIO())`, display through existing ViewFormatter protocol. Same pattern as UserView panels. |
-| Rich `Text` | 14.3.2 | Styled inline metrics in graph channel output | Already used in views.py. Color-code timing (green < 1s, yellow < 5s, red > 5s) for per-node durations in graph output. |
-| `resource.getrusage()` | stdlib | Process-level memory before/after graph runs | Already used in toolbar's `make_mem_widget()`. Snapshot RSS before and after graph runs for delta tracking. Not per-graph-run isolation (impossible without tracemalloc overhead), but sufficient for "did this run leak?" |
+| `str` methods | stdlib | Content pruning for AI context window | Tool outputs already flow through `_MAX_TOOL_OUTPUT = 4000` in ai.py. Pruning to 500 tokens (~2000 chars) for context injection is string slicing. The pruning logic belongs in `_build_context()`, not a library. |
+| `re` | stdlib | Strip non-I/O tool calls from conversation history | Already used extensively in ai.py for `_EXEC_BLOCK_RE`, `_TOOL_TAG_RE`, etc. Pruning "intermediate" tool calls (reads, globs) from context while preserving I/O (writes, final results) is regex filtering on metadata type tags. |
 
-**Integration point:** A `RunContext` dataclass accumulates per-node timing, dep call counts, LM call counts, and error counts as the graph executes. It wraps the existing `Graph.arun()` loop -- the graph itself stays unchanged. ViewFormatter protocol renders it: UserView shows summary line, DebugView shows full per-node breakdown.
+**Integration point:** Pruning hooks into the existing eval loop in `AI.__call__()`. The context builder (`_build_context`) gets a budget parameter. Tool call metadata already has `type` tags (ai_exec, tool_translated, ai_exec_result) -- filtering on these determines what enters context vs. what gets pruned.
 
-**Why capture_call_graph over manual tracking:** `capture_call_graph()` is free (3.14 builtin), returns structured data about the real async stack, and sees relationships the application code does not instrument. Manual tracking would duplicate what the runtime already knows, and would miss relationships between TaskManager tasks, gate Events, and LLM subprocess waits.
-
-**Anti-pattern -- external tracing:** Do NOT use OpenTelemetry, Prometheus, Jaeger, or external observability. This is a local REPL for a single developer, not a distributed production system. Dataclass metrics + Rich tables are the right weight.
-
-### Graph Lifecycle Management (10+ Concurrent Instances)
+### Source Resourcespace (Agent Modifies Bae Source)
 
 | Technology | Version | Purpose | Why |
 |------------|---------|---------|-----|
-| `dict[str, GraphRun]` | stdlib | Registry of active graph runs | Simple dict keyed by run_id (auto-incrementing int). GraphRun dataclass holds: Graph ref, asyncio.Task ref, RunContext (metrics), state enum, gate registry. Mirrors TaskManager's `_tasks` dict pattern. |
-| `enum.Enum` | stdlib | Graph run state machine | States: `PENDING -> RUNNING -> WAITING_GATE -> RUNNING -> COMPLETED / FAILED / CANCELLED`. Extends TaskManager's TaskState concept with graph-specific `WAITING_GATE`. |
-| `asyncio.Semaphore` | stdlib 3.14 | Throttle concurrent LLM calls across all graph runs | 10+ concurrent graphs each making LLM calls would overwhelm any backend. A global semaphore (e.g. `max_concurrent_lm_calls=3`) throttles LLM access without blocking the event loop. Graphs queue for LLM access, not for execution. |
-| `weakref.WeakValueDictionary` | stdlib | Prevent completed graph run memory leaks | Completed GraphRun objects should be garbage-collectable after inspection. Weak references in the run registry let finished runs evict naturally. Keep last N results in a bounded `collections.deque` for post-mortem inspection. |
-| `collections.deque(maxlen=N)` | stdlib | Bounded history of completed runs | Completed runs move from the active registry to a fixed-size deque. Oldest results evict when the deque is full. Prevents unbounded memory growth from many short-lived graph runs. |
+| `ast` | stdlib 3.14 | Parse Python source for structural navigation | `ast.parse()` + `ast.walk()` for extracting class/function/import structure from bae source files. Enables "list classes in node.py" without regex. Already handles Python 3.14 syntax. |
+| `pathlib.Path` | stdlib 3.14 | File I/O for source reading/writing | Already used throughout (ai.py, store.py). Source resourcespace wraps Path operations with resource protocol. |
+| `inspect.getsource` | stdlib 3.14 | Get source of live objects in namespace | For resources that point to loaded modules -- get the actual current source without re-reading files. |
+| `tokenize` | stdlib 3.14 | Preserve formatting in source edits | When the agent edits source, tokenize preserves comments and whitespace that ast discards. For read-only structural queries, ast suffices. For writes, the existing `_exec_edit_replace` line-range approach in ai.py is sufficient -- no AST-level rewriting needed. |
 
-**Integration point:** The graph run registry lives on CortexShell (like `_ai_sessions`). The toolbar gets a `make_graphs_widget()` showing active graph count + waiting gates. GRAPH mode input routes to the run registry for commands (`status`, `cancel run_3`, `inspect run_2`, `metrics run_1`).
+**Integration point:** Source resourcespace registers at `/source/`. Each Python file in the bae package becomes a child resource at `/source/bae/node.py`, `/source/bae/graph.py`, etc. Tools: `read(path, lines?)`, `edit(path, start, end, content)`, `search(pattern)`. These delegate to the existing tool implementations in ai.py (`_exec_read`, `_exec_edit_replace`, `_exec_grep`).
 
-**Why Semaphore for LLM, not for graphs:** Graph execution is cheap (Python dict lookups, Pydantic construction). The bottleneck is LLM calls (subprocess + API latency). Throttling graph count would artificially limit concurrency. Throttling LLM calls prevents API saturation while letting non-LLM graph work proceed freely.
+**Why NOT `libcst` or `rope`:** CST-preserving transformation libraries are for automated refactoring tools. The agent writes code directly -- it does not need a CST intermediate representation. `ast` for structural queries + line-range edits for modifications is the right weight.
+
+### Memory Resourcespace (Explore/Tag Session Memories)
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `SessionStore` (existing) | bae | FTS5 search, session listing, entry retrieval | Already has `search()`, `recent()`, `sessions()`, `session_entries()`. Memory resourcespace is a thin protocol wrapper over these methods. Zero new storage code needed. |
+| `sqlite3` | stdlib 3.14 | Tag storage (new table for entry tags) | Tags are a new concept: `entry_tags(entry_id, tag)` table with FTS5 integration. SQLite ALTER TABLE or schema migration in SessionStore. One new table, one new trigger. |
+| `json` | stdlib 3.14 | Metadata enrichment for tagged entries | Entry metadata already stores as JSON text. Tags can also live in metadata, but a separate table enables tag-based FTS queries without JSON parsing. |
+
+**Integration point:** Memory resourcespace registers at `/memory/`. Children: `/memory/sessions`, `/memory/search`, `/memory/tags`. Tools: `search(query)`, `recent(n)`, `tag(entry_id, tag)`, `untag(entry_id, tag)`, `by_tag(tag)`. All delegate to SessionStore methods (existing or new).
+
+**Schema addition:** One new table in SessionStore:
+
+```sql
+CREATE TABLE IF NOT EXISTS entry_tags (
+    entry_id INTEGER NOT NULL REFERENCES entries(id),
+    tag TEXT NOT NULL,
+    PRIMARY KEY (entry_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag);
+```
+
+### Task Resourcespace (CRUD/Search, Persistent)
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `sqlite3` | stdlib 3.14 | Task persistence (new table in SessionStore DB) | Tasks need to survive across sessions. A `tasks` table in the existing SQLite DB with FTS5 integration. Same connection, same WAL journal, same file. |
+| `Pydantic BaseModel` | 2.12.5 | Task schema definition | Task model with typed fields: title, status, priority, tags, description, created_at, updated_at. Validates on create/update. JSON schema for AI tool awareness. |
+| `enum.Enum` | stdlib | Task status and priority enums | `TaskStatus(OPEN, IN_PROGRESS, DONE, CANCELLED)`, `TaskPriority(LOW, MEDIUM, HIGH, CRITICAL)`. |
+| `uuid.uuid7()` | stdlib 3.14 | Task IDs | Sortable, timestamp-embedded. Already used for session_id in SessionStore. |
+
+**Integration point:** Task resourcespace registers at `/tasks/`. Tools: `create(title, ...)`, `update(id, ...)`, `list(status?, priority?)`, `search(query)`, `delete(id)`. FTS5 indexes task title + description for natural language search.
+
+**Schema addition:**
+
+```sql
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    priority TEXT NOT NULL DEFAULT 'medium',
+    description TEXT DEFAULT '',
+    tags TEXT DEFAULT '[]',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
+    title, description, content=tasks, content_rowid=rowid
+);
+```
+
+### Search Resourcespace (Cross-Resourcespace Search)
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `sqlite3 FTS5` | stdlib 3.14 | Unified search across resourcespaces | Each resourcespace that supports search registers a search provider. The search resourcespace fans out queries to all providers, merges results with source attribution. FTS5 MATCH syntax is already used in SessionStore.search(). |
+
+**Integration point:** Search resourcespace at `/search/`. It does not store data -- it dispatches. A `SearchProvider` protocol: `search(query, limit) -> list[SearchResult]`. Each resourcespace optionally implements it. `/search/` calls all providers, deduplicates, ranks by relevance (FTS5 rank score), and returns unified results with source paths.
+
+**Why NOT Elasticsearch/Whoosh/Tantivy:** All are external search engines for large-scale full-text search. Bae's data fits in SQLite. FTS5 provides BM25 ranking, prefix queries, phrase matching, and boolean operators. For a single-user REPL with thousands of entries, FTS5 is the correct scale.
+
+### Context-Scoped Tool Declaration
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `Pydantic BaseModel` | 2.12.5 | Tool schema as Pydantic models | Each tool declares its parameters as a Pydantic model. `model_json_schema()` generates the schema the AI sees. Same pattern as Node field schemas. |
+| `typing.Callable` | stdlib 3.14 | Tool implementation as async callables | Tools are `async def` functions with typed parameters. The resource declares which tools it supports. When the AI is in that resource's scope, only those tools appear in context. |
+| `functools.wraps` | stdlib | Preserve tool metadata through wrappers | Tools may be wrapped for logging, permission checks, or scope validation. `wraps` preserves `__name__`, `__doc__`, and annotations. |
+
+**Integration point:** The AI's system prompt dynamically includes tool schemas based on current resourcespace scope. `_build_context()` in ai.py queries the resource registry for the current path's tools, serializes their schemas, and injects them. This replaces the current static namespace dump with a context-aware tool menu.
 
 ---
 
@@ -79,16 +128,17 @@ Python 3.14 ships two new asyncio introspection APIs (`capture_call_graph`, `pri
 
 | Category | Recommended | Alternative | Why Not |
 |----------|-------------|-------------|---------|
-| Concurrency | `asyncio.TaskGroup` | `anyio.create_task_group` | Extra dependency. AnyIO adds Trio compatibility bae will never use. TaskGroup is stdlib. |
-| Concurrency | `asyncio.TaskGroup` | `asyncio.gather()` | gather() does not cancel siblings on failure. Unsafe for graph runs where one error should abort the whole run. |
-| Input gates | `asyncio.Event` + `Queue` | `asyncio.Condition` | Condition bundles lock + notification. Event+Queue is two orthogonal primitives -- clearer, harder to misuse. |
-| Input gates | Inline prompt routing | `prompt_toolkit.input_dialog` | Modal dialogs block the entire REPL. Inline routing lets the user work while graphs wait. |
-| Observability | `time.perf_counter_ns()` | `tracemalloc` for memory | tracemalloc adds ~5-10% CPU overhead. RSS delta via `resource.getrusage()` is zero-overhead and sufficient for leak detection. |
-| Observability | `dataclasses` | Pydantic models for metrics | Metrics are internal. Pydantic validation is pointless for trusted internal data. Dataclasses construct faster. |
-| Observability | `asyncio.capture_call_graph()` | Manual task relationship tracking | capture_call_graph is 3.14 builtin, returns structured data, sees the real async stack. Manual tracking duplicates runtime knowledge. |
-| Lifecycle | `dict` registry | Redis / SQLite task queue | This is in-process. No persistence needed for running state. SessionStore handles I/O history. A task queue for 10 in-memory graphs is over-engineering. |
-| Lifecycle | `asyncio.Semaphore` | Token bucket / rate limiter library | Semaphore is stdlib. We need concurrency limiting (max simultaneous), not rate limiting (requests/sec). |
-| Metrics rendering | Rich Table via StringIO | Textual TUI | Textual is a full TUI framework. Cortex is a prompt_toolkit REPL. Mixing two TUI frameworks causes stdout conflicts. Rich via StringIO -> ANSI -> print_formatted_text is the proven pattern in views.py. |
+| Resource tree | Flat dict with path keys | `anytree` / `treelib` | External dependency for a shallow tree (3-4 levels deep). Path-prefix matching on a flat dict is simpler, faster, and zero-dependency. |
+| Resource tree | Flat dict with path keys | Nested dict-of-dicts | Nested dicts require recursive traversal, parent tracking, and careful mutation. Flat dict is O(1) lookup. |
+| Navigation | `contextvars.ContextVar` | Thread-local | Cortex is async. Thread-locals do not propagate across await boundaries. ContextVars do. Already proven in engine.py's `_graph_ctx`. |
+| Source analysis | `ast` stdlib | `libcst` / `parso` | CST libraries preserve formatting for automated refactoring. The agent writes code directly via line-range edits. AST provides structural queries; line-range edits preserve formatting by operating on raw text. |
+| Source analysis | `ast` stdlib | `rope` (refactoring library) | Rope is a full refactoring engine. Overkill for "list classes" and "show function signature" queries. |
+| Search | SQLite FTS5 | `whoosh` | Pure-Python search engine, unmaintained since 2015. FTS5 is built into Python's sqlite3, actively maintained, and already used in SessionStore. |
+| Search | SQLite FTS5 | `tantivy-py` (Rust bindings) | Compiled extension, designed for millions of documents. Bae has thousands. FTS5 handles this scale trivially. |
+| Task storage | Same SQLite DB | Separate JSON files | JSON files require manual indexing, lack transactions, and cannot do FTS. SQLite already open, WAL-mode, with proven patterns in SessionStore. |
+| Task storage | Same SQLite DB | `TinyDB` | External dependency. SQLite is stdlib, already in use, and supports FTS5. TinyDB would add a dependency for less capability. |
+| Tool schemas | Pydantic models | JSON Schema literals | Hand-written JSON schemas are error-prone and drift from implementation. Pydantic generates correct schemas from type annotations, which is the entire philosophy of bae. |
+| Tool schemas | Pydantic models | `dataclasses` | Dataclasses lack validation and JSON schema generation. Tools need both (validate agent input, generate schema for AI context). Pydantic is already a core dependency. |
 
 ---
 
@@ -96,29 +146,28 @@ Python 3.14 ships two new asyncio introspection APIs (`capture_call_graph`, `pri
 
 | Temptation | Why Resist |
 |------------|-----------|
-| `anyio` / `trio` | Bae is asyncio-native. AnyIO abstracts over runtimes that will never be used here. Adds complexity for zero benefit. |
-| `celery` / `dramatiq` / `arq` | Distributed task queues. Bae runs in a single-process REPL. |
-| `networkx` | Graph analysis library. Bae's Graph discovers topology via type hints and already has `to_mermaid()`. NetworkX would duplicate the adjacency list. |
-| `opentelemetry` / `prometheus-client` | Distributed tracing for microservices. This is a local dev tool. Dataclass metrics + Rich tables cover the use case completely. |
-| `textual` | Full TUI framework. Conflicts with prompt_toolkit which owns the terminal. Rich-via-StringIO is the correct rendering path. |
-| `graphviz` / `matplotlib` | Heavy visualization deps. `Graph.to_mermaid()` exists. Terminal rendering via Rich is sufficient. |
-| `psutil` | Process monitoring library. `resource.getrusage()` is stdlib and already used in toolbar. psutil adds a compiled C extension for information we do not need. |
+| `fastapi` / `starlette` Router | HTTP URL routing frameworks. Resourcespace paths are in-process dict lookups, not HTTP endpoints. Router middleware, dependency injection, request/response objects -- all irrelevant. |
+| `anytree` / `treelib` | Tree data structure libraries. The resource tree is 3-4 levels deep. A flat dict with path-prefix matching is simpler and faster. |
+| `libcst` / `rope` | CST-preserving code transformation. The agent writes code via line-range edits, not AST manipulation. `ast` for read-only structural queries is sufficient. |
+| `whoosh` / `tantivy` / `elasticsearch` | External search engines. FTS5 is built into sqlite3, already in use, handles bae's scale (thousands of entries, not millions). |
+| `TinyDB` / `peewee` / `SQLAlchemy` | ORMs and alternative databases. Raw sqlite3 with explicit SQL is bae's pattern (see SessionStore). ORMs add abstraction over a simple schema. |
+| `pydantic-settings` | Settings management. Resourcespace config is in-process state, not environment variable parsing. |
+| `click` / `argparse` (for resource commands) | CLI argument parsing for resource navigation commands. The agent invokes tools via typed Pydantic models, not CLI-style string parsing. |
+| `MCP` (Model Context Protocol) | External tool protocol for multi-model orchestration. Bae's tools are in-process Python callables in a single-agent REPL. MCP's JSON-RPC transport layer adds latency and complexity for zero benefit in this architecture. |
 
 ---
 
 ## Existing Dependencies (Unchanged)
 
-No version changes needed. Current installed versions are sufficient.
+No version changes needed. Current installed versions are sufficient for all v7.0 features.
 
-| Package | Installed | Required | Status |
-|---------|-----------|----------|--------|
-| `pydantic` | 2.12.5 | >=2.0 | OK. Node models, graph validation. |
-| `prompt-toolkit` | 3.0.52 | >=3.0.50 | OK. REPL, patch_stdout, key bindings, print_formatted_text. |
-| `rich` | 14.3.2 | >=14.3 | OK. Table, Panel, Syntax, Text, Console(file=StringIO()). |
-| `pygments` | 2.19.2 | >=2.19 | OK. Python lexer for PY mode. |
-| `typer` | (installed) | >=0.12 | OK. CLI entry point. |
-
-**pyproject.toml: No changes.**
+| Package | Installed | Required | v7.0 Usage |
+|---------|-----------|----------|------------|
+| `pydantic` | 2.12.5 | >=2.0 | Resource schemas, Tool parameter models, Task model. `model_json_schema()` for AI tool awareness. |
+| `prompt-toolkit` | 3.0.52 | >=3.0.50 | REPL navigation commands, completions for resource paths, `print_formatted_text` for resource display. |
+| `rich` | 14.3.2 | >=14.3 | Resource tree rendering (Rich Tree), task list rendering (Rich Table), breadcrumb display (Rich Text). |
+| `pygments` | 2.19.2 | >=2.19 | Python syntax highlighting in source resourcespace views. |
+| `typer` | (installed) | >=0.12 | CLI entry point (unchanged). |
 
 ---
 
@@ -127,64 +176,84 @@ No version changes needed. Current installed versions are sufficient.
 Everything below is Python 3.14 stdlib. Zero `pip install` commands.
 
 ```
-# Concurrent execution
-asyncio.TaskGroup           -- structured concurrency for multiple graph runs
-asyncio.timeout             -- per-run deadline enforcement
+# Resourcespace core
+dict[str, Resource]         -- flat path-keyed registry
+typing.Protocol             -- Resource, Tool, SearchProvider protocols
+contextvars.ContextVar      -- current scope (working directory)
+dataclasses.dataclass       -- lightweight internal structs (SearchResult, Breadcrumb)
 
-# Human-in-the-loop gates
-asyncio.Event               -- gate suspension primitive
-asyncio.Queue(maxsize=1)    -- gate response delivery
+# Tool call pruning
+str slicing + re            -- content truncation and I/O filtering in context builder
 
-# Observability
-asyncio.capture_call_graph  -- task relationship introspection (NEW in 3.14)
-asyncio.format_call_graph   -- string rendering of task tree (NEW in 3.14)
-time.perf_counter_ns        -- nanosecond execution timing
-resource.getrusage          -- RSS memory snapshots (already used)
+# Source resourcespace
+ast.parse / ast.walk        -- Python source structural queries
+pathlib.Path                -- file I/O (already used)
+inspect.getsource           -- live object source retrieval
 
-# Lifecycle management
-asyncio.Semaphore           -- LLM call concurrency throttle
-weakref.WeakValueDictionary -- auto-cleanup of completed runs
-collections.deque           -- bounded completed-run history
-enum.Enum                   -- run state machine
-dataclasses.dataclass       -- metrics structs
+# Memory resourcespace
+sqlite3                     -- entry_tags table (already open via SessionStore)
+
+# Task resourcespace
+sqlite3                     -- tasks + tasks_fts tables (same DB, same connection)
+uuid.uuid7                  -- sortable task IDs (already used for sessions)
+enum.Enum                   -- TaskStatus, TaskPriority
+
+# Search resourcespace
+sqlite3 FTS5 MATCH          -- cross-resourcespace full-text search (already used)
+
+# Tool schemas
+pydantic.BaseModel          -- tool parameter models (already a dependency)
 ```
 
 ---
 
 ## Key Integration Points with Existing Architecture
 
-### TaskManager (bae/repl/tasks.py)
-- Graph runs are TaskManager tasks via `submit()`. Returns TrackedTask with graph metadata in name.
-- `revoke()` cancels a graph run and its LLM subprocesses. `revoke_all()` cancels all.
-- Ctrl-C task menu shows graph runs alongside AI/PY/BASH tasks -- no UI changes needed.
-- TrackedTask.mode = "graph" distinguishes graph tasks from other modes.
+### Namespace (bae/repl/namespace.py)
+- `seed()` gains a resource registry alongside the flat namespace.
+- Resources appear as navigable objects in the namespace. `ns()` shows current scope's resources and tools.
+- NsInspector delegates to resource protocol for inspection.
 
-### ChannelRouter (bae/repl/channels.py)
-- All graph observability writes to the `"graph"` channel with typed metadata.
-- Gate notifications: `{"type": "gate_waiting", "run_id": "...", "prompt": "..."}`.
-- Node completion: `{"type": "node_complete", "run_id": "...", "node": "ClassName", "duration_ms": N}`.
-- Run completion: `{"type": "run_complete", "run_id": "...", "node_count": N, "total_ms": N}`.
-- All writes persist to SessionStore automatically (existing behavior).
-
-### ViewFormatter Protocol (bae/repl/views.py)
-- UserView: render graph run summaries as Rich Panels (code reuse from ai_exec panels).
-- DebugView: render per-node metrics, dep timings, LM call details as raw key=value pairs.
-- AISelfView: render graph events with semantic tags (graph-start, node-fill, gate-wait, etc.).
-- Extend via new metadata types on existing views. No new ViewFormatter subclass needed initially.
+### AI Context (bae/repl/ai.py)
+- `_build_context()` reads the current resourcespace scope instead of dumping the entire namespace.
+- Tool schemas from the current scope's resources replace the static `_SKIP` set.
+- Pruning logic trims tool call history to I/O-only within token budget.
+- `MAX_CONTEXT_CHARS` budget is allocated across: scope tools (schema), recent tool results (I/O only), navigation breadcrumb.
 
 ### SessionStore (bae/repl/store.py)
-- Graph run summaries persist via `store.record()` on the graph channel.
-- Searchable via FTS5: `store("graph run_3")` finds all entries for that run.
-- No schema changes needed -- entries table already has mode/channel/direction/content/metadata.
+- Schema gains `entry_tags` and `tasks` tables.
+- `SCHEMA` string extended (no migration framework -- CREATE IF NOT EXISTS is idempotent).
+- New methods: `create_task()`, `update_task()`, `search_tasks()`, `tag_entry()`, `entries_by_tag()`.
+- Same connection, same WAL journal, same file. No second database.
 
-### ToolbarConfig (bae/repl/toolbar.py)
-- `make_graphs_widget()`: shows active graph count + gates waiting. Same pattern as `make_tasks_widget()`.
-- Integrates via existing `toolbar.add("graphs", make_graphs_widget(shell))`.
+### ChannelRouter (bae/repl/channels.py)
+- Resource navigation events write to a `"nav"` channel (or reuse `"debug"` channel).
+- Tool execution within resourcespaces writes to `"py"` channel with metadata tags (same as ai_exec).
 
-### Graph.arun() (bae/graph.py)
-- The execution loop stays unchanged. A new `arun_observed()` wrapper (or hooks) adds timing around each step.
-- RunContext passed alongside trace, not embedded in it. Graph core remains clean.
-- Dep cache (`dep_cache: dict`) is per-run, already isolated. No concurrency conflict between runs.
+### ViewFormatter (bae/repl/views.py)
+- UserView gains resource-aware rendering: breadcrumb header, tool call panels scoped to resource.
+- No new ViewFormatter subclass needed -- metadata-driven rendering on existing views.
+
+### GraphRegistry (bae/repl/engine.py)
+- No changes. Resourcespaces are orthogonal to graph execution.
+- A graph CAN use resourcespace tools via Dep functions, but the engine does not know about resourcespaces.
+
+---
+
+## Rich Components for Resource Display
+
+Rich (already installed at 14.3.2) provides rendering primitives that map directly to resourcespace display needs:
+
+| Rich Component | Use In v7.0 | Already Used? |
+|----------------|-------------|---------------|
+| `rich.tree.Tree` | Render resource subtree hierarchy | No (new usage) |
+| `rich.table.Table` | Task list, search results, tool parameter docs | Yes (views.py) |
+| `rich.panel.Panel` | Resource detail view, tool output framing | Yes (views.py) |
+| `rich.text.Text` | Breadcrumb trail, inline resource links | Yes (views.py) |
+| `rich.syntax.Syntax` | Source resourcespace file content | Yes (views.py) |
+| `rich.markdown.Markdown` | Resource descriptions, help text | Yes (channels.py) |
+
+`rich.tree.Tree` is the one new Rich component. It renders nested tree structures with connecting lines -- ideal for `ns()` showing the resource hierarchy. Render via existing `_rich_to_ansi()` -> `print_formatted_text(ANSI(...))` pattern from views.py.
 
 ---
 
@@ -192,29 +261,34 @@ dataclasses.dataclass       -- metrics structs
 
 | Area | Confidence | Reason |
 |------|------------|--------|
-| asyncio.TaskGroup for concurrent runs | HIGH | Stdlib since 3.11, improved in 3.13/3.14. Verified against official 3.14.3 docs. |
-| asyncio.Event + Queue for gates | HIGH | Standard concurrency primitives since Python 3.4. Well-documented, well-tested. |
-| asyncio.capture_call_graph | HIGH | Verified new in 3.14 via official docs. Full API confirmed: `capture_call_graph()`, `format_call_graph()`, `print_call_graph()`. |
-| prompt_toolkit patch_stdout compatibility | HIGH | Already in production in CortexShell.run(). Background task output works correctly. |
-| Rich via StringIO for metrics rendering | HIGH | Proven pattern in views.py and channels.py. No architecture changes needed. |
-| asyncio.Semaphore for LLM throttling | MEDIUM | Correct primitive. Optimal `max_concurrent_lm_calls` value needs empirical tuning with Claude CLI backend latency characteristics. |
-| time.perf_counter_ns for metrics | HIGH | Stdlib since 3.7. Monotonic, integer nanoseconds, zero overhead. |
-| Zero new dependencies | HIGH | All four feature areas map to stdlib + existing deps. Verified against pyproject.toml and installed packages. |
+| Zero new dependencies | HIGH | Every feature maps to stdlib + existing deps. Verified against pyproject.toml and installed packages. Same conclusion as v6.0. |
+| Pydantic for tool/resource schemas | HIGH | `model_json_schema()` is core Pydantic 2.x. Already used for Node field schemas in fill(). |
+| SQLite FTS5 for cross-resourcespace search | HIGH | Already in production in SessionStore. Same MATCH syntax, same ranking. |
+| ast for source structural queries | HIGH | stdlib since Python 2. Python 3.14 AST handles all current syntax. |
+| contextvars for scope tracking | HIGH | Already proven in engine.py's `_graph_ctx`. Async-safe, zero overhead. |
+| Rich Tree for resource display | MEDIUM | Rich Tree exists and is documented, but untested in bae's `_rich_to_ansi()` pipeline. Should work (same Console rendering path), but needs validation. |
+| Schema migration for new tables | HIGH | CREATE IF NOT EXISTS is idempotent. Same pattern as SessionStore's current SCHEMA. No migration framework needed. |
 
 ---
 
 ## Sources
 
-### Official Documentation (HIGH confidence)
-- [Python 3.14 What's New](https://docs.python.org/3/whatsnew/3.14.html) -- asyncio TaskGroup changes, introspection APIs
-- [asyncio Call Graph Introspection](https://docs.python.org/3/library/asyncio-graph.html) -- capture_call_graph, format_call_graph, print_call_graph API
-- [asyncio Coroutines and Tasks](https://docs.python.org/3/library/asyncio-task.html) -- TaskGroup, timeout, create_task signatures
-- [prompt_toolkit 3.0.52 docs](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/reference.html) -- patch_stdout, print_formatted_text, create_background_task
-- [prompt_toolkit asyncio integration](https://python-prompt-toolkit.readthedocs.io/en/master/pages/advanced_topics/asyncio.html)
-- [Rich Live Display docs](https://rich.readthedocs.io/en/stable/live.html) -- confirmed NOT suitable (conflicts with prompt_toolkit stdout)
-- [Rich Tables docs](https://rich.readthedocs.io/en/stable/tables.html) -- Table API for metrics rendering
-- [Python time module](https://docs.python.org/3/library/time.html#time.perf_counter_ns) -- perf_counter_ns specification
+### Existing Codebase (PRIMARY -- all verified by reading source)
+- `bae/repl/store.py` -- SessionStore schema, FTS5 integration, CRUD patterns
+- `bae/repl/ai.py` -- AI context building, tool call execution, eval loop
+- `bae/repl/engine.py` -- GraphRegistry, contextvars usage, lifecycle patterns
+- `bae/repl/channels.py` -- ChannelRouter, ViewFormatter protocol, Channel dataclass
+- `bae/repl/views.py` -- Rich rendering pipeline, `_rich_to_ansi()`, UserView
+- `bae/repl/namespace.py` -- NsInspector, `seed()`, namespace structure
+- `bae/repl/tasks.py` -- TaskManager, TrackedTask patterns
 
-### Verified Against Installed Packages
-- Rich 14.3.2, prompt-toolkit 3.0.52, Pydantic 2.12.5, Pygments 2.19.2 -- all verified via `uv pip list`
-- Python 3.14 -- confirmed via pyproject.toml `requires-python = ">=3.14"`
+### Official Documentation (HIGH confidence)
+- [Python 3.14 ast module](https://docs.python.org/3/library/ast.html) -- parse, walk, NodeVisitor
+- [Python 3.14 contextvars](https://docs.python.org/3/library/contextvars.html) -- ContextVar async semantics
+- [SQLite FTS5](https://www.sqlite.org/fts5.html) -- MATCH syntax, BM25 ranking, content tables
+- [Pydantic model_json_schema](https://docs.pydantic.dev/latest/concepts/json_schema/) -- JSON Schema generation from models
+- [Rich Tree](https://rich.readthedocs.io/en/stable/tree.html) -- Tree rendering API
+
+---
+*Stack research for: Hypermedia resourcespace, context-scoped tools, agent navigation*
+*Researched: 2026-02-16*

@@ -1,319 +1,330 @@
-# Feature Landscape: Cortex v6.0 Graph Runtime
+# Feature Landscape: Cortex v7.0 Hypermedia Resourcespace
 
-**Domain:** Concurrent graph execution engine with human-in-the-loop input gates and observability, embedded in an async REPL
-**Researched:** 2026-02-15
-**Overall confidence:** HIGH for graph registry/lifecycle and TaskManager integration (well-understood asyncio patterns over proven primitives); HIGH for pending input via asyncio.Event (standard pattern); MEDIUM for debug views (novel composition of existing view system); MEDIUM for concurrent 10+ graphs (needs memory/backpressure profiling under load)
+**Domain:** Context-scoped agent navigation with self-describing resource tree, tool pruning, and resource-based task/memory management
+**Researched:** 2026-02-16
+**Overall confidence:** HIGH for resource tree and context-scoped tools (well-understood HATEOAS patterns applied to novel context); HIGH for tool call pruning (proven truncation/capping strategies); MEDIUM for cross-resourcespace search (FTS5 exists but federation logic is novel); MEDIUM for memory/task resourcespaces (novel composition over existing SessionStore)
 
 ---
 
 ## Existing Foundation (Already Built)
 
-Every v6.0 feature layers over existing v4.0/v5.0 primitives. No greenfield modules -- all new behavior composes what exists.
+Every v7.0 feature layers over existing v4.0-v6.0 primitives. The hypermedia resourcespace is a navigation/scoping layer -- it does NOT replace the agent, tools, or store.
 
-| Component | File | What It Does | v6.0 Hook Point |
+| Component | File | What It Does | v7.0 Hook Point |
 |-----------|------|-------------|-----------------|
-| `Graph.arun()` | `graph.py` | Async execution loop: resolve deps, recalls, LM fill, route | Graph engine wraps this with lifecycle events + input gates |
-| `TaskManager` | `tasks.py` | Submit/revoke/shutdown asyncio tasks with process group cleanup | Graph runs become managed tasks; registry tracks by graph ID |
-| `TrackedTask` | `tasks.py` | Dataclass: task, name, mode, task_id, state, process | Extended or wrapped for graph-specific metadata (graph type, node position) |
-| `ChannelRouter` | `channels.py` | Registry of named output channels with write dispatch | Graph I/O flows through `[graph]` channel with metadata typing |
-| `ViewFormatter` | `channels.py` | Protocol for pluggable channel display (render method) | New GraphDebugView renders timing, dep calls, validation errors |
-| `UserView` | `views.py` | Rich Panel display for AI code execution | Extended to handle graph event metadata types |
-| `DebugView` | `views.py` | Raw metadata display | Already shows all metadata -- graph events visible for free |
-| `ToolbarConfig` | `toolbar.py` | Named widget registry for bottom toolbar | New pending-input badge widget + graph count widget |
-| `Mode.GRAPH` | `modes.py` | REPL input mode (currently stub) | Becomes the management hub: list, inspect, cancel, provide input |
-| `channel_arun()` | `shell.py` | Wraps graph.arun() with logging capture + channel routing | Replaced by full graph engine with lifecycle events |
-| `SessionStore` | `store.py` | SQLite+FTS5 persistence for all I/O | Graph events persisted for cross-session graph history |
+| `AI.__call__` | `repl/ai.py` | NL conversation with eval loop and tool call translation | Resource context injected into prompt; tool availability scoped by current resource |
+| `_build_context()` | `repl/ai.py` | Flat namespace summary as REPL state | Replaced by resource-aware context: current resource + affordances + breadcrumb path |
+| `run_tool_calls()` | `repl/ai.py` | Detect and execute R/W/E/G/Grep tool tags | Tool execution scoped to current resource context (paths, search scope) |
+| `_MAX_TOOL_OUTPUT` | `repl/ai.py` | 4000 char cap on tool output | Reduced to 500 tokens per resourcespace (project spec) |
+| `NsInspector` | `repl/namespace.py` | `ns()` for listing and `ns(obj)` for inspection | Resourcespace becomes the primary navigation; ns() still works for raw namespace |
+| `SessionStore` | `repl/store.py` | SQLite+FTS5 persistence for all I/O | Memory resourcespace queries store; task resourcespace persists tasks here |
+| `ChannelRouter` | `repl/channels.py` | Named output channels with write dispatch | Resource navigation events flow through channels |
+| `ai_prompt.md` | `repl/ai_prompt.md` | System prompt for AI agent | Extended with resourcespace navigation instructions and affordance discovery |
+| `GraphRegistry` | `repl/engine.py` | Concurrent graph lifecycle tracking | Task resourcespace wraps graph runs as managed tasks |
+| `extract_executable` | `agent.py` | Extracts `<run>` blocks from LM responses | Unchanged -- code execution still works, just scoped differently |
 
 ---
 
 ## Table Stakes
 
-Features users expect from a graph runtime inside a REPL. Missing any of these makes the system feel broken or incomplete.
+Features the AI and user expect from a resourcespace. Missing any of these makes the navigation feel broken or the scoping feel arbitrary.
 
-### 1. Graph Registry with Lifecycle Management
-
-| Aspect | Detail |
-|--------|--------|
-| **Why expected** | Running 10+ concurrent graphs with no way to list, inspect, or cancel them is unusable. Every workflow engine (Prefect, Temporal, LangGraph) provides a run registry with lifecycle states. |
-| **Complexity** | Low-Med |
-| **Depends on** | `TaskManager` (wraps or extends), `ChannelRouter` (lifecycle events) |
-| **What it is** | A `GraphRegistry` that tracks running graph instances by ID. Each entry holds: graph type (class name), start time, current node, state (running/waiting/done/failed/cancelled), the underlying `TrackedTask`, and input fields schema. |
-| **Lifecycle states** | `PENDING` (created, not yet started), `RUNNING` (executing nodes), `WAITING` (paused at input gate), `DONE` (terminal node reached), `FAILED` (exception), `CANCELLED` (user-revoked) |
-| **Ecosystem pattern** | LangGraph uses thread_id + checkpointer. Prefect uses flow run IDs with state transitions. Temporal uses workflow IDs with execution state. Our pattern is simpler: in-memory dict keyed by auto-incrementing ID, since all graphs run in one process. No need for distributed state. |
-| **Key design** | Registry lives on `CortexShell` (like `TaskManager`). Each graph run gets an ID visible in toolbar and GRAPH mode. Registry delegates to `TaskManager.submit()` for the actual asyncio task, but adds graph-specific metadata on top. |
-
-### 2. Graph Mode as Management Hub
+### 1. Resource Tree with HATEOAS Navigation
 
 | Aspect | Detail |
 |--------|--------|
-| **Why expected** | GRAPH mode currently prints a stub message. Users switching to GRAPH mode expect to interact with graphs. Without commands, the mode is dead weight. |
+| **Why expected** | The core v7.0 premise. Without a navigable tree that declares its own affordances, the AI is back to flat namespace guessing. HATEOAS means "the resource tells you what you can do next" -- this IS the feature. |
 | **Complexity** | Med |
-| **Depends on** | Graph Registry, text command parsing |
-| **What it is** | GRAPH mode input is parsed as commands (not arbitrary text). Commands: `list` (show running/waiting/done graphs), `inspect <id>` (show trace, current node, timing), `cancel <id>` (revoke graph), `input <id> <value>` (provide pending input), `run <expr>` (start a graph from namespace). |
-| **Ecosystem pattern** | LangGraph Studio provides a visual graph management UI. We provide the same capabilities as text commands in a REPL -- appropriate for a terminal-first tool. |
-| **Key design** | Commands are simple string dispatch (not a parser framework). Pattern: split on first space, match verb, dispatch. No need for argparse or click -- YAGNI. |
+| **Depends on** | None (new module, foundation for everything else) |
+| **What it is** | A tree of Resource objects. Each resource has: a name, a description (for the AI), a list of supported tool names, child resources, and a `read()` method that returns its representation. The AI sees the current resource's representation (including links to children) and knows what tools work here. Navigation: `cd <child>`, `cd ..`, `cd /` (homespace). The root is homespace. |
+| **Ecosystem pattern** | MCP resources use URI schemes (`file://`, custom) with `resources/list` and `resources/read`. Our pattern is simpler: resources are Python objects in a tree, not a protocol. The AI navigates by calling `cd("source")` or using a shorthand tag, not by sending JSON-RPC. HATEOAS: each resource's read() output includes links (child resource names with descriptions). |
+| **Key design** | Resources are a Protocol: `name`, `description`, `tools: list[str]`, `children: dict[str, Resource]`, `read() -> str`, `parent: Resource | None`. Homespace is the root. Navigation is a stack (current path). The `_build_context()` replacement emits: current resource repr + available tools + breadcrumb path. |
 
-### 3. Graph Execution Engine (arun wrapper with lifecycle hooks)
-
-| Aspect | Detail |
-|--------|--------|
-| **Why expected** | `channel_arun()` in shell.py is a minimal wrapper that captures logs. A real engine needs to emit structured events at each node transition so the view system, registry, and store can react. |
-| **Complexity** | Med |
-| **Depends on** | `Graph.arun()`, `ChannelRouter`, Graph Registry |
-| **What it is** | A coroutine that wraps `Graph.arun()` but intercepts the execution loop to emit events: `graph_started`, `node_entered`, `deps_resolved`, `lm_called`, `node_exited`, `input_requested`, `graph_completed`, `graph_failed`. Events flow through the `[graph]` channel with typed metadata. |
-| **Ecosystem pattern** | LangGraph streams events via `astream_events()` with layered modes (values, updates, debug, custom). Langfuse captures spans with start/end times. Our approach: emit events through the existing channel system, which already records to store and renders through views. No need for a separate event streaming API. |
-| **Key design** | The engine does NOT modify `Graph.arun()` in `bae/graph.py`. Instead, it wraps the execution by providing instrumented deps and callbacks. The graph module stays clean. The engine lives in `bae/repl/` (cortex layer, not framework layer). |
-
-### 4. Pending Input System (Human-in-the-Loop Gate)
+### 2. Context-Scoped Tool Execution
 
 | Aspect | Detail |
 |--------|--------|
-| **Why expected** | Graphs with user gates (confirmation deps, input collection) currently have no way to pause and request input from the user inside cortex. The graph either blocks forever or skips the gate. This is the core reason for v6.0. |
+| **Why expected** | The whole point of resourcespaces. `<R:file>` in the source resourcespace reads source files. `<R:file>` in the memory resourcespace reads session entries. Same tool tag, different context. Without scoping, the resource tree is just decoration. |
 | **Complexity** | Med-High |
-| **Depends on** | Graph Registry (state transitions), asyncio.Event (pause/resume), ChannelRouter (notification), ToolbarConfig (badge) |
-| **What it is** | When a graph node's dep function needs user input, it `await`s an `asyncio.Event`. The graph engine detects this, transitions the graph to `WAITING` state, emits an `input_requested` event with the input schema (field name, type, description), and the user provides input via GRAPH mode (`input <id> <value>`) or an inline prompt. The event is set, the dep resolves, and graph execution continues. |
-| **Ecosystem pattern** | LangGraph uses `interrupt()` which raises a special exception caught by the runtime, saves state via checkpointer, and resumes via `Command(resume=value)`. Prefect uses `pause_flow_run(wait_for_input=MyModel)` with Pydantic model schemas. Temporal uses Signals. Our pattern is closest to Prefect's: the dep function defines what input it needs (via its return type or a parameter), and the engine provides a bridge between the dep's await and the REPL's input. |
-| **Key design** | The input gate is a Dep function that receives an `InputBridge` (or similar) injected by the engine. The bridge holds an `asyncio.Event` and a value slot. `await bridge.request("Confirm deployment?")` sets the event to wait, emits the notification, and suspends until the user responds. This keeps the gate mechanism in dep-space (no changes to Node or Graph). |
+| **Depends on** | Resource tree (tool declarations per resource) |
+| **What it is** | Each resource declares which tools it supports and provides context for tool execution. The source resourcespace's `R` reads files relative to the project root. The memory resourcespace's `R` reads session entries by ID or search term. The task resourcespace's `R` reads task details. Tool dispatch checks the current resource's tool list before executing. Unknown tools get a clear error: "Tool X not available in [resource name]. Available: [list]." |
+| **Ecosystem pattern** | Manus uses a state machine with token logit masking to control tool availability per state. MCP servers declare tool capabilities. Claude Code subagents use `--allowedTools` to restrict which tools a subagent can call. Our approach: each resource declares its tool list, and the tool dispatch layer filters before execution. Simpler than logit masking (we control the tool execution layer, not the LM decoding). |
+| **Key design** | The existing `run_tool_calls()` gains a `resource` parameter. Before executing a tool tag, it checks `resource.tools`. If the tool is not in the list, it returns an error string instead of executing. Each resource can also provide a `resolve_path(arg)` method that transforms tool arguments (e.g., making paths relative to the resource's root). This is the scoping mechanism. |
 
-### 5. Pending Input Notification UX
+### 3. Tool Call Output Pruning (500 Token Cap)
 
 | Aspect | Detail |
 |--------|--------|
-| **Why expected** | If a graph is waiting for input and the user is in NL or PY mode, they need to know. Silent blocking is a UX failure. |
+| **Why expected** | The project spec mandates 500 tokens per resourcespace output. The current `_MAX_TOOL_OUTPUT = 4000` chars is far too generous -- a single file read can consume the entire context budget. Agents that accumulate 20+ tool calls bloat to 40k+ tokens. Capping output is table stakes for production agents. |
 | **Complexity** | Low |
-| **Depends on** | ToolbarConfig (badge widget), Graph Registry (waiting state query) |
-| **What it is** | A toolbar widget that shows a badge when any graph is in WAITING state. Format: `[2 pending]` in a distinct color (e.g., yellow). The badge is a simple lambda that queries the registry for waiting count. prompt_toolkit's `refresh_interval=1.0` (already set on the PromptSession) ensures the toolbar updates within 1 second of state change. In GRAPH mode, pending inputs also print inline when the user enters the mode or types `list`. |
-| **Ecosystem pattern** | LangGraph Studio shows interrupted threads in a sidebar. Prefect shows paused flow runs in the UI dashboard. Terminal REPLs have no standard pattern -- this is a differentiator for cortex. |
-| **Key design** | The toolbar widget is the minimal notification. No sound, no interrupt of current mode, no forced mode switch. The user notices the badge and switches to GRAPH mode voluntarily. This respects the "shush mode" philosophy -- background graphs don't intrude. |
+| **Depends on** | Tool execution layer |
+| **What it is** | Replace the 4000 char cap with a 500 token cap (approximately 2000 chars for English text, but token-accurate counting uses a simple heuristic: chars/4). Tool output exceeding the cap is truncated with a `... (truncated, {total} tokens)` suffix. For structured output (grep matches, glob results), truncation preserves the count: `"12 matches shown of 47 total"`. |
+| **Ecosystem pattern** | Manus writes tool outputs to filesystem and keeps only references in context. Claude Code truncates long outputs and offers to write to file. The "write" strategy (externalize, keep reference) is the production pattern. Our approach: hard cap with smart truncation. The resource's `read()` already provides a summary; detailed exploration happens via scoped tools. |
+| **Key design** | `_MAX_TOOL_OUTPUT` becomes resource-configurable. Default 500 tokens (~2000 chars). Resources that need more (e.g., source code reads) can override up to a global maximum. The truncation is at the tool execution layer, not the LM layer -- the AI sees the cap in the tool output, not a silent cutoff. |
 
-### 6. Graph I/O Through Channel/View System
+### 4. Homespace (Root Resource)
 
 | Aspect | Detail |
 |--------|--------|
-| **Why expected** | Graph output currently goes to a single `[graph]` channel write at the end. Real graphs produce intermediate output at each node -- users need to see progress, especially for long-running graphs. |
+| **Why expected** | The AI needs a starting point. Without a defined home, the AI starts in limbo -- no tools, no context, no affordances. Homespace is the HATEOAS entry point. It answers "what can I do?" for a fresh session. |
+| **Complexity** | Low |
+| **Depends on** | Resource tree |
+| **What it is** | The root resource. Its `read()` returns: outstanding tasks (if any), available resourcespaces (source, memory, tasks, search) with descriptions, and a brief orientation. Think of it as Dzara's `START_HERE` vision from dzarasplans.md. The AI reads homespace, sees what's available, and navigates to the appropriate resourcespace based on the user's request. |
+| **Ecosystem pattern** | MCP's `resources/list` returns the top-level resource catalog. REST APIs have a root endpoint that links to all sub-resources. HATEOAS requires an entry point that bootstraps discovery. |
+| **Key design** | Homespace is NOT a static string. It queries live state: pending tasks count from task resourcespace, recent memory tags from memory resourcespace, current project info. It is a dynamic dashboard resource. Tools available at homespace: just navigation (`cd`) and search. No R/W/E -- you must navigate into a resourcespace first. |
+
+### 5. Source Resourcespace
+
+| Aspect | Detail |
+|--------|--------|
+| **Why expected** | The AI already reads/writes/edits files. The source resourcespace scopes these operations to the project directory and provides project-aware context (file tree, recently modified files, relevant code). Without it, file tools remain flat and global. |
 | **Complexity** | Low-Med |
-| **Depends on** | `ChannelRouter`, `ViewFormatter` implementations, graph engine events |
-| **What it is** | The graph engine writes structured events to the `[graph]` channel with metadata typing: `type: "node_transition"`, `type: "dep_resolved"`, `type: "input_requested"`, `type: "result"`, `type: "error"`. The existing view system renders these appropriately -- UserView shows concise progress lines, DebugView shows full metadata. |
-| **Ecosystem pattern** | LangGraph's streaming modes (values, updates, debug) map directly to our view system. "updates" mode = UserView showing node transitions. "debug" mode = DebugView showing everything. We achieve the same separation with zero new infrastructure. |
-| **Key design** | Metadata `type` field drives rendering, exactly as v5.0 established for AI execution display. No new rendering pipeline needed -- the pattern is proven. |
+| **Depends on** | Resource tree, context-scoped tools |
+| **What it is** | A resource rooted at the project directory. `read()` shows the file tree (truncated to fit budget). Children are directories and files. Tools: R (read file), W (write file), E (edit file), G (glob), Grep (search). All paths resolved relative to project root. The AI navigates `cd source` then operates on files with short relative paths instead of absolute paths. |
+| **Ecosystem pattern** | Claude Code's filesystem tools already work this way -- paths relative to project root. MCP's `file://` scheme. VS Code's workspace-relative paths. |
+| **Key design** | Source resourcespace wraps the existing tool functions (`_exec_read`, `_exec_write`, etc.) with path resolution. `resolve_path("main.py")` -> `/abs/path/to/project/main.py`. The tree representation uses glob to show structure, not a full recursive listing. |
 
-### 7. Graph Lifecycle Notifications
-
-| Aspect | Detail |
-|--------|--------|
-| **Why expected** | When a graph starts, completes, fails, or needs input, the user should see a message even if they are in a different mode. Without notifications, graphs complete silently and the user has to poll via `list`. |
-| **Complexity** | Low |
-| **Depends on** | `ChannelRouter`, `[graph]` channel visibility |
-| **What it is** | Key lifecycle transitions emit writes to `[graph]` channel: `"graph:3 started (AnalyzeRequest)"`, `"graph:3 completed in 4.2s"`, `"graph:3 failed: DepError on FetchData"`, `"graph:3 waiting for input: confirm_deploy"`. These appear in scrollback regardless of current mode (the `[graph]` channel is always visible by default). |
-| **Ecosystem pattern** | Standard in all workflow engines. Prefect shows toast notifications. Temporal logs state transitions. Terminal UX: scrollback lines with channel prefix, same as current `[debug]` task notifications. |
-
-### 8. Graphs as Managed Tasks (TaskManager Integration)
+### 6. Memory Resourcespace
 
 | Aspect | Detail |
 |--------|--------|
-| **Why expected** | Graphs are async coroutines. The TaskManager already handles async task lifecycle. Graphs must integrate with the existing Ctrl-C kill menu, task count widget, and graceful shutdown. |
-| **Complexity** | Low |
-| **Depends on** | `TaskManager.submit()`, Graph Registry |
-| **What it is** | When a graph starts, the engine calls `tm.submit(engine_coro, name=f"graph:{id}:{graph_type}", mode="graph")`. The returned `TrackedTask` is stored in the Graph Registry entry. Ctrl-C menu shows graph tasks alongside other tasks. `tm.revoke(task_id)` cancels the graph and transitions registry state to CANCELLED. |
-| **Ecosystem pattern** | Universal. Every async framework uses task tracking. The innovation here is zero -- this is wiring existing pieces together. |
+| **Why expected** | SessionStore has FTS5 search and cross-session history. But the AI currently has no structured way to explore memories. The memory resourcespace makes session history navigable: browse by session, search across sessions, tag important entries. |
+| **Complexity** | Med |
+| **Depends on** | Resource tree, SessionStore |
+| **What it is** | A resource backed by SessionStore. `read()` shows recent sessions with summaries. Children: individual sessions (by ID or date). Tools: R (read session entries), Grep (FTS5 search across sessions), W (tag/annotate entries). Navigation: `cd memory/2026-02-16` to browse a specific session's entries. |
+| **Ecosystem pattern** | Mem0 provides memory CRUD with automatic extraction. AWS AgentCore separates working memory (session) from long-term memory (cross-session). A-Mem organizes memories as a Zettelkasten. Our approach: leverage existing FTS5 store, add tagging for retrieval. No vector store needed -- FTS5 is sufficient for keyword-based memory search. |
+| **Key design** | Memory resourcespace does NOT duplicate the store. It provides a navigable view over it. The `read()` of a session shows its entries with timestamps and channels. Tagging is a new lightweight feature: `W` in memory context writes a tag to an entry's metadata JSON. Tags enable filtered retrieval: "find all entries tagged 'decision'." |
+
+### 7. Task Resourcespace
+
+| Aspect | Detail |
+|--------|--------|
+| **Why expected** | Dzara's vision (dzarasplans.md): "START_HERE containing a list of outstanding tasks." Tasks are the primary work unit. Without a task resourcespace, the AI cannot track, prioritize, or manage work items. |
+| **Complexity** | Med |
+| **Depends on** | Resource tree, SessionStore (persistence) |
+| **What it is** | CRUD for tasks with cross-session persistence. `read()` shows outstanding tasks sorted by priority. Children: individual tasks by ID. Tools: R (read task details), W (create/update task), Grep (search tasks). Tasks are stored in SessionStore as entries with `channel="task"` and structured metadata (title, status, priority, tags). |
+| **Ecosystem pattern** | GSD's add-todo/check-todos workflow. Jira/Linear for issue tracking. The key insight: tasks should be first-class objects the AI can reason about, not just text in a session log. |
+| **Key design** | Tasks are JSON objects stored in SessionStore entries. Schema: `{title, status, priority, tags, created, updated, description}`. Status: `open`, `in_progress`, `done`, `blocked`. The task resourcespace provides the CRUD interface; persistence uses the existing store. No new database table -- tasks are entries with a specific channel and metadata structure. |
+
+### 8. Search Resourcespace
+
+| Aspect | Detail |
+|--------|--------|
+| **Why expected** | With multiple resourcespaces, the AI needs cross-cutting search. "Find all references to GraphRegistry" should search source code AND session memories AND task descriptions. Without unified search, the AI must manually navigate each resourcespace and search separately. |
+| **Complexity** | Med |
+| **Depends on** | Resource tree, all other resourcespaces |
+| **What it is** | A resource that federates search across all resourcespaces. `read()` shows recent search results or search instructions. Tools: Grep (cross-resourcespace search). When the AI runs a search, results include the source resourcespace (file paths), links to matching resources so the AI can navigate to them. Results are grouped by resourcespace with navigation hints. |
+| **Ecosystem pattern** | VS Code's global search across files and settings. Spotlight/Alfred for cross-domain search. MCP doesn't have a built-in federation pattern -- each server is independent. |
+| **Key design** | Search dispatches to each resourcespace's search capability and merges results. Source uses grep. Memory uses FTS5. Tasks use metadata search. Results are capped per-resourcespace (e.g., 5 results each) to stay within token budget. Each result includes a navigation path so the AI can `cd` to the relevant resource. |
 
 ---
 
 ## Differentiators
 
-Features that set cortex apart from other graph runtime environments. Not expected, but transform the experience.
+Features that set cortex v7.0 apart. Not expected in a REPL agent, but transform the experience.
 
-### 1. Graph Debug Views (Observability Without External Tools)
-
-| Aspect | Detail |
-|--------|--------|
-| **Value proposition** | LangGraph requires LangSmith or Langfuse (external services) for graph observability. CrewAI requires AgentOps. Cortex provides observability inline in the terminal -- no external service, no API key, no dashboard tab. The DebugView already shows raw metadata; a GraphDebugView shows graph-specific observability: node timings, dep call durations, LM call durations, validation errors, memory usage per node. |
-| **Complexity** | Med |
-| **Depends on** | ViewFormatter protocol, graph engine events with timing metadata, `[graph]` channel |
-| **What it is** | A specialized view (or UserView extension) that renders graph events with rich observability data. When the user is in debug view mode (Ctrl+V), graph events show: `[graph:3] AnalyzeRequest -> GenerateCode (1.2s, 2 deps resolved in 0.3s, LM fill in 0.9s)`. In user view, the same event shows: `[graph:3] -> GenerateCode`. Same data, different verbosity. |
-| **Key metrics** | Node execution time, dep resolution time (per dep), LM call time, total graph time, node count, validation error count. All computed from event timestamps -- no external instrumentation library needed. |
-
-### 2. Graph Inspect Command (Trace Explorer)
+### 1. HATEOAS Affordance Discovery (Self-Describing Resources)
 
 | Aspect | Detail |
 |--------|--------|
-| **Value proposition** | `inspect <id>` shows the full trace of a running or completed graph: each node visited, field values, timing, which deps were called, which path the LM chose at decision points. This is LangSmith's trace view, but in your terminal. |
-| **Complexity** | Med |
-| **Depends on** | Graph Registry (stores trace), Rich Table/Tree rendering |
-| **What it is** | GRAPH mode command that renders the graph's trace as a Rich Table or Tree. Columns: node type, fields summary, timing, dep calls, LM decision. For running graphs, shows progress up to current node. For completed graphs, shows full trace with terminal node highlighted. |
+| **Value proposition** | Most agent frameworks give the AI a flat list of all tools and hope it picks the right ones. HATEOAS inverts this: the resource tells the AI what it can do. The AI discovers capabilities by navigating, not by reading a 50-tool system prompt. This reduces tool selection errors, shrinks context, and makes the agent composable (new resourcespaces add new capabilities without modifying the system prompt). |
+| **Complexity** | Low (it IS the resource tree design -- not a separate feature) |
+| **Depends on** | Resource tree |
+| **What it is** | Each resource's `read()` output includes: what this resource is, what tools work here (with brief descriptions), and what child resources exist (with descriptions). The AI's system prompt says "navigate resources to discover capabilities" instead of listing every tool. New resourcespaces are discovered by the AI at runtime when they appear as children of homespace. |
+| **Ecosystem pattern** | MCP resources have `description` and `mimeType` fields. HATEOAS REST APIs embed `_links` with `rel` and `href`. GRAIL (Mike Amundsen) demonstrates agents discovering affordances without preexisting knowledge. Our approach: resources ARE the affordance declaration. No separate discovery protocol needed. |
 
-### 3. Input Schema Display for Pending Inputs
+### 2. Dynamic Context Window (Resource-Aware Prompt)
 
 | Aspect | Detail |
 |--------|--------|
-| **Value proposition** | When a graph is waiting for input, telling the user "graph:3 waiting for input" is insufficient. Showing the field name, type, and description (from the Pydantic model or dep function signature) tells them exactly what to provide. |
+| **Value proposition** | The current `_build_context()` dumps the entire namespace as flat text, capped at 2000 chars. Resource-aware context is surgical: it shows only the current resource's state, the breadcrumb path, and available affordances. This is dramatically more token-efficient and more useful -- the AI sees relevant context, not everything. |
+| **Complexity** | Low-Med |
+| **Depends on** | Resource tree, `_build_context()` replacement |
+| **What it is** | The context injected before each AI prompt contains: (1) breadcrumb path (`home > source > bae/repl`), (2) current resource's `read()` output, (3) available tools with one-line descriptions, (4) sibling/parent resources for navigation. This replaces the flat namespace dump. The namespace still exists for PY mode -- resourcespace is the AI's view, not the user's constraint. |
+| **Ecosystem pattern** | Manus treats the filesystem as externalized context. Claude Code skills use progressive disclosure. The pattern: show the AI what it needs for the current task, not everything that exists. |
+
+### 3. Resource-Scoped Tool Summaries in Views
+
+| Aspect | Detail |
+|--------|--------|
+| **Value proposition** | When the AI executes tools, the UserView shows what happened. With resourcespaces, summaries include the resource context: `[source] read bae/repl/ai.py (42 lines)` vs `[memory] search "graph" (7 matches across 3 sessions)`. This makes tool output meaningful in context. |
 | **Complexity** | Low |
-| **Depends on** | Pending input system, Pydantic field introspection |
-| **What it is** | The `input_requested` event includes schema info extracted from the dep function or the awaited type. `list` command shows: `graph:3 WAITING - confirm_deploy: bool ("Confirm deployment to prod?")`. The user knows exactly what to type: `input 3 yes`. |
-| **Ecosystem pattern** | Prefect's `wait_for_input` shows Pydantic model fields in the UI. LangGraph's `interrupt()` passes a JSON-serializable value as the prompt. Our approach: extract from the dep's type annotations and Field descriptions -- consistent with bae's "class name is instruction, Field description is hint" philosophy. |
-
-### 4. Cross-Mode Input Shortcut
-
-| Aspect | Detail |
-|--------|--------|
-| **Value proposition** | Requiring mode switch to GRAPH just to answer a pending input is friction. A quick shortcut from any mode (like NL's `@session` prefix) reduces the barrier. |
-| **Complexity** | Low |
-| **Depends on** | Pending input system, dispatch logic |
-| **What it is** | In any mode, typing `!3 yes` (or similar prefix) routes input to graph 3's pending gate. The `!` prefix is parsed before mode dispatch in `_dispatch()`. If no pending input exists for that ID, it is a no-op with an error message. |
+| **Depends on** | Context-scoped tools, view system |
+| **What it is** | The `_tool_summary()` function gains awareness of the current resource. Summaries are prefixed with the resource name. The view system already handles metadata-driven rendering -- adding a `resource` field to tool call metadata is trivial. |
 
 ---
 
 ## Anti-Features
 
-Features to explicitly NOT build for v6.0.
+Features to explicitly NOT build for v7.0.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| **State snapshots/restore (checkpointing)** | LangGraph's checkpointer is complex infrastructure (database-backed, thread-scoped, replay semantics). Bae graphs are short-lived (seconds to minutes, not hours). Checkpointing adds serialization requirements to every Node and dep result. YAGNI -- no use case demands resuming a graph after a process restart. | Graphs that fail can be re-run. The trace is persisted in the store for post-mortem. |
-| **Distributed execution (Celery/Redis)** | Adding distributed task queues changes the architecture fundamentally (serialization, worker processes, result backends). The constraint says "architecture must not preclude it" -- which means keeping graph execution as a clean async coroutine, not building the distribution layer. | Keep `Graph.arun()` as a coroutine. If distribution is needed later, wrap in Celery/Temporal at the call site. |
-| **Visual graph DAG rendering in terminal** | Mermaid diagrams are useful in docs but rendering a live graph DAG in a scrollback terminal is awkward. ASCII art graphs are hard to read for complex topologies. | `to_mermaid()` already exists for static visualization. `inspect` shows the trace as a table/list, which is more useful for debugging than a DAG picture. |
-| **Auto-retry on validation errors** | Tempting to retry LM fills that fail Pydantic validation. But retry loops hide errors and consume LM tokens. The PROJECT.md explicitly defers this: "DSPy optimization may solve this." | Surface validation errors through the debug view. Let the user decide whether to re-run. Log the failed fill for debugging. |
-| **Hot reload of graph definitions** | Watching .py files for changes and reloading graph classes at runtime. Fragile (module reload semantics in Python are unreliable), complex (invalidating running graphs), and unnecessary (the user can `exec()` new code in PY mode). | User redefines graphs in PY mode. The namespace is live -- new definitions take effect immediately for new runs. |
-| **Graph-to-graph orchestration (meta-graphs)** | Building a system where one graph can spawn and manage sub-graphs with fan-out/fan-in. The PROJECT.md defers fan-out: "async __call__ with manual gather is the escape hatch." | Users compose graphs via custom `__call__` nodes that invoke `graph.arun()` on sub-graphs. Python is the orchestration layer. |
-| **Token-level streaming from graph LM calls** | Streaming individual tokens from LM fills within graph nodes. Requires API client changes (PROJECT.md: "requires API client migration"). Graph nodes produce complete fills, not token streams. | Graph events show node transitions (coarser granularity). Token streaming is a separate milestone that benefits all LM usage, not just graphs. |
-| **OTel/OpenTelemetry instrumentation** | Adding spans, traces, and exporters for external observability platforms. Adds dependency weight and configuration complexity. The inline debug view provides equivalent observability for a single-user REPL. | The graph engine emits timing data through channels. If OTel is needed later, wrap channel events as spans at the boundary -- the event data is the same. |
-| **Custom graph channel per graph instance** | Creating a separate channel (e.g., `[graph:3]`) for each running graph. Proliferates channels, complicates visibility toggles, and the channel registry was designed for static categories. | All graphs share the `[graph]` channel. Metadata `graph_id` field distinguishes them. The view system can filter by graph_id if needed. |
+| **MCP protocol compliance** | MCP is a client-server protocol with JSON-RPC transport. Our resources are in-process Python objects navigated by the AI agent. Adding MCP protocol compliance adds transport overhead, serialization requirements, and server lifecycle management for zero benefit in a single-process REPL. | Resources are Python Protocol objects. If MCP interop is needed later, write an MCP server that wraps our resources -- the interface is similar enough. |
+| **Vector/semantic search for memories** | Requires an embedding model, a vector store (FAISS/ChromaDB), and embedding pipeline. FTS5 keyword search is already built and sufficient for the memory sizes cortex produces. YAGNI until memory volume exceeds FTS5's effectiveness. | Use FTS5 search in the memory resourcespace. Add semantic search as a future resourcespace if needed. |
+| **Resource permissions/ACLs** | MCP specifies access controls for sensitive resources. In a single-user REPL where the user and AI share a namespace, access controls add complexity with no security benefit. The user already has full access to everything. | All resources are readable/writable. The tool declarations on each resource serve as capability scoping, not permission enforcement. |
+| **Resource subscriptions/change notifications** | MCP supports subscribing to resource changes. Our resources are read on demand, not streamed. The AI reads a resource, acts on it, and moves on. Push notifications would require the AI to handle interrupts mid-conversation, which conflicts with the eval loop model. | Resources are read when navigated to. The `read()` always returns current state. No stale cache problem because there is no cache. |
+| **Persistent navigation state across sessions** | Saving "the AI was in source/bae/repl when the session ended" and restoring it on resume. Session resumption already loads conversation history, which includes navigation commands. The AI can re-navigate from homespace in one step. | Homespace shows outstanding tasks and recent context. The AI re-orients quickly. |
+| **Custom resourcespace plugin system** | A registration API for third-party resourcespaces. Python IS the extension system (PROJECT.md). New resourcespaces are Python classes added to the tree. No plugin registry, no discovery protocol, no dynamic loading. | Add a new Resource subclass. Register it as a child of homespace in the shell setup. |
+| **Resource versioning/history** | Tracking changes to resources over time (git-like). Source files have git. Session entries have timestamps. Tasks have `updated` fields. Building a separate versioning layer is redundant. | Use git for source, timestamps for store entries. |
+| **Automatic resource suggestion** | AI automatically navigates to the "right" resource based on user intent. This adds a heuristic layer that will be wrong often enough to be annoying. Let the AI discover affordances through HATEOAS -- that IS the design pattern. | Homespace shows what's available. The AI reads it and decides. If it picks wrong, HATEOAS means the wrong resource will tell it what IS available there. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-Graph Registry                                    [new module, depends on TaskManager]
+Resource Protocol + Tree                           [new module: bae/repl/resources.py]
     |
-    +---> Lifecycle states (RUNNING/WAITING/DONE/FAILED/CANCELLED)
+    +---> Homespace (root resource)                [dynamic dashboard, queries children]
     |
-    +---> Graph Engine (arun wrapper)              [depends on Registry for state transitions]
+    +---> Navigation (cd, path stack)              [shell integration, AI prompt context]
+    |
+    +---> Context-Scoped Tool Execution            [run_tool_calls gains resource param]
     |         |
-    |         +---> Lifecycle event emission        [events -> [graph] channel]
+    |         +---> Tool filtering                 [check resource.tools before dispatch]
     |         |
-    |         +---> Timing instrumentation          [start/end timestamps per node]
+    |         +---> Path resolution                [resource.resolve_path(arg)]
     |         |
-    |         +---> Input gate integration          [asyncio.Event bridge in dep resolution]
+    |         +---> Output cap (500 tokens)        [_MAX_TOOL_OUTPUT -> resource-configurable]
     |
-    +---> TaskManager integration                   [Registry entry holds TrackedTask ref]
+    +---> Resource-Aware Prompt                    [replaces _build_context()]
+              |
+              +---> Breadcrumb path
+              +---> Current resource read()
+              +---> Available tools + descriptions
+              +---> Navigation hints (children, parent)
 
-Pending Input System                               [depends on Graph Registry + Engine]
+Source Resourcespace                                [depends on Resource Protocol]
     |
-    +---> InputBridge (asyncio.Event + value slot)  [injected into dep functions by engine]
-    |
-    +---> input_requested event                     [channel notification with schema]
-    |
-    +---> GRAPH mode `input` command                [resolves pending gate]
-    |
-    +---> Toolbar pending badge                     [widget queries registry WAITING count]
-    |
-    +---> Cross-mode `!` shortcut                   [optional, depends on input system]
+    +---> Project-rooted file operations           [wraps existing _exec_* functions]
+    +---> File tree representation                 [glob-based, truncated]
+    +---> Relative path resolution                 [resolve_path prepends project root]
 
-GRAPH Mode Commands                                [depends on Graph Registry]
+Memory Resourcespace                                [depends on Resource Protocol + SessionStore]
     |
-    +---> `list` command                            [queries registry]
-    |
-    +---> `inspect` command                         [queries registry trace data]
-    |
-    +---> `cancel` command                          [delegates to registry -> TaskManager]
-    |
-    +---> `run` command                             [evaluates expr, submits to engine]
-    |
-    +---> `input` command                           [resolves pending InputBridge]
+    +---> Session browsing                         [children are sessions by date/ID]
+    +---> FTS5 search via Grep tool                [delegates to store.search()]
+    +---> Entry tagging via W tool                 [writes tag to entry metadata JSON]
 
-Graph I/O Through Views                            [depends on Engine events + ViewFormatter]
+Task Resourcespace                                  [depends on Resource Protocol + SessionStore]
     |
-    +---> UserView graph event rendering            [concise node transition lines]
-    |
-    +---> DebugView graph event rendering           [full metadata, already works]
-    |
-    +---> Graph Debug View (timing/deps)            [optional extension of existing views]
+    +---> Task CRUD                                [entries with channel="task"]
+    +---> Task schema in metadata                  [title, status, priority, tags]
+    +---> Outstanding tasks query                  [used by homespace dashboard]
 
-Lifecycle Notifications                            [depends on Engine events + [graph] channel]
-    (thin layer -- engine emits, channel displays)
+Search Resourcespace                                [depends on all other resourcespaces]
+    |
+    +---> Federated search dispatch                [queries each resourcespace]
+    +---> Result merging + navigation hints        [grouped by resource, capped per-group]
+    +---> Cross-resourcespace Grep                 [single tool, multiple backends]
+
+System Prompt Update                                [depends on Resource Protocol]
+    |
+    +---> ai_prompt.md rewrite                     [navigation instructions, affordance discovery]
+    +---> Tool documentation per resource          [embedded in resource read(), not system prompt]
 ```
 
-**Critical ordering insight:** The Graph Registry is the foundation. The Engine wraps arun and needs the registry for state transitions. The pending input system needs the engine to inject the bridge. GRAPH mode commands need the registry to query. Views need the engine's events to render. Build registry first, engine second, input system third, commands and views in parallel after.
+**Critical ordering insight:** The Resource Protocol is the foundation -- everything composes on it. Tool scoping and output pruning are the next layer (they modify the existing tool pipeline). Source resourcespace is the simplest concrete resourcespace to build (wraps existing functions). Memory and task resourcespaces require more design (new data patterns over SessionStore). Search is last because it federates across all others. Homespace evolves as children are added -- it queries whatever resourcespaces exist.
+
+**Build order by dependency:**
+1. Resource Protocol + navigation + tool scoping + output pruning
+2. Source resourcespace (proves the pattern works end-to-end)
+3. Task resourcespace (Dzara's highest-priority use case: START_HERE with tasks)
+4. Memory resourcespace (builds on task's store patterns)
+5. Search resourcespace (federates across 2-4)
+6. Homespace refinement (dynamic dashboard queries all children)
 
 ---
 
 ## MVP Recommendation
 
-Build in this order, each phase usable independently:
-
-### Phase 1: Graph Registry + Engine + TaskManager Integration
+### Phase 1: Resource Protocol + Tool Scoping + Output Pruning
 
 **Prioritize:**
-1. `GraphRegistry` class: dict of `GraphRun` entries with lifecycle states
-2. Graph engine coroutine wrapping `Graph.arun()` with lifecycle events
-3. Events emitted to `[graph]` channel with metadata typing
-4. `TaskManager.submit()` integration for each graph run
-5. Timing data captured per node (start/end timestamps)
+1. `Resource` Protocol: name, description, tools, children, read(), resolve_path()
+2. Navigation: cd/path stack, current resource tracking on AI or shell
+3. Tool dispatch filtering: check `resource.tools` before executing
+4. Path resolution: `resource.resolve_path(arg)` transforms tool arguments
+5. Output cap: `_MAX_TOOL_OUTPUT` reduced to ~2000 chars (500 tokens), resource-configurable
+6. Resource-aware `_build_context()` replacement: breadcrumb + read() + tools + nav hints
 
-**Why first:** This is the skeleton everything else hangs on. Without a registry, there is nothing to list, inspect, or provide input to. Without the engine, there are no lifecycle events for views to render.
+**Why first:** This is the skeleton. Without the protocol, there are no resources. Without tool scoping, resources are decorative. Without output pruning, context bloats. This phase produces a functional (if empty) resource tree with scoped tools.
 
-### Phase 2: GRAPH Mode Commands
-
-**Prioritize:**
-1. Command parsing in `_run_graph()` (split on space, match verb)
-2. `list` -- show all graph runs with state, timing, current node
-3. `run <expr>` -- evaluate expression, submit graph to engine
-4. `cancel <id>` -- revoke via registry -> TaskManager
-5. `inspect <id>` -- show trace summary
-
-**Why second:** Commands make the registry usable. The user can start, monitor, and cancel graphs. This is a functional (if spartan) graph runtime.
-
-### Phase 3: Pending Input System
+### Phase 2: Source Resourcespace
 
 **Prioritize:**
-1. `InputBridge` class: asyncio.Event + value slot + schema info
-2. Engine integration: detect input bridge in dep resolution, transition to WAITING
-3. `input <id> <value>` command in GRAPH mode
-4. Toolbar pending badge widget
-5. Input schema display in `list` output
+1. Source resource rooted at project directory
+2. `read()` showing file tree (glob-based, budget-aware)
+3. Path resolution prepending project root
+4. All 5 tools (R, W, E, G, Grep) scoped to project
 
-**Why third:** Input gates are the hardest feature and the core differentiator. Building them after the registry and commands means the infrastructure for state transitions, event emission, and command dispatch already exists. The input system plugs into proven primitives.
+**Why second:** The AI already uses file tools. Making them context-scoped is the lowest-risk proof that the resource pattern works. Every subsequent resourcespace follows the same pattern.
+
+### Phase 3: Task Resourcespace
+
+**Prioritize:**
+1. Task schema (title, status, priority, tags, timestamps)
+2. Tasks as SessionStore entries (channel="task", metadata=task JSON)
+3. CRUD via R/W tools in task context
+4. Outstanding tasks query for homespace dashboard
+5. Grep for task search
+
+**Why third:** This is Dzara's core use case -- the AI should see outstanding work when it starts. Tasks drive the homespace dashboard.
+
+### Phase 4: Memory Resourcespace + Search + Homespace
+
+**Prioritize:**
+1. Memory resource backed by SessionStore
+2. Session browsing (children by date)
+3. FTS5 search via Grep
+4. Entry tagging
+5. Search resourcespace federating across source/task/memory
+6. Homespace dynamic dashboard (pending tasks, recent activity)
 
 **Defer:**
-- Cross-mode `!` shortcut (nice-to-have, add after core input works)
-- Graph Debug View with rich timing display (add after basic events work)
-- `inspect` with Rich Tree rendering (start with simple text, iterate)
+- Memory tagging UX refinement (start with simple JSON metadata writes)
+- Search ranking/relevance scoring (start with flat result lists)
+- Rich resource tree visualization (start with plain text `read()` output)
 
 ---
 
 ## Sources
 
-**Ecosystem Research (MEDIUM confidence -- WebSearch verified against multiple sources):**
-- [LangGraph Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) -- interrupt()/Command(resume=) pattern for human-in-the-loop
-- [LangGraph Streaming](https://docs.langchain.com/oss/python/langgraph/streaming) -- Event streaming modes (values, updates, debug, custom, messages)
-- [LangSmith Observability](https://docs.langchain.com/oss/python/langgraph/observability) -- Tracing, debugging, latency/cost dashboards
-- [Langfuse Agent Graphs](https://langfuse.com/docs/observability/features/agent-graphs) -- Graph structure visualization from observation timings
-- [Prefect Interactive Workflows](https://docs.prefect.io/v3/advanced/interactive) -- pause_flow_run(wait_for_input=PydanticModel) pattern
-- [Prefect Pause/Resume](https://docs.prefect.io/v3/develop/pause-resume) -- Flow pause with typed input schemas
-- [Temporal Signals](https://james-carr.org/posts/2026-02-03-temporal-process-manager/) -- Signal-based wait patterns for durable workflows
-- [LlamaIndex Workflows](https://developers.llamaindex.ai/python/llamaagents/workflows/) -- Event-driven step-based execution with num_workers concurrency
-- [CrewAI Tasks](https://docs.crewai.com/en/concepts/tasks) -- async_execution, callbacks, context dependencies
-- [CrewAI AgentOps](https://docs.crewai.com/how-to/AgentOps-Observability/) -- Step-by-step replay analytics, recursive thought detection
+**HATEOAS and Hypermedia for AI Agents (MEDIUM confidence -- multiple sources agree):**
+- [HATEOAS: The API Design Style That Was Waiting for AI](https://nordicapis.com/hateoas-the-api-design-style-that-was-waiting-for-ai/) -- Hypermedia constrains tool selection per step; affordance discovery at runtime
+- [AI-Driven HATEOAS](https://www.apiscene.io/dx/ai-driven-hateoas-hypermedia-restful-api-design/) -- APIs as intelligent state machines guiding agents through workflows
+- [REST Reborn: From Integration Layer to Decision Interface](https://seddryck.wordpress.com/2025/07/07/rest-reborn-from-integration-layer-to-decision-interface/) -- Agents need introspectable, navigable, semantically rich APIs
 
-**Python Async Patterns (HIGH confidence -- official docs):**
-- [asyncio Tasks](https://docs.python.org/3/library/asyncio-task.html) -- asyncio.Event, TaskGroup, gather patterns
-- [prompt_toolkit Reference](https://python-prompt-toolkit.readthedocs.io/en/master/pages/reference.html) -- refresh_interval, app.invalidate(), bottom_toolbar
+**Context Engineering and Tool Pruning (HIGH confidence -- verified across multiple authoritative sources):**
+- [Context Engineering for AI Agents: Lessons from Building Manus](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus) -- State machine tool masking, filesystem as externalized context, attention manipulation via todo.md recitation
+- [Context Engineering Token Economics](https://www.getmaxim.ai/articles/context-engineering-for-ai-agents-production-optimization-strategies/) -- Token budget allocation: 15-20% tools, 30-40% knowledge, 10-15% buffer
+- [Context Window Management Strategies](https://www.getmaxim.ai/articles/context-window-management-strategies-for-long-context-ai-agents-and-chatbots/) -- Summarization, truncation, write-to-external patterns
+
+**MCP Resources Specification (HIGH confidence -- official documentation):**
+- [MCP Resources Specification](https://modelcontextprotocol.io/specification/2025-06-18/server/resources) -- URI schemes, resource templates, capability declarations, annotations with priority
+- [MCP Features Guide](https://workos.com/blog/mcp-features-guide) -- Tools vs resources distinction: "know" vs "do"
+
+**Agent Memory and Task Management (MEDIUM confidence -- multiple sources):**
+- [Cross-Session Agent Memory](https://mgx.dev/insights/cross-session-agent-memory-foundations-implementations-challenges-and-future-directions/d03dd30038514b75ad4cbbda2239c468) -- Separation of transient from persistent stores, dynamic organization
+- [AI Agent Memory Architecture](https://redis.io/blog/ai-agent-memory-stateful-systems/) -- Working memory vs long-term memory, selective retrieval
+- [Mem0: Production-Ready Agent Memory](https://arxiv.org/pdf/2504.19413) -- Dynamic extraction, consolidation, retrieval from conversations
+
+**Agent Tool Scoping Patterns (MEDIUM confidence -- verified with official docs):**
+- [Claude Code Custom Subagents](https://code.claude.com/docs/en/sub-agents) -- `--allowedTools` for tool restriction per subagent
+- [Claude Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) -- Progressive disclosure, filesystem as skill discovery
+- [Context Engineering for Coding Agents](https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html) -- Scoped context prevents confusion
 
 **Codebase References (HIGH confidence):**
-- `bae/graph.py` -- Graph class, arun() execution loop, routing strategies
-- `bae/repl/tasks.py` -- TaskManager, TrackedTask, TaskState
-- `bae/repl/channels.py` -- Channel, ChannelRouter, ViewFormatter protocol
-- `bae/repl/views.py` -- UserView, DebugView, AISelfView, ViewMode
-- `bae/repl/toolbar.py` -- ToolbarConfig, widget factories
-- `bae/repl/shell.py` -- CortexShell, _run_graph(), channel_arun()
-- `bae/repl/modes.py` -- Mode.GRAPH (currently stub)
-- `bae/repl/store.py` -- SessionStore (event persistence)
-- `bae/resolver.py` -- resolve_fields(), dep resolution with caching
-- `bae/node.py` -- Node base class, successors(), is_terminal()
+- `bae/repl/ai.py` -- AI class, _build_context(), run_tool_calls(), tool dispatch
+- `bae/repl/namespace.py` -- NsInspector, seed(), namespace structure
+- `bae/repl/store.py` -- SessionStore, FTS5 schema, entries table
+- `bae/repl/ai_prompt.md` -- Current system prompt
+- `bae/agent.py` -- extract_executable()
+- `.planning/dzarasplans.md` -- START_HERE vision, hypermedia objects, breadcrumb navigation
 
 ---
 
-*Research conducted: 2026-02-15*
-*Focus: Feature landscape for cortex v6.0 Graph Runtime milestone*
-*Replaces: v5.0 Stream Views feature research*
+*Research conducted: 2026-02-16*
+*Focus: Feature landscape for cortex v7.0 Hypermedia Resourcespace milestone*
+*Replaces: v6.0 Graph Runtime feature research*

@@ -1,115 +1,108 @@
 # Domain Pitfalls
 
-**Domain:** Concurrent async graph execution engine added to existing prompt_toolkit REPL (cortex)
-**Researched:** 2026-02-15
-**Confidence:** HIGH -- based on direct codebase analysis, verified prompt_toolkit/asyncio behavior, documented CPython issues
+**Domain:** Hypermedia resourcespace and context-scoped tools added to existing async REPL (cortex) with AI agent
+**Researched:** 2026-02-16
+**Confidence:** HIGH -- grounded in direct codebase analysis of bae v6.0, verified against Manus context engineering lessons, JetBrains context management research, and LangChain context engineering docs
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause deadlocks, data loss, or require architectural rewrites.
+Mistakes that cause the AI agent to malfunction, lose state, or require architectural rewrites.
 
 ---
 
-### Pitfall 1: Input Gate Deadlock -- Graph Awaits User Who Is Awaiting Prompt
+### Pitfall 1: Navigation State Desync -- AI Loses Track of Where It Is
 
-**What goes wrong:** A graph running as a background task hits an input gate (e.g., `PromptDep.ask()`) and awaits user input. But the user is interacting with cortex's `prompt_async()` loop, which is also awaiting input on the same event loop. Both are blocked waiting for input from the same terminal. Neither can proceed. The graph hangs forever.
+**What goes wrong:** The AI agent operates through a Claude CLI subprocess with session persistence (`ai.py:95`, `_session_id`). The resourcespace navigation state lives in Python (cortex's namespace or a dedicated state object). When the AI navigates to a resource (e.g., `cd /tasks/`), the Python side updates the current resource pointer, but the AI's understanding of "where I am" is only maintained through its conversation history in the Claude CLI session. If the conversation context drifts, gets truncated by the CLI's own context management, or if tool output is pruned aggressively, the AI acts on resource A while believing it is at resource B.
 
-**Why it happens:** The current `TerminalPrompt` (prompt.py:43-62) calls `loop.run_in_executor(None, input, ...)` which blocks a thread pool thread waiting for stdin. Meanwhile, prompt_toolkit's `prompt_async()` (shell.py:448) is also reading from stdin via its own input mechanism. These compete for the same file descriptor. Even if `run_in_executor` technically uses a separate thread, the underlying `input()` call and prompt_toolkit's input reader both consume from fd 0. The result is unpredictable: either the graph's `input()` steals characters meant for the prompt, or the prompt steals the graph's input, or both hang.
+**Why it happens:** The AI's model of navigation state is reconstructed from conversation history -- it has no persistent state register. The current `_build_context()` (`ai.py:464-526`) sends a snapshot of the REPL namespace on each first message, but subsequent messages in the eval loop (`ai.py:117-186`) only send tool outputs and feedback. If the AI navigates three resources deep and then a pruned tool output omits the navigation breadcrumb, the AI's internal model diverges from the actual Python state.
 
-With 10+ concurrent graphs, this becomes combinatorial: any of them could hit an input gate simultaneously, each waiting on stdin. Only one can "win." The rest deadlock or receive garbled input.
+This is compounded by the session architecture: `AI._send()` (`ai.py:188-243`) uses `--resume` for subsequent calls in a session, meaning the AI carries forward ALL prior conversation context from the Claude CLI session. But the resourcespace navigation state can change between AI invocations (Dzara navigates manually in PY mode). The AI resumes with stale navigation assumptions from its last conversation turn.
 
-**Consequences:** Complete REPL freeze. The user sees a prompt but cannot type. Ctrl-C may not work because the event loop is not blocked (it's awaiting), but the terminal's stdin is contended. Force-kill is the only recovery.
+**Consequences:** The AI reads files from the wrong resource, writes to the wrong task, searches the wrong scope. Worse: operations succeed silently because the tools execute against the actual state (Python-side), not the AI's believed state. The AI reports "I updated task X" when it actually updated task Y because its context said it was in `/tasks/X` but the Python state had moved to `/tasks/Y`.
 
 **Prevention:**
-1. Input gates MUST NOT use `input()` or any direct stdin reader. They must go through cortex's own input system.
-2. Design an input gate protocol: graph sets an `asyncio.Event` and registers a notification. The REPL shows a notification (via channel/toolbar). The user explicitly responds. The graph's Event is set with the response.
-3. One input at a time: use an `asyncio.Queue` or `asyncio.Lock` to serialize input gate requests across all graphs. When graph A needs input, it enqueues its request. The REPL processes the queue FIFO. Other graphs continue executing non-input nodes.
-4. The `PromptDep` must have a cortex-aware implementation that routes through the notification system, not through `TerminalPrompt`. `TerminalPrompt` should only be used for standalone (non-REPL) graph execution.
-5. Add a timeout on every input gate wait: `asyncio.wait_for(gate_event.wait(), timeout=300)`. If the user never responds, the graph should cancel gracefully, not hang forever.
+1. Every AI invocation MUST include the current resource path in the context preamble. Not just on first call -- on EVERY `_send()`. The resource path is cheap (one line) and eliminates drift. Modify `_build_context()` to always prepend `[Location: /tasks/active/]` or equivalent.
+2. Tool outputs MUST echo the resource context they operated in: `"[/source/bae/repl/ai.py] Read 527 lines"` not just `"Read 527 lines"`. This keeps the AI grounded even after pruning.
+3. Navigation operations must be idempotent and explicit. `cd /tasks/` is absolute (safe). `cd ../` is relative (dangerous -- AI must reconstruct parent from memory). Prefer absolute paths in the resource tree.
+4. Add a `where` affordance that the AI can call at zero cost to re-anchor itself. Make it always available regardless of resource context.
 
-**Detection:** Any graph that calls `await prompt.ask(...)` inside cortex freezes the REPL. Test by running a `new_project` graph in graph mode and checking whether the REPL remains responsive at the first input gate.
+**Detection:** In testing, have the AI navigate to resource A, then manually change the Python-side resource to B (simulating Dzara navigating in PY mode), then ask the AI to "read the current file." If it reads from B but says "reading from A," desync is occurring.
 
-**Phase relevance:** This is the FIRST thing to solve. Input gates touch the event loop, the REPL, and graph execution simultaneously. Everything else depends on this working.
+**Phase relevance:** Must be solved in the resourcespace core phase. This is the foundational invariant -- every other feature assumes the AI knows where it is.
 
 ---
 
-### Pitfall 2: Graph Task Leaks on Cancellation -- Subprocess Orphans from LM Calls
+### Pitfall 2: Tool Scoping Leak -- Operations Escape Resource Boundary
 
-**What goes wrong:** Cancelling a graph task via `tm.revoke()` cancels the Python `asyncio.Task`, but the Claude CLI subprocess spawned by `ClaudeCLIBackend._run_cli_json()` keeps running. The `asyncio.create_subprocess_exec` process is not killed when its parent task is cancelled. The subprocess continues consuming resources, holding open file descriptors, and potentially completing an LM call whose result is never consumed.
+**What goes wrong:** Context-scoped tools change behavior based on navigation state. `<R:main.py>` should read from the current resource's scope (e.g., `/source/bae/repl/main.py` if navigated there). But the current tool implementations (`ai.py:271-345`) operate on raw filesystem paths. If the scoping layer wraps these tools but has gaps -- absolute paths bypass scoping, `../` traversal escapes the boundary, or a tool tag format isn't intercepted -- the AI operates outside the intended resource boundary.
 
-**Why it happens:** The current TaskManager (tasks.py:50-57) calls `tt.task.cancel()` and kills the registered process. But graph tasks do not register their LM subprocesses with the TaskManager. The registration mechanism (`tm.register_process()`, tasks.py:44-48) requires `asyncio.current_task()` to match -- but graph execution happens inside `graph.arun()` which spawns LM calls internally. The LM backend creates subprocesses (lm.py:380-384) that are local to `_run_cli_json` and have no reference outside that scope.
+**Why it happens:** The existing tool call system (`run_tool_calls`, `ai.py:393-456`) dispatches based on regex matching of tags in the AI's prose output. It matches `<R:path>`, `<W:path>content</W>`, etc. The tool functions (`_exec_read`, `_exec_write`, etc.) take raw string arguments and pass them directly to `Path()`. There is no path validation, no sandbox, no scope restriction.
 
-When `task.cancel()` fires, it raises `CancelledError` at the next `await` point. If the task is currently inside `process.communicate()` (lm.py:386-388), the `CancelledError` interrupts the await, but the process is not killed. The `try/except asyncio.TimeoutError` block (lm.py:389-391) only handles timeout, not cancellation.
+When resourcespace scoping is added, it must intercept EVERY tool call and rewrite paths relative to the current resource. But the AI can emit any path format -- absolute (`/etc/passwd`), relative (`../../../etc/passwd`), home-relative (`~/secrets`). Each format needs different handling. Missing even one format creates a scoping leak.
 
-With 10+ concurrent graphs, each making multiple LM calls, a bulk `revoke_all()` can leave dozens of orphaned `claude` processes running.
+The `_TOOL_TAG_RE` regex (`ai.py:38-41`) and `_WRITE_TAG_RE` (`ai.py:43-46`) parse tool arguments as opaque strings. The scoping layer must parse these BEFORE dispatch, not after. If scoping is implemented as a wrapper around `_exec_read` etc., it runs too late -- the AI has already specified the path.
 
-**Consequences:** Orphaned `claude` CLI processes consume memory and API quota. On macOS, `ulimit` exhaustion from accumulated zombie processes. The user's API bill increases for work whose results are thrown away.
+**Consequences:** The AI reads or writes files outside the resource boundary. In the source resourcespace, this means editing files the resource doesn't own. In the memory resourcespace, this means accessing raw SQLite files instead of going through the SessionStore API. Security is not the primary concern (this is a local REPL), but correctness is -- the AI bypasses the resource's intended operations and produces results the resource doesn't know about.
 
 **Prevention:**
-1. `_run_cli_json` must handle `CancelledError` and kill the process:
-```python
-try:
-    stdout_bytes, stderr_bytes = await asyncio.wait_for(
-        process.communicate(), timeout=self.timeout
-    )
-except (asyncio.TimeoutError, asyncio.CancelledError):
-    process.kill()
-    await process.wait()
-    raise
-```
-2. Graph execution (`graph.arun`) should wrap the main loop in a `try/finally` that tracks and cleans up any in-flight subprocesses.
-3. The graph registry (new system) should track which processes belong to which graph, so `revoke_graph(graph_id)` can kill all associated processes.
-4. Consider adding `process.kill()` to the `__del__` or an `atexit` handler as a safety net, though structured cleanup is the primary mechanism.
+1. Tool scoping MUST happen at the dispatch layer, not in individual tool functions. `run_tool_calls()` must resolve the current resource, then pass the resource-qualified path to the tool function. The tool function never sees the raw AI argument.
+2. Each resource declares which tools it supports and how paths are resolved within its scope. The source resourcespace resolves paths relative to the project root. The memory resourcespace doesn't expose file paths at all -- it exposes session IDs and search queries.
+3. Absolute paths that fall outside the current resource scope should be rejected with an explicit error message: `"Path /etc/passwd is outside /source/ scope. Navigate to homespace first."` Do NOT silently redirect or strip the path.
+4. The `where` affordance should list available tools in the current scope, not all tools. If the memory resourcespace doesn't support `<W:>`, don't show it. This prevents the AI from attempting operations that would need scoping.
+5. Test with adversarial paths: `../`, absolute, symlinks, home-relative. Every one must be caught.
 
-**Detection:** After cancelling a graph, run `ps aux | grep claude` and check for orphaned processes. In tests, mock `create_subprocess_exec` and verify that `process.kill()` is called on `CancelledError`.
+**Detection:** From within the source resourcespace, have the AI attempt `<R:/etc/hosts>`. If it succeeds, scoping is leaking. From within the memory resourcespace, have the AI attempt `<W:~/.bae/store.db>`. If it succeeds, scoping is leaking.
 
-**Phase relevance:** Must be solved when implementing graph lifecycle management. Every graph that makes LM calls is affected.
+**Phase relevance:** Must be solved in the resourcespace core phase alongside navigation. Tool dispatch modification is the mechanism by which scoping is enforced.
 
 ---
 
-### Pitfall 3: Event Loop Starvation from Synchronous Graph Operations
+### Pitfall 3: Context Pruning Destroys Critical Information
 
-**What goes wrong:** The graph execution loop in `graph.arun()` (graph.py:312-427) runs a `while current is not None` loop that performs dep resolution, LM calls, and effect execution sequentially. While each individual operation is `async`, the overall structure is a tight loop that yields to the event loop only at `await` points. If dep resolution involves many synchronous Pydantic validations, type hint inspections, or cached dep lookups (resolver.py:449-465), the loop can run for extended periods without yielding. This starves prompt_toolkit's UI refresh, making the REPL unresponsive.
+**What goes wrong:** The v7.0 plan calls for pruning tool call history to I/O pairs with a 500 token cap per resourcespace output. This means large tool outputs (file reads, grep results, glob listings) are truncated to ~500 tokens. The AI makes decisions based on this truncated output. If the critical information was in the truncated portion -- a function definition at line 300 of a 500-line file, a grep match at position 95 out of 100 -- the AI proceeds without it and produces incorrect results.
 
-**Why it happens:** Pydantic's `model_construct()`, `model_validate()`, `get_type_hints()`, and `classify_fields()` are all synchronous CPU-bound operations. They complete in microseconds individually, but a graph with many nodes, each with many fields, can accumulate milliseconds of unbroken synchronous work between `await` points. Prompt_toolkit refreshes the UI (toolbar, prompt redraw) on event loop ticks. If the loop is occupied by synchronous graph work, the UI freezes.
+**Why it happens:** The current system already has some truncation (`_MAX_TOOL_OUTPUT = 4000` in `ai.py:36`), but 4000 chars is generous enough that most single-file reads fit. Dropping to ~500 tokens (~2000 chars) is a 5x reduction. The pruning is applied uniformly -- it doesn't know which parts of the output the AI actually needed.
 
-The dep cache (resolver.py:449-465) makes this worse after warmup: cached deps return immediately (no await), so the resolved fields are built synchronously, the node is constructed synchronously, routing strategy is determined synchronously, and only the LM call finally yields. For nodes with no LM call (custom `__call__` returning a pre-constructed node), the entire iteration is synchronous.
+Research from JetBrains (2025) confirms this: "agent-generated context quickly turns into noise instead of being useful information" -- but the fix is NOT aggressive uniform truncation. The Manus team found that externalized memory (keeping full data in files, referencing by path) outperforms lossy compression. Aggressive pruning of tool outputs is the most dangerous form of context compression because tool outputs are the AI's ground truth -- if pruned incorrectly, the AI hallucinates to fill the gap.
 
-**Consequences:** The toolbar stops updating (task count stale, memory stale). The prompt becomes unresponsive. The user perceives the REPL as frozen even though work is happening. With 10+ graphs, the starvation compounds -- each graph's synchronous segments compete for the same event loop.
+The "lost in the middle" effect makes this worse: LLMs process tokens at the beginning and end of context more reliably than the middle. Pruned tool outputs that sit in the middle of a long conversation are doubly vulnerable -- both truncated AND poorly attended to.
+
+**Consequences:** The AI generates code that references variables it didn't see in the truncated read. It proposes edits to line ranges it didn't actually examine. It reports "no matches found" when the matches were truncated from the grep output. These errors are silent and confident -- the AI has no way to know what it didn't see.
 
 **Prevention:**
-1. Insert `await asyncio.sleep(0)` at the top of each graph iteration (after `while current is not None`). This yields to the event loop, allowing prompt_toolkit to process UI events. Cost: negligible (one event loop tick per graph iteration).
-2. For the graph registry, consider running each graph's `arun()` as a separate `asyncio.Task` (already planned via TaskManager.submit). This ensures the event loop schedules between graphs. But the `sleep(0)` is still needed WITHIN each graph to yield between iterations.
-3. Do NOT use `run_in_executor` to offload graph execution to a thread pool. This breaks the asyncio concurrency model: dep resolution uses `asyncio.gather()` for parallel deps, which requires being on the event loop. Threading adds complexity for no benefit since the bottleneck is LM calls (I/O bound), not CPU.
+1. Prune I/O pairs to SUMMARIES, not truncated raw output. `"Read bae/repl/ai.py: 527 lines, defines AI class with __call__, _send, fill, choose_type, run_tool_calls"` is more useful than the first 500 tokens of the file. The summary should be generated at prune time, not by truncation.
+2. Keep the FULL output available in externalized storage (the SessionStore already exists for this). The pruned context includes a reference: `"[full output in store, 527 lines]"`. The AI can re-read if needed.
+3. Prune by recency, not by size. Keep the last N tool call pairs at full fidelity, summarize older ones. This leverages the LLM's stronger attention to recent context. The 500 token cap should apply to the SUMMARY of old calls, not to recent calls.
+4. Never prune error outputs. If a tool call failed, the full error message must survive pruning. Manus's finding: "leaving wrong turns in the context is one of the most effective ways to improve agent behavior."
+5. Test pruning impact: run the same task with and without pruning. If pruned runs fail where unpruned succeed, the pruning strategy is too aggressive.
 
-**Detection:** While a graph is running, check if the toolbar's memory widget updates (it reads `resource.getrusage()` on each render, toolbar.py:101-108). If it freezes, the event loop is starved. More precisely: add a heartbeat task that logs timestamps every 100ms. If gaps exceed 500ms during graph execution, there's starvation.
+**Detection:** Have the AI read a large file, then ask it about content that was in the file but beyond the 500-token cap. If it hallucinates or says "I don't see that," pruning destroyed critical information.
 
-**Phase relevance:** Must be addressed when integrating `graph.arun()` with the TaskManager. Simple fix but critical for UX.
+**Phase relevance:** Should be addressed in the tool call pruning phase (likely first phase). Getting this wrong poisons all subsequent resourcespace features because the AI operates on incomplete information.
 
 ---
 
-### Pitfall 4: Channel Flooding from Concurrent Graph Output
+### Pitfall 4: Context Poisoning from Stale Resource State
 
-**What goes wrong:** With 10+ concurrent graphs, each emitting output through `ChannelRouter.write()`, the terminal fills with interleaved output from different graphs. Channel writes are synchronous and immediate (channels.py:81-96) -- each `write()` calls `_display()` which calls `print_formatted_text()`. Ten graphs producing output simultaneously means ten interlaced streams of `[graph]` prefixed text, making the output unreadable.
+**What goes wrong:** The AI navigates to a resource, reads its state, performs operations, and accumulates context about that resource. Then Dzara modifies the resource state externally (edits a file in PY mode, updates a task from another tool, the resource's underlying data changes). The AI's context still contains the old state. It makes decisions based on stale data that is now actively wrong in context -- not just missing, but contradictory to reality.
 
-**Why it happens:** The channel system was designed for one active context at a time (one AI conversation, one bash command, one graph). The `[channel_name]` prefix differentiates streams, but with `[graph] result from graph 1` interleaved with `[graph] debug from graph 3` and `[graph] error from graph 7`, the user cannot follow any single graph's output.
+**Why it happens:** Unlike missing information (which the AI can notice), stale information is indistinguishable from current information in the AI's context. The AI read the file 5 turns ago and "knows" its contents. It does not re-read because it "already has" the information. This is context poisoning -- false information in context that the model trusts and acts on.
 
-Worse: each `print_formatted_text()` call redraws the prompt line (this is how patch_stdout works -- it erases the prompt, prints above it, redraws the prompt). With high-frequency output from many graphs, this causes visible flickering and performance degradation as the terminal processes dozens of redraws per second.
+The current architecture makes this likely because the REPL namespace is shared between the AI and Dzara (`shell.py:209`, `self.namespace: dict = seed()`). Dzara can modify any namespace object in PY mode while the AI is mid-conversation. The AI's Claude CLI session preserves conversation history including old tool outputs that no longer reflect reality.
 
-**Consequences:** Output is unreadable. Terminal flickers. Performance degrades. The user cannot determine which graph produced which output. The debug view (DebugView, views.py:170-187) compounds the problem by adding metadata headers to every line.
+**Consequences:** The AI proposes edits to a file based on a stale read, clobbering Dzara's recent changes. It reports task status based on a stale query. It navigates based on stale link lists, hitting 404-equivalent errors when resources have been deleted or moved.
 
 **Prevention:**
-1. Each graph MUST write to a labeled sub-channel: `router.write("graph", content, metadata={"label": graph_id})`. The existing `metadata["label"]` support (channels.py:83-84, views.py:153-154) already renders `[graph:proj-1]` style prefixes. This is already built.
-2. Add a configurable output policy per graph: `"visible"` (default), `"quiet"` (only errors), `"silent"` (nothing until complete). Let users choose which graphs produce live output.
-3. Buffer graph output and flush on completion. Instead of immediate `print_formatted_text()`, accumulate output in a list and render a summary when the graph reaches a terminal node. This eliminates interleaving entirely.
-4. Rate-limit channel writes: if more than N writes per second hit the same channel, batch them into a single `print_formatted_text()` call with newline-joined content. This reduces prompt redraws.
-5. The `[graph]` channel registration should happen per-graph, not as a single shared channel. `router.register(f"graph:{graph_id}", color)` gives each graph its own visibility toggle via the existing Ctrl+O channel toggle (channels.py:203-217).
+1. Resource representations MUST include a version or timestamp. When the AI acts on a resource, the tool call includes the version. If the version has changed since the AI last read it, the operation fails with an explicit message: `"Resource /tasks/42 has changed since you last read it (your version: 3, current: 4). Re-read before modifying."`
+2. Navigation affordances should be regenerated on each AI invocation, not cached from a previous turn. The `_build_context()` function already rebuilds context each time -- extend this pattern to resource affordances.
+3. For the source resourcespace specifically, file modification times are cheap to check. Before applying an edit, compare `mtime` against the value when the file was last read in this AI session.
+4. Consider a "stale context" warning when the AI references data from more than N turns ago. This is a heuristic, not a guarantee, but it prompts the AI to re-read.
 
-**Detection:** Run 5+ graphs simultaneously (even mock ones that just emit output). If the terminal becomes unreadable or noticeably flickers, flooding is occurring.
+**Detection:** Have the AI read a file, then modify the file in PY mode, then ask the AI to edit it. If the AI's edit is based on the old content (overwrites your changes), context poisoning is occurring.
 
-**Phase relevance:** Must be solved in the graph I/O integration phase. Channel infrastructure already supports labels; this is about using them correctly and adding rate limiting.
+**Phase relevance:** Must be considered in every resourcespace implementation. Each resource needs its own staleness detection mechanism. The source resourcespace uses mtime, the task resourcespace uses version numbers, the memory resourcespace uses session IDs.
 
 ---
 
@@ -117,117 +110,118 @@ Worse: each `print_formatted_text()` call redraws the prompt line (this is how p
 
 ---
 
-### Pitfall 5: asyncio.Event Race in Input Gate Notification
+### Pitfall 5: Tool Proliferation Degrades Agent Performance
 
-**What goes wrong:** The input gate uses `asyncio.Event` for graph-to-REPL communication. Graph sets up an Event, registers a notification, and calls `event.wait()`. The REPL eventually calls `event.set()` with the user's response. But if the REPL calls `event.set()` before the graph reaches `event.wait()`, the event is already set when wait is called, so it returns immediately. This is correct. The race condition is the opposite: if TWO graphs need input simultaneously and the REPL uses `event.set()` followed by `event.clear()` to reset for the next request, there is a window where a third graph calling `event.wait()` sees the event as set from the previous graph's response.
+**What goes wrong:** Each resourcespace introduces its own tools (navigate, list, read, write, search, tag, etc.). With 5-6 resourcespaces, each exposing 3-5 operations, the AI faces 15-30 tools. Research consistently shows that more tools make agents worse -- "each new tool dilutes the probability the agent selects the right one" (Manus team). The AI starts calling wrong tools, passing malformed parameters, or skipping tools entirely.
 
-**Why it happens:** `asyncio.Event.clear()` after `event.set()` has a documented race condition with multiple waiters ([Trio issue #637](https://github.com/python-trio/trio/issues/637)). The sequence `set(); clear()` can wake some waiters but not others, or wake waiters who should not have been woken. In single-threaded asyncio this is less severe than in multi-threaded code, but with many concurrent graphs all potentially waiting on input, the timing becomes fragile.
+**Why it happens:** The current tool system is simple: 5 tools (R, W, E, G, Grep) with consistent single-argument syntax. The AI has near-100% accuracy with this set. Adding resourcespace-specific tools with different argument formats, different scoping rules, and context-dependent behavior significantly increases the decision space.
+
+The Manus team's solution -- masking token logits to constrain available actions -- is not available in the Claude CLI subprocess architecture. The AI sees all tool descriptions in the system prompt regardless of context.
+
+**Consequences:** The AI calls `task.create()` when it means `task.update()`. It passes a task ID to a memory search function. It attempts file operations inside the memory resourcespace. Error rates increase, requiring more eval loop iterations, consuming more tokens and time.
 
 **Prevention:**
-1. Do NOT use a shared Event for multiple graphs. Each input gate request gets its own `asyncio.Event` instance.
-2. Use a request/response pattern: graph creates an `InputRequest(event, question, graph_id)` and puts it in an `asyncio.Queue`. The REPL pops from the queue, presents the question, and sets the specific request's event. No clearing, no sharing.
-3. The response value should be attached to the request object, not passed through a separate channel. `request.response = user_text; request.event.set()` -- the graph reads `request.response` after `await request.event.wait()`.
-4. Do NOT use `Event.clear()` at all. Create fresh Events for each interaction. Events are cheap.
+1. Follow Manus's principle: don't add/remove tools dynamically, instead scope what's VISIBLE. In the system prompt, only describe tools available in the current resource context. Since the system prompt is set on first call (`ai.py:206`), this means the system prompt must be resource-context-aware, or a context preamble must override the generic tool list.
+2. Keep the tool count low by making tools polymorphic. `read` reads whatever the current resource exposes. `list` lists whatever the current resource contains. Same tool names, different behavior per resource. This keeps the AI's tool vocabulary at 5-7 verbs, not 30.
+3. Avoid tool-per-resource-type. Do NOT create `task_create`, `task_update`, `memory_search`, `memory_tag` as separate tools. Instead, resources expose CRUD operations under consistent names.
+4. The navigation affordance should list exactly what operations are valid, with one-line descriptions. This is the HATEOAS principle applied: the response tells the AI what it can do next.
 
-**Detection:** Unit test: two graphs both requesting input simultaneously. Assert that each receives its own response, not the other's. Hard to reproduce in manual testing because the timing window is narrow.
+**Detection:** Count tool call errors across a session. If error rate exceeds 10% of tool calls, tool proliferation is likely the cause. Compare error rates between sessions with fewer vs. more resourcespaces active.
+
+**Phase relevance:** Architecture decision that must be settled in the resourcespace core phase before any specific resourcespaces are implemented. Changing the tool contract later requires updating all resourcespaces and retraining the AI's behavior.
 
 ---
 
-### Pitfall 6: Memory Leak from Completed Graph State Retention
+### Pitfall 6: Homespace Navigation Affordances Become Stale
 
-**What goes wrong:** The graph registry tracks running graphs. When a graph completes, its `GraphResult` (result.py) contains the full execution trace -- a list of every `Node` instance visited. Each node holds resolved dep values, Recall references to other nodes, and any data the LM produced. For a long-running graph with many iterations, this trace can be substantial. If the registry keeps completed graphs (for inspection, re-running, etc.) without explicit cleanup, memory grows unboundedly.
+**What goes wrong:** The homespace (root resource) presents a list of available resourcespaces with navigation links and summaries (e.g., "3 active tasks", "last session 2h ago"). These summaries are computed when the homespace is rendered. If the AI caches this in its context and navigates away, then returns to the homespace, it sees the cached (stale) summaries unless the homespace is explicitly re-rendered.
 
-**Why it happens:** The `dep_cache` (graph.py:308) accumulates resolved dependencies across the entire run. The `trace` list (graph.py:307) grows by one node per iteration. Nodes hold references to other nodes via Recall (resolver.py:67-111), creating a reference web that prevents garbage collection of individual nodes even if they are no longer needed for execution.
+**Why it happens:** The AI's conversation context is append-only within a Claude CLI session. When the AI first sees the homespace, those tokens persist in context. Returning to the homespace means the AI sees BOTH the old rendering (from earlier in context) AND a new rendering (from the current tool output). The "lost in the middle" effect means the old rendering (earlier in context) may be attended to less, but it is still present and can influence decisions.
 
-In the current single-graph model this is fine -- the graph runs, returns a `GraphResult`, and the caller decides what to keep. But in a registry managing 10+ graphs over a long session, completed graphs pile up. Each `GraphResult.trace` is a list of node instances holding LM-generated content (potentially large strings) and dep function results.
-
-The `SessionStore` (store.py) compounds this: every channel write from every graph is persisted to SQLite. The `MAX_CONTENT` limit (10,000 chars, store.py:13) prevents individual entries from being huge, but the sheer volume from many graphs can grow the database significantly.
+**Consequences:** The AI navigates to a task resourcespace expecting 3 active tasks (from the old rendering) but finds 5 (one was added, one was completed and replaced). The mismatch causes confusion but not failure. More subtly, the AI may skip re-reading affordances because it "already knows" what is available, missing newly added resourcespaces or changed capabilities.
 
 **Prevention:**
-1. The graph registry should distinguish `running`, `completed`, and `archived` states. `completed` graphs keep the `GraphResult`. `archived` graphs drop the trace and keep only the terminal node + metadata.
-2. Implement a `max_completed` limit on the registry. When exceeded, the oldest completed graph is archived (trace dropped). Default: 10.
-3. The `dep_cache` should be scoped to the graph run and not referenced after completion. When `arun()` returns, the dep_cache should be eligible for GC. This already works in the current code (dep_cache is a local variable in `arun()`), but the registry must not accidentally capture it in a closure or store it.
-4. For the SessionStore, add a `max_session_entries` setting that auto-prunes old entries. WAL mode already handles concurrent reads during pruning.
-5. Consider making `GraphResult.trace` a weakref-based structure for nodes that aren't the terminal, so intermediate nodes can be GC'd if memory pressure increases.
+1. Homespace rendering should be lightweight and always fresh. Include a `[rendered at: HH:MM:SS]` timestamp so the AI can recognize stale vs. fresh.
+2. When the AI navigates back to the homespace, the system should automatically generate a fresh rendering and inject it as a tool output, not rely on the AI requesting it.
+3. Keep homespace summaries minimal (counts, not content). `"tasks: 3 active"` not `"tasks: fix login bug, add search, refactor DB"`. Less content means less stale detail to conflict with reality.
 
-**Detection:** Monitor RSS (already visible via toolbar mem widget, toolbar.py:101-108) during a session with many graph completions. If RSS only grows and never shrinks, completed graphs are leaking.
+**Detection:** Navigate to homespace, note the summary, create a task in PY mode, navigate back to homespace. If the AI references the old task count, staleness is occurring.
 
 ---
 
-### Pitfall 7: SessionStore Contention from Concurrent Graph Writes
+### Pitfall 7: Cross-Resource Search Returns Unnavigable Results
 
-**What goes wrong:** The `SessionStore` uses synchronous `sqlite3.connect()` (store.py:59) with commits on every `record()` call (store.py:89). With 10+ concurrent graphs all routing output through channels, and each channel write calling `store.record()`, the synchronous SQLite commits serialize all graph output. Each `commit()` flushes to disk (even with WAL mode). Under high concurrency, this becomes a bottleneck: the event loop blocks on each `commit()`, and graphs effectively serialize at the database layer.
+**What goes wrong:** The search resourcespace performs cross-resourcespace search (e.g., searching "login" across tasks, memory, and source). Results include items from multiple resourcespaces. The AI needs to navigate to a specific result to act on it, but the search result format doesn't include navigation affordances. The AI knows a task exists but not how to get there. It attempts to construct a navigation path from memory, gets it wrong, and either errors or operates on the wrong resource.
 
-**Why it happens:** SQLite's WAL mode allows concurrent readers but only one writer at a time. The `sqlite3` module's default `check_same_thread=True` prevents multi-threaded access, but that is not the issue here -- all access is from the same thread (the event loop thread). The issue is that `conn.execute()` + `conn.commit()` are synchronous I/O operations that block the event loop. With WAL, `commit()` is fast (append to WAL file), but still involves a filesystem `fsync` that can take milliseconds. At 100 writes/second from 10 concurrent graphs, that is 100ms of event loop blocking per second.
+**Why it happens:** Search results are a projection -- they extract matching content from various resources and present them in a flat list. But the resourcespace model requires navigation to act on resources. The gap between "I found it" and "I can reach it" is exactly the problem HATEOAS solves in web APIs -- but only if search results include hypermedia links.
 
-**Consequences:** The event loop blocks for cumulative milliseconds on each graph iteration's channel writes. Prompt_toolkit UI refresh is delayed. Other graphs' LM calls are delayed from starting because the event loop cannot schedule them while blocked on `commit()`.
+**Consequences:** The AI finds a relevant task via search, then attempts `navigate /tasks/42` but the task's actual path is `navigate /tasks/active/42`. The navigation fails, the AI retries with variations, consuming eval loop iterations. Or worse, it falls back to operating on the search result text directly, bypassing the resource's tools.
 
 **Prevention:**
-1. Batch commits: instead of committing on every `record()`, accumulate writes and commit periodically (every 100ms or every N writes). This reduces the number of `fsync` calls.
-2. Use `conn.execute("PRAGMA synchronous=NORMAL")` instead of the default `FULL`. With WAL mode, `NORMAL` is safe against data loss from process crash (only loses data on OS crash, which is acceptable for REPL session logs).
-3. Move store writes to a background thread via `run_in_executor`. This unblocks the event loop but requires `check_same_thread=False` on the connection and careful serialization of access.
-4. Alternatively, use `aiosqlite` which wraps sqlite3 in a dedicated thread, providing an async API. However, this is a significant change to an existing working system -- batch commits are simpler.
-5. The simplest fix: remove the per-write `commit()` and rely on periodic auto-commit or explicit flush. SQLite in WAL mode will not lose data on normal Python exit because `conn.close()` (store.py:160) flushes.
+1. Every search result MUST include a navigable path: `{ "match": "fix login bug", "resource": "/tasks/active/42", "navigate": "cd /tasks/active/42" }`. The AI can copy-paste the navigation command.
+2. Search results should be actionable without navigation where possible. If the AI just needs to read a task, the search result should include enough detail. Only require navigation for write operations.
+3. The search affordance should list what actions are available on each result inline: `"[navigate] [mark-done] [tag]"`. This prevents the AI from attempting unsupported operations on search results.
 
-**Detection:** Add timing instrumentation around `store.record()`. If individual calls exceed 1ms or cumulative time per second exceeds 50ms, contention is significant.
+**Detection:** Search for a term that matches items in multiple resourcespaces. Ask the AI to act on a specific result. If it fails to navigate or takes more than 1 attempt, the affordances are insufficient.
 
 ---
 
-### Pitfall 8: Graph Cancellation During Dep Resolution Leaves Inconsistent State
+### Pitfall 8: Session Boundary Breaks Resource Context
 
-**What goes wrong:** If a graph task is cancelled while `resolve_fields()` (resolver.py:402-478) is running `asyncio.gather()` for parallel deps, some deps complete and are cached while others are cancelled. The `dep_cache` is now partially populated. If the graph is restarted or retried, the cached deps from the previous attempt are stale or inconsistent with the new run's context.
+**What goes wrong:** The AI's Claude CLI session persists across REPL invocations via `--resume` (`ai.py:209`). But the resourcespace state is in-memory (Python objects in the REPL namespace). When Dzara restarts cortex, the AI resumes its Claude CLI session with full conversation history, including references to resources, navigation state, and cached tool outputs. But the Python-side resourcespace state has been reset to defaults (homespace). The AI thinks it is in `/tasks/active/42` because its last conversation turn was there. The Python state says it is at `/`.
 
-**Why it happens:** `asyncio.gather()` (resolver.py:458) fires all deps at the same level concurrently. When `CancelledError` propagates, `gather()` cancels remaining tasks, but completed tasks have already written to `dep_cache`. The cache is a mutable dict shared across the entire graph run (graph.py:308).
+**Why it happens:** The Claude CLI session is external to the REPL process. `AI._reset_session()` (`ai.py:245-248`) only fires on cancellation or lock errors, not on REPL restart. The session ID persists in the Claude CLI backend. The conversation history includes resource navigation that is no longer valid.
 
-For deps that have side effects (e.g., `PromptDep` which prompts the user, or deps that make API calls), partial completion means some side effects fired and others did not. The system is in an inconsistent state.
+Actually, looking at the code more carefully: `AI.__init__()` generates a new `_session_id = str(uuid.uuid4())` on every instantiation (`ai.py:95`). So each `CortexShell()` creation generates a new AI session. The risk is within a single long-running session, not across restarts. However, if session persistence is added (v7.0 task resourcespace with cross-session persistence), old sessions may be resumed with stale resource context.
 
-**Consequences:** Retrying a graph after cancellation may produce incorrect results because the dep cache contains values from the previous attempt. Side-effecting deps may fire twice (once in the cancelled run, once in the retry). User-facing prompts may re-ask questions the user already answered.
+**Consequences:** Within a long session, if `AI._reset_session()` fires (cancellation, lock error), the new session starts fresh but the Python-side resource state is unchanged. The AI loses all conversation context (new session) but the resource state still points to wherever Dzara last navigated. The first AI invocation in the new session gets a `_build_context()` that includes the current resource location, which may be confusing without the prior conversation explaining how it got there.
 
 **Prevention:**
-1. Each graph run MUST use a fresh `dep_cache`. The current code already does this (dep_cache is initialized as a local in `arun()`, graph.py:308). The graph registry must ensure retries create a new cache, not reuse the old one.
-2. For side-effecting deps, wrap them in an idempotency guard: check if the side effect already happened (e.g., "was this question already answered in this run?") before executing.
-3. For the PromptDep specifically: if the graph is cancelled while awaiting user input, the input gate should be dismissed (notification cleared, Event cancelled). The user should not see stale input requests from cancelled graphs.
-4. Document that `dep_cache` is per-run, not per-graph. A graph instance can be run multiple times; each run gets its own cache.
+1. When the AI session resets, also reset the resource navigation to homespace. The AI should start fresh in both conversation and navigation state.
+2. The context preamble (first message of a new session) must include full resource state: where we are, what is available, what was the last action. This gives the AI a cold-start context that is self-contained.
+3. For cross-session task persistence, tasks are stored in SQLite (SessionStore), not in conversation history. The AI re-queries tasks, not recalls them from memory. This makes session boundaries transparent to task management.
+4. Add a `_on_session_reset` hook in the AI class that notifies the resourcespace to provide a full re-orientation prompt.
 
-**Detection:** Cancel a graph mid-execution, then re-run it. If behavior differs from a fresh run (e.g., skips prompts, uses stale data), the cache or side effects were not properly isolated.
+**Detection:** Trigger a session reset (cancel mid-conversation), then immediately ask the AI about the current resource state. If it is disoriented, the reset handler is insufficient.
 
 ---
 
-### Pitfall 9: print_formatted_text() Interleaving from Concurrent Channel Writes
+### Pitfall 9: Pruning Removes Error Context That Prevents Retry Loops
 
-**What goes wrong:** Multiple graphs writing to channels simultaneously call `print_formatted_text()` concurrently. Each call involves: erase current prompt line, print the new content above, redraw the prompt line. If two calls interleave at the terminal level, the output is garbled: one call erases the prompt, the other prints its content where the prompt was, then the first redraws the prompt on top of the second's content.
+**What goes wrong:** The pruning system (500 token cap) removes old tool call outputs, including error outputs. The AI encounters an error, the error is recorded in context, the AI adjusts its approach. Later, the error output is pruned. The AI encounters the same situation, has no memory of the previous failure, and repeats the exact same error. This creates retry loops that waste tokens and eval iterations.
 
-**Why it happens:** `print_formatted_text()` within `patch_stdout()` is [documented as not thread-safe](https://python-prompt-toolkit.readthedocs.io/en/master/pages/reference.html). In asyncio's single-threaded model, true interleaving of two synchronous calls cannot happen (the GIL and event loop guarantee sequential execution within a single thread). However, if any code uses `run_in_executor` to offload work to a thread and that thread calls `print_formatted_text()`, interleaving DOES happen.
+**Why it happens:** Manus's key finding: "erasing failure removes evidence... leaving wrong turns in the context is one of the most effective ways to improve agent behavior." Uniform pruning treats error outputs the same as success outputs. But errors are disproportionately valuable because they constrain future behavior.
 
-The more insidious issue: multi-line output. A channel write with 50 lines calls `print_formatted_text()` 50 times (channels.py:119-125, one per line). Between any two of those calls, the event loop could schedule another task (if there is a yield point). In practice, synchronous for-loops do not yield, so this is safe. But if the loop is ever changed to `async for` or if an `await` is inserted between lines, interleaving becomes possible.
+In the current eval loop (`ai.py:117-186`), errors from code execution are fed back as `feedback = f"[Output]\n{combined}"` (`ai.py:179`). This feedback is in the Claude CLI conversation history. When pruning is applied, old error feedback gets the same 500-token treatment as old success feedback. The error detail that would prevent repetition is lost.
 
-**Consequences:** Garbled terminal output. Lines from different graphs appear mid-line of other graphs' output. The prompt line appears in wrong positions. Terminal state becomes corrupted requiring `clear`.
+**Consequences:** The AI attempts the same failing operation 3-4 times before the eval loop cap (`_max_eval_iters`) stops it. Each attempt consumes a Claude CLI call (API cost, latency). The user sees repeated failures with no learning.
 
 **Prevention:**
-1. Consolidate multi-line output into a single `print_formatted_text()` call. Instead of iterating lines and calling print per line, join them into a single `FormattedText` list and call once. This is a small change to `Channel._display()`.
-2. Never call `print_formatted_text()` from a thread (via `run_in_executor`). If threaded work needs to produce output, it should put the content in an `asyncio.Queue` and let the event loop thread do the actual printing.
-3. The view formatter contract should require returning a complete renderable, not making multiple print calls. The formatter produces a single ANSI string or FormattedText, and the channel makes one print call.
-4. If interleaving is observed despite single-threaded execution, add a reentrant lock around the print path. But this should not be needed if rule #2 is followed.
+1. Error outputs must be marked as non-prunable. Add metadata `{"prunable": false}` to error-type tool outputs and eval loop error feedback.
+2. Alternatively, maintain a separate "lessons learned" context section that persists across pruning. When an error occurs, generate a one-line lesson: `"LESSON: <E:foo.py:1-10> fails when file doesn't exist -- check existence first."` This lesson survives pruning because it is in the persistent context, not in the prunable tool history.
+3. Cap retry attempts per unique operation. If `<R:nonexistent.py>` fails twice, block further attempts and surface the error to Dzara rather than looping.
 
-**Detection:** Run two graphs that produce multi-line output simultaneously. If lines from one graph appear inside another graph's output block, interleaving is occurring.
+**Detection:** Cause a tool error (read a nonexistent file), let the AI recover, then force pruning of old context, then trigger the same situation. If the AI repeats the error, pruning removed critical context.
 
 ---
 
-### Pitfall 10: Toolbar Polling Cost Scales with Graph Count
+### Pitfall 10: Resource Persistence Corruption from Concurrent Access
 
-**What goes wrong:** The toolbar refreshes every 1 second (shell.py:258, `refresh_interval=1.0`). The tasks widget (toolbar.py:76-85) calls `shell.tm.active()` which iterates all tracked tasks and filters by `TaskState.RUNNING`. With 10+ graphs, each potentially spawning sub-tasks (LM calls, dep resolutions), the task list grows. The `active()` method (tasks.py:63-67) creates a new sorted list on every call. With hundreds of tracked tasks (10 graphs x multiple LM calls each), this list creation and sort happens every second.
+**What goes wrong:** The task resourcespace stores tasks in SQLite (via SessionStore or a new table). The AI agent modifies tasks through tool calls (`task.update(42, status="done")`). Dzara modifies tasks through PY mode (`task.update(42, status="blocked")`). If both happen concurrently (AI is in an eval loop while Dzara types in PY mode), the last write wins. There is no conflict detection.
 
-More importantly, the task dict (`_tasks`, tasks.py:32) never shrinks. Completed tasks remain in the dict forever (tasks.py:75-84 updates state but never removes). After a long session with many graph runs, `_tasks` contains thousands of entries, and `active()` must filter all of them to find the running ones.
+**Why it happens:** The `SessionStore` uses synchronous SQLite with per-call commits (`store.py:89`). The AI eval loop and PY mode dispatch both execute on the same event loop thread, so true concurrency (simultaneous writes) is impossible. However, logical concurrency is real: the AI reads a task, Dzara updates it, the AI writes based on stale read. This is a classic TOCTOU (time-of-check-to-time-of-use) race.
 
-**Consequences:** Gradual performance degradation over long sessions. The toolbar render (every 1 second) takes longer and longer as the completed task list grows. This is a slow leak, not a sudden failure -- noticeable after hours of use.
+With the eval loop, the AI can perform multiple round-trips within a single user input cycle. Between AI turns (while waiting for Claude CLI response), Dzara can type and execute in PY mode. This creates an interleaving window.
+
+**Consequences:** Task state is inconsistent. Dzara marks a task as blocked, the AI marks it as done (based on a stale read), the task ends up in an impossible state. The user sees confusing state that neither they nor the AI intended.
 
 **Prevention:**
-1. Prune completed tasks from `_tasks` after a retention period. Add a `_prune()` method that removes tasks in `SUCCESS`, `FAILURE`, or `REVOKED` state that are older than N minutes.
-2. Call `_prune()` inside `active()` or on a periodic schedule (e.g., every 60 seconds).
-3. Alternatively, maintain a separate `_active` set that is updated in `submit()` and `_on_done()`. This makes `active()` O(1) instead of O(n) over all tasks.
-4. For the graph registry specifically: track graph-level task IDs, not individual sub-task IDs. The toolbar shows "3 graphs running", not "47 tasks running." Sub-task tracking is internal to each graph.
+1. Use optimistic concurrency control. Each resource has a version number. Read operations return the version. Write operations include the version. If the version has changed since the read, the write fails: `"Conflict: task 42 was modified since you last read it (version 3 -> 4)."`
+2. For the eval loop specifically, re-read resources before write operations. The AI should `read` then `write` in the same eval iteration, not rely on reads from previous iterations.
+3. The resource API should expose `read-then-update` as an atomic operation where possible, avoiding the TOCTOU window entirely.
+4. SQLite's WAL mode already provides atomic writes, but the conflict detection must happen at the application layer because the "conflict" is between the AI's stale context and the current DB state, not between two simultaneous SQL statements.
 
-**Detection:** After running 50+ graphs over a session, check if toolbar rendering latency increases. Profile `tm.active()` call duration over time.
+**Detection:** Start an AI task that reads and then modifies a resource. While the AI is waiting for the Claude CLI response, quickly modify the same resource in PY mode. Check whether the AI's subsequent write clobbers your change.
 
 ---
 
@@ -235,29 +229,29 @@ More importantly, the task dict (`_tasks`, tasks.py:32) never shrinks. Completed
 
 ---
 
-### Pitfall 11: dep_cache Sharing Between Concurrent Graphs on Same Type
+### Pitfall 11: System Prompt Bloat from Resource Descriptions
 
-**What goes wrong:** If two graphs of the same type run concurrently and share a dep function (e.g., both use `get_prompt()` which returns the global `_prompt` singleton), the dep_cache isolates them (each has its own dict). But the underlying dep function returns the SAME object. If that object has mutable state (e.g., a conversation history or accumulated context), concurrent graphs mutate the same state.
+**What goes wrong:** The system prompt (`ai_prompt.md`, 38 lines currently) needs to describe how resourcespace navigation works, what tools are available per resource, what affordances look like, and how to interpret navigation output. With 5-6 resourcespaces, each with its own tool documentation, the system prompt grows to hundreds of lines. Claude CLI charges per-token for the system prompt on every call, and a bloated system prompt pushes important information into the "lost in the middle" zone.
 
-**Prevention:** Dep functions that return mutable state must be graph-scoped, not global. The dep_cache isolation only prevents redundant calls within a single graph run -- it does not clone the returned value. If `get_prompt()` returns a stateful `Prompt` implementation, each graph needs its own instance. Either make dep functions return new instances, or add a graph-scoped context to the dep resolution system.
+**Prevention:** Keep the system prompt minimal -- describe the navigation mechanics (5-10 lines) and let each resource's response include its own tool descriptions inline. The resource teaches the AI how to use it when the AI arrives, not upfront. This is the HATEOAS principle: discovery at interaction time, not documentation time.
 
-### Pitfall 12: Graph Trace Holds Strong References to All Nodes
+### Pitfall 12: Affordance Format Inconsistency Across Resourcespaces
 
-**What goes wrong:** The trace list in `graph.arun()` (graph.py:307) holds strong references to every visited node. Nodes hold strong references to resolved deps (including potentially large data from LM responses). For a graph that loops many times (e.g., iterative refinement), the trace grows without bound until `max_iters` is hit. A graph with `max_iters=100` and nodes containing 10KB of LM output each accumulates 1MB of trace data.
+**What goes wrong:** If each resourcespace team (or each implementation phase) defines affordances differently -- one uses `[action: navigate /tasks/]`, another uses `-> /memory/ (explore)`, a third uses `cd /source/` -- the AI must learn multiple formats. Inconsistency increases error rates.
 
-**Prevention:** Consider a sliding window on the trace for Recall resolution. Instead of keeping ALL visited nodes, keep the last N nodes (where N is the maximum Recall depth observed in the graph's topology). This requires static analysis at graph construction time to determine the maximum Recall chain length. Simpler alternative: keep all nodes but clear their resolved dep values after they are no longer needed for Recall.
+**Prevention:** Define an affordance format protocol ONCE in the resourcespace core phase. All resources must emit affordances in the same format. Suggested: `[verb: argument] -- description`. Examples: `[cd: /tasks/] -- navigate to tasks`, `[read: 42] -- read task 42`, `[search: "login"] -- search across all resources`. Test affordance parsing in isolation before building any specific resourcespace.
 
-### Pitfall 13: Graph Mode Dispatch Lacks Graph Selection
+### Pitfall 13: Memory Resourcespace Exposes Raw Store Internals
 
-**What goes wrong:** The current graph mode dispatch (shell.py:333-350) assumes a single `namespace["graph"]` object. With a graph registry managing multiple graphs, typing in GRAPH mode needs a way to select WHICH graph receives the input. Without this, all GRAPH mode input goes to the last registered graph, and users cannot interact with specific running graphs.
+**What goes wrong:** The memory resourcespace wraps `SessionStore` for AI exploration. The temptation is to expose `store.search()` and `store.recent()` directly, letting the AI write arbitrary FTS5 queries. But FTS5 syntax is finicky (requires MATCH, has its own query syntax), and the AI will write malformed queries that produce errors or incorrect results.
 
-**Prevention:** GRAPH mode should prefix input with a graph selector (e.g., `@project-1 approve`) or use the graph that most recently requested input. The input gate notification system (Pitfall 1's solution) naturally provides this: the REPL responds to the input request that is currently displayed, which belongs to a specific graph.
+**Prevention:** The memory resourcespace should expose semantic operations (`search("login")`, `sessions()`, `tag(session_id, "important")`) not raw store methods. The resourcespace translates semantic operations to store queries internally. The AI never writes SQL or FTS5 syntax.
 
-### Pitfall 14: SQLite Connection Not Thread-Safe for run_in_executor Offloading
+### Pitfall 14: eval Loop Iteration Inflation from Navigation
 
-**What goes wrong:** If `store.record()` is moved to `run_in_executor` to avoid blocking the event loop (Pitfall 7's mitigation), the `sqlite3.Connection` is accessed from both the main thread and the executor thread. SQLite's default mode (`check_same_thread=True`) will raise `ProgrammingError`. Even with `check_same_thread=False`, concurrent access without a lock can corrupt the database.
+**What goes wrong:** Every navigation step is an eval loop iteration (AI says "cd /tasks/", tool responds with resource representation, AI processes). A workflow that requires navigating to homespace, then tasks, then a specific task, then back to homespace, then to source -- that is 5 navigation turns before any real work happens. With `_max_eval_iters` constraining total iterations, navigation overhead steals iterations from productive work.
 
-**Prevention:** If using `run_in_executor` for store writes, either: (a) create a dedicated connection per thread, or (b) use `aiosqlite` which manages a single-threaded connection internally, or (c) queue writes and process them from a single dedicated writer thread.
+**Prevention:** Navigation should be O(1), not O(depth). `cd /tasks/active/42` should work as a single step, not require `cd /tasks/` then `cd active/` then `cd 42/`. The resource tree should support absolute paths. Also consider whether navigation turns should count against the eval loop iteration limit or be tracked separately.
 
 ---
 
@@ -265,11 +259,13 @@ More importantly, the task dict (`_tasks`, tasks.py:32) never shrinks. Completed
 
 | Phase Topic | Likely Pitfall | Mitigation |
 |-------------|---------------|------------|
-| Input gate system | #1 (stdin deadlock), #5 (Event race), #8 (cancellation during deps) | Route through cortex notification system not stdin, per-request Events not shared, fresh dep_cache per run |
-| Graph registry / lifecycle | #2 (subprocess orphans), #6 (memory leak), #10 (toolbar scaling) | Kill subprocesses on CancelledError, archive completed graphs, prune TaskManager |
-| Graph I/O through channels | #4 (channel flooding), #9 (print interleaving), #7 (store contention) | Per-graph labels + output policy, single print calls, batch store commits |
-| Event loop integration | #3 (starvation), #1 (deadlock) | sleep(0) per iteration, no blocking stdin reads |
-| Debug views / observability | #4 (flooding), #10 (toolbar scaling), #6 (memory from trace retention) | Rate-limit debug output, lazy trace inspection, archive old graphs |
+| Tool call pruning | #3 (critical info destruction), #9 (error context removal) | Summary-based pruning not truncation, mark errors as non-prunable, keep full output in store |
+| Resourcespace core | #1 (navigation desync), #2 (tool scoping leak), #5 (tool proliferation), #12 (affordance inconsistency) | Location in every context preamble, scope at dispatch layer, polymorphic tools not per-resource tools, define affordance protocol once |
+| Source resourcespace | #2 (path escaping scope), #4 (stale file reads) | Path validation against resource boundary, mtime checks before writes |
+| Task resourcespace | #4 (stale task state), #10 (concurrent access corruption), #8 (session boundary reset) | Optimistic versioning, re-read before write, store in SQLite not conversation |
+| Memory resourcespace | #13 (raw store exposure), #6 (stale summaries) | Semantic API not raw store, always-fresh affordances |
+| Search resourcespace | #7 (unnavigable results) | Include navigable paths in every search result |
+| Cross-cutting | #4 (context poisoning), #14 (eval iteration inflation) | Version/timestamp on all resources, absolute path navigation |
 
 ---
 
@@ -277,21 +273,24 @@ More importantly, the task dict (`_tasks`, tasks.py:32) never shrinks. Completed
 
 | Finding | Source | Confidence |
 |---------|--------|------------|
-| `TerminalPrompt` uses `run_in_executor(None, input)` -- competes with prompt_toolkit for stdin | Direct code: prompt.py:54, shell.py:448 | HIGH |
-| TaskManager does not track LM subprocess processes inside graph execution | Direct code: tasks.py:44-48 vs graph.py:380-384 -- no register_process call path from arun | HIGH |
-| `_run_cli_json` does not handle CancelledError for subprocess cleanup | Direct code: lm.py:386-391 -- only catches TimeoutError | HIGH |
-| asyncio event loop only keeps weak references to tasks | [CPython #91887](https://github.com/python/cpython/issues/91887), [Python docs](https://docs.python.org/3/library/asyncio-task.html) | HIGH |
-| TaskManager._tasks never prunes completed entries | Direct code: tasks.py:75-84 updates state, never deletes | HIGH |
-| `store.record()` commits synchronously on every call | Direct code: store.py:89 | HIGH |
-| SQLite WAL allows concurrent reads but serializes writes | [SQLite WAL docs](https://sqlite.org/wal.html), [iifx.dev article](https://iifx.dev/en/articles/17373144) | HIGH |
-| `print_formatted_text()` with patch_stdout is not thread-safe | [prompt-toolkit #1866](https://github.com/prompt-toolkit/python-prompt-toolkit/issues/1866), [reference docs](https://python-prompt-toolkit.readthedocs.io/en/master/pages/reference.html) | HIGH |
-| `asyncio.Event.clear()` has race conditions with multiple waiters | [Trio #637](https://github.com/python-trio/trio/issues/637), asyncio docs recommend fresh events | MEDIUM |
-| prompt_toolkit `create_background_task` manages references; raw `create_task` may lose them | [prompt-toolkit #1847](https://github.com/prompt-toolkit/python-prompt-toolkit/issues/1847), [Python docs](https://docs.python.org/3/library/asyncio-task.html) | HIGH |
-| Subprocess orphans on task cancellation are a known CPython issue | [CPython #88050](https://github.com/python/cpython/issues/88050) | HIGH |
-| Channel metadata label already supports per-graph prefixes | Direct code: channels.py:83-84, views.py:153-154 | HIGH |
-| dep_cache is local to arun(), already properly scoped per run | Direct code: graph.py:308 | HIGH |
+| `_build_context()` only runs on first prompt, not on subsequent eval loop feedback | Direct code: `ai.py:106-108` -- context is prepended to `full_prompt` before first `_send()` only | HIGH |
+| Tool functions take raw paths with no validation | Direct code: `ai.py:271-345` -- `Path(arg)` with no scope check | HIGH |
+| `_MAX_TOOL_OUTPUT` is 4000 chars; 500-token cap is ~5x reduction | Direct code: `ai.py:36`; token estimate ~4 chars/token | HIGH |
+| Claude CLI session persists via `--resume` with full conversation history | Direct code: `ai.py:209` | HIGH |
+| AI session resets on cancellation but not on resource state change | Direct code: `ai.py:245-248` | HIGH |
+| Shared namespace between AI and user enables concurrent modification | Direct code: `shell.py:209`, `ai.py:89` | HIGH |
+| SessionStore commits synchronously per write | Direct code: `store.py:89` | HIGH |
+| Dynamic tool loading destroys KV cache and confuses models | [Manus context engineering lessons](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus) | HIGH |
+| Leaving failed actions visible improves agent behavior | [Manus context engineering lessons](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus) | HIGH |
+| More tools degrade agent selection accuracy | [Manus context engineering](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus), [LangChain context engineering docs](https://docs.langchain.com/oss/python/langchain/context-engineering) | HIGH |
+| Agent context bloat does not proportionally improve performance | [JetBrains context management research](https://blog.jetbrains.com/research/2025/12/efficient-context-management/) | HIGH |
+| LLMs attend poorly to middle-of-context information | [JetBrains research](https://blog.jetbrains.com/research/2025/12/efficient-context-management/), [dbreunig.com](https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html) | HIGH |
+| State corruption from variable passing failures in multi-step agents | [Nanonets AI agent state management guide](https://nanonets.com/blog/ai-agents-state-management-guide-2026/) | MEDIUM |
+| Externalized memory (filesystem as context store) outperforms lossy compression | [Manus context engineering lessons](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus) | HIGH |
+| HATEOAS enables dynamic discoverability, reduces navigation ambiguity | [Nordic APIs HATEOAS for AI](https://nordicapis.com/hateoas-the-api-design-style-that-was-waiting-for-ai/) | MEDIUM |
+| Summarization-using agents ran ~15% longer without solving more problems | [JetBrains research](https://blog.jetbrains.com/research/2025/12/efficient-context-management/) | MEDIUM |
 
 ---
 
-*Pitfalls researched: 2026-02-15 for graph runtime in REPL milestone*
-*Previous version: v5.0 Stream Views pitfalls (2026-02-14) -- that file covered Rich rendering, prompt hardening, and tool interception. This file covers concurrent graph execution, input gates, and observability.*
+*Pitfalls researched: 2026-02-16 for v7.0 Hypermedia Resourcespace milestone*
+*Previous version: v6.0 Graph Runtime pitfalls (2026-02-15) -- that file covered concurrent graph execution, input gates, subprocess orphans, and event loop starvation. This file covers hypermedia navigation, context-scoped tools, pruning, and resource persistence.*
