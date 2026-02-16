@@ -125,11 +125,12 @@ Plans:
   3. `input <id> <value>` in GRAPH mode and `@gid <value>` from any mode both resolve a pending gate
   4. Pending gates display field name, type, and description so Dzara knows what to provide
   5. Shush mode (badge only) vs inline notification is toggleable per preference
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 28-01: TBD
-- [ ] 28-02: TBD
+- [ ] 28-01-PLAN.md -- Gate marker, resolver classification, InputGate dataclass, WAITING state, gate registry
+- [ ] 28-02-PLAN.md -- Engine gate execution interception, GRAPH mode input command with type coercion
+- [ ] 28-03-PLAN.md -- Toolbar gates badge, cross-mode @g routing, shush mode toggle
 
 ### Phase 29: Observability
 **Goal**: Full visibility into graph execution through the channel/view system with scaling validation
@@ -178,7 +179,7 @@ Plans:
 | 25. Views Completion | v5.0 | 3/3 | Complete | 2026-02-14 |
 | 26. Engine Foundation | v6.0 | 4/4 | Complete | 2026-02-15 |
 | 27. Graph Mode | v6.0 | 6/6 | Complete | 2026-02-15 |
-| 28. Input Gates | v6.0 | 0/TBD | Not started | - |
+| 28. Input Gates | v6.0 | 0/3 | Planned | - |
 | 29. Observability | v6.0 | 0/TBD | Not started | - |
 
 ---
