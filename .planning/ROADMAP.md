@@ -99,12 +99,12 @@
   3. `homespace()` returns agent to root from any depth; subresourcespaces nest via dotted calls (e.g., `source.meta()`)
   4. Standard tools (read/write/edit/glob/grep) dispatch to the current resource's handlers; unsupported tools return clear errors
   5. All resourcespace tool output is capped at 500 tokens via summary-based pruning; error outputs are never pruned
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 31-01: TBD
-- [ ] 31-02: TBD
-- [ ] 31-03: TBD
+- [ ] 31-01-PLAN.md — Resourcespace protocol, ResourceRegistry, ResourceHandle, navigation state, error formatting (TDD)
+- [ ] 31-02-PLAN.md — ToolRouter with dispatch, pruning, homespace fallback (TDD)
+- [ ] 31-03-PLAN.md — Integration: wire registry/router into ai.py, shell.py, namespace, toolbar, prompt
 
 ### Phase 32: Source Resourcespace
 **Goal**: Agent can navigate into project source and operate on files with path-safe, context-scoped tools
