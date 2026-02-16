@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 31 of 36 (Resource Protocol + Navigation)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: Executing
-Last activity: 2026-02-16 -- Completed 31-01 (Resource Protocol + Navigation)
+Last activity: 2026-02-16 -- Completed 31-02 (ToolRouter dispatch + pruning)
 
-Progress: [███░░░░░░░] 33%
+Progress: [██████░░░░] 67%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 100 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 1 v7.0)
+- Total plans completed: 101 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 2 v7.0)
 - v6.0 duration: 1 day (2026-02-15)
 - v5.0 duration: 1 day (2026-02-14)
 
@@ -34,6 +34,9 @@ Progress: [███░░░░░░░] 33%
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 31-02: ResourceError promoted from dataclass to Exception subclass for raise/except
+- v7.0 31-02: Pruning keeps structural lines (headings, tables), trims content to ~2000 chars
+- v7.0 31-02: read('') at root lists resourcespaces instead of filesystem read
 - v7.0 31-01: Dotted navigation pushes full intermediate chain onto stack for correct breadcrumb
 - v7.0 31-01: ResourceHandle guards __getattr__ against underscore-prefixed names
 - v7.0: Navigation is a discoverable affordance -- calling a resource as a function navigates into it
@@ -68,6 +71,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 31-01-PLAN.md
+Stopped at: Completed 31-02-PLAN.md
 Branch: main
-Resume file: .planning/phases/31-resource-protocol-navigation/31-01-SUMMARY.md
+Resume file: .planning/phases/31-resource-protocol-navigation/31-02-SUMMARY.md
