@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-15)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v6.0 Graph Runtime -- Phase 27 Graph Mode in progress
+**Current focus:** v6.0 Graph Runtime -- Phase 27 Graph Mode complete
 
 ## Current Position
 
 Phase: 27 (Graph Mode)
-Plan: 01 of 02 complete
-Status: 27-01 complete, ready for 27-02
-Last activity: 2026-02-15 -- 27-01 graph factory + engine coroutine support
+Plan: 02 of 02 complete
+Status: Phase 27 complete
+Last activity: 2026-02-15 -- 27-02 GRAPH mode command dispatcher
 
 Progress: v1-v5 done | v6.0 [####......] 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 88 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 12 work)
+- Total plans completed: 89 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 13 work)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -28,6 +28,7 @@ Progress: v1-v5 done | v6.0 [####......] 20%
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
+| 27-02 | GRAPH mode command dispatcher | 3min | 2 | 3 |
 | 27-01 | graph() factory + engine coroutine | 6min | 2 | 7 |
 | 26-04 | Graph error pipeline fix | 1min | 2 | 3 |
 | 26-03 | Instance guard + subprocess isolation | 1min | 1 | 3 |
@@ -42,6 +43,8 @@ Progress: v1-v5 done | v6.0 [####......] 20%
 
 See PROJECT.md Key Decisions table for full history.
 
+- 27-02: dispatch_graph replaces _run_graph -- shell.py delegates entirely to graph_commands.py
+- 27-02: run <expr> uses async_exec for namespace expression evaluation, supports coroutines and Graph objects
 - 27-01: graph() factory fully encapsulates Graph in closure, exposes only _name string on wrapper
 - 27-01: submit_coro cannot inject TimingLM since LM is bound inside the coroutine
 - 27-01: GraphRun.graph now optional (None for submit_coro runs)
@@ -86,6 +89,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 27-01-PLAN.md
+Stopped at: Completed 27-02-PLAN.md (Phase 27 complete)
 Branch: main
 Resume file: None
