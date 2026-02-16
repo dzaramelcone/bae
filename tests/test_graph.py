@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from pydantic import BaseModel
+
 from bae.exceptions import BaeError
 from bae.graph import Graph, graph
 from bae.markers import Dep
@@ -313,6 +315,18 @@ class FactoryEnd(Node):
     async def __call__(self) -> None: ...
 
 
+class TInput(BaseModel):
+    value: str
+    label: str = "default"
+
+
+class CompositeStart(Node):
+    inp: TInput
+    extra: str
+
+    def __call__(self) -> FactoryEnd: ...
+
+
 class TraceA(Node):
     msg: str
     def __call__(self) -> TraceB: ...
@@ -424,3 +438,35 @@ class TestGraphFactory:
         assert sig.parameters["lm"].default is None
         assert "dep_cache" in sig.parameters
         assert sig.parameters["dep_cache"].default is None
+
+    def test_graph_factory_flattens_basemodel_params(self):
+        """graph() flattens BaseModel fields into simple params."""
+        fn = graph(start=CompositeStart)
+        sig = inspect.signature(fn)
+        # BaseModel TInput fields are flattened
+        assert "value" in sig.parameters
+        assert sig.parameters["value"].annotation is str
+        assert "label" in sig.parameters
+        assert sig.parameters["label"].default == "default"
+        # Original BaseModel field name is NOT in signature
+        assert "inp" not in sig.parameters
+        # Simple field is still present
+        assert "extra" in sig.parameters
+
+    async def test_graph_factory_flattened_call(self):
+        """graph() callable accepts flat kwargs and reconstructs BaseModel."""
+        fn = graph(start=CompositeStart)
+        lm = MockV2LM()
+        result = await fn(value="hello", extra="world", lm=lm)
+        assert isinstance(result, GraphResult)
+        # Verify TInput was reconstructed: start node has inp field
+        start_node = result.trace[0]
+        assert hasattr(start_node, "inp")
+        assert isinstance(start_node.inp, TInput)
+        assert start_node.inp.value == "hello"
+        assert start_node.inp.label == "default"
+
+    def test_graph_factory_no_param_types(self):
+        """graph() wrapper no longer has _param_types attribute."""
+        fn = graph(start=CompositeStart)
+        assert not hasattr(fn, "_param_types")

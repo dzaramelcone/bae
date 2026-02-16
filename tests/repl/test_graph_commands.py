@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 import pytest
+from pydantic import BaseModel
 
 from bae.graph import Graph, graph
 from bae.node import Node
@@ -27,6 +28,16 @@ class TEnd(Node):
     reply: str
 
     async def __call__(self) -> None: ...
+
+
+class TInput(BaseModel):
+    value: str
+
+
+class TTypedStart(Node):
+    inp: TInput
+
+    async def __call__(self) -> TEnd: ...
 
 
 # --- Mock LM ---
@@ -112,6 +123,8 @@ def shell():
     # Populate namespace with graph factory callables
     mygraph = graph(start=TStart)
     s.namespace["mygraph"] = mygraph
+    typed_graph = graph(start=TTypedStart)
+    s.namespace["typed_graph"] = typed_graph
     return s
 
 
@@ -182,6 +195,16 @@ class TestCmdRun:
         await dispatch_graph("run nonexistent_var", shell)
         out = _output(shell.router)
         assert "error" in _meta_types(shell.router)
+
+    async def test_run_flattened_params(self, shell):
+        """run with flattened params -- no TInput construction needed."""
+        shell.namespace["MockLM"] = MockLM
+        # TInput is NOT in shell.namespace -- and that's fine with flattened params
+        assert "TInput" not in shell.namespace
+        await dispatch_graph("run typed_graph(value='hi', lm=MockLM())", shell)
+        out = _output(shell.router)
+        assert "submitted" in out
+        await _drain(shell.tm)
 
     async def test_run_wrong_type_shows_error(self, shell):
         """run with a non-graph/non-coroutine result shows type error."""

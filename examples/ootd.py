@@ -250,5 +250,5 @@ ootd = graph(start=IsTheUserGettingDressed)
 if __name__ == "__main__":
     import asyncio
 
-    result = asyncio.run(ootd(user_info=UserInfo(), user_message="ugh i just got up"))
+    result = asyncio.run(ootd(name="Dzara", user_message="ugh i just got up"))
     print(result.trace[-1].model_dump_json(indent=2))

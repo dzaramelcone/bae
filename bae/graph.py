@@ -478,38 +478,66 @@ def graph(start: type[Node]):
     """Create a free-standing async callable from a node graph.
 
     Discovers topology from `start`, builds a typed signature from the
-    start node's required plain fields, and returns an async function
-    that executes the graph. The internal Graph instance is fully
-    encapsulated inside the closure.
+    start node's required plain fields. BaseModel fields are flattened
+    so callers pass simple kwargs instead of constructing internal types.
 
     Usage::
 
         ootd = graph(start=IsTheUserGettingDressed)
-        result = await ootd(user_info=UserInfo(), user_message="hi")
+        result = await ootd(name="Dzara", user_message="hi")
     """
+    from pydantic import BaseModel
+    from pydantic.fields import PydanticUndefined
+
     g = Graph(start=start)
 
-    async def wrapper(*, lm=None, dep_cache=None, **kwargs):
-        return await g.arun(lm=lm, dep_cache=dep_cache, **kwargs)
+    # Map which input fields need BaseModel reconstruction
+    # _composites: {original_field_name: (ModelClass, [sub_field_names])}
+    _composites: dict[str, tuple[type, list[str]]] = {}
+    params = []
 
-    # Build typed signature from start node's required plain fields
-    params = [
-        inspect.Parameter(
-            name,
-            kind=inspect.Parameter.KEYWORD_ONLY,
-            annotation=fi.annotation,
-        )
-        for name, fi in g._input_fields.items()
-    ]
+    for name, fi in g._input_fields.items():
+        ann = fi.annotation
+        if isinstance(ann, type) and issubclass(ann, BaseModel):
+            # Flatten this BaseModel's fields into the signature
+            sub_fields = []
+            for sub_name, sub_fi in ann.model_fields.items():
+                default = (
+                    sub_fi.default
+                    if sub_fi.default is not PydanticUndefined
+                    else inspect.Parameter.empty
+                )
+                params.append(inspect.Parameter(
+                    sub_name,
+                    kind=inspect.Parameter.KEYWORD_ONLY,
+                    annotation=sub_fi.annotation,
+                    default=default,
+                ))
+                sub_fields.append(sub_name)
+            _composites[name] = (ann, sub_fields)
+        else:
+            # Simple type -- keep as-is
+            params.append(inspect.Parameter(
+                name,
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                annotation=fi.annotation,
+            ))
+
     params.append(inspect.Parameter("lm", kind=inspect.Parameter.KEYWORD_ONLY, default=None))
     params.append(inspect.Parameter("dep_cache", kind=inspect.Parameter.KEYWORD_ONLY, default=None))
+
+    async def wrapper(*, lm=None, dep_cache=None, **kwargs):
+        # Reconstruct BaseModel objects from flat kwargs
+        arun_kwargs = {}
+        for orig_name, (model_cls, sub_fields) in _composites.items():
+            model_kwargs = {f: kwargs.pop(f) for f in sub_fields if f in kwargs}
+            arun_kwargs[orig_name] = model_cls(**model_kwargs)
+        arun_kwargs.update(kwargs)
+        return await g.arun(lm=lm, dep_cache=dep_cache, **arun_kwargs)
+
     wrapper.__signature__ = inspect.Signature(params)
     wrapper.__name__ = start.__name__
     wrapper.__doc__ = f"Run {start.__name__} graph."
     wrapper._name = start.__name__
-    wrapper._param_types = {
-        name: fi.annotation for name, fi in g._input_fields.items()
-        if isinstance(fi.annotation, type)
-    }
 
     return wrapper
