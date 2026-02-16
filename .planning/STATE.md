@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 32.1 of 36 (Resourcespace Package Structure)
-Plan: 1 of 2 in current phase
-Status: In Progress
-Last activity: 2026-02-16 -- Completed 32.1-01 (spaces/ package structure)
+Plan: 2 of 2 in current phase
+Status: Complete
+Last activity: 2026-02-16 -- Completed 32.1-02 (import migration and audit)
 
-Progress: [██████████████████████] ~50% of 32.1
+Progress: [████████████████████████████████████████████] 100% of 32.1
 
 ## Performance Metrics
 
@@ -34,6 +34,7 @@ Progress: [██████████████████████] ~
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 32.1-02: Tests import from bae.repl.spaces (canonical); production infrastructure keeps importing from bae.repl.resource (definition site)
 - v7.0 32.1-01: MetaSubresource._module_path points to bae.repl.spaces.source.service (canonical location after move)
 - v7.0 32.1-01: spaces/ package layout: spaces/{name}/{__init__.py, service.py, models.py, schemas.py, view.py}; old modules become thin re-export shims
 - v7.0 32-05: Stack replacement uses identity comparison for common-prefix divergence; tools() returns bound methods for namespace injection
@@ -90,6 +91,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32.1-01-PLAN.md (spaces/ package structure)
+Stopped at: Completed 32.1-02-PLAN.md (import migration and audit) -- Phase 32.1 complete
 Branch: main
-Resume file: .planning/phases/32.1-resourcespace-package-structure/32.1-01-SUMMARY.md
+Resume file: .planning/phases/32.1-resourcespace-package-structure/32.1-02-SUMMARY.md
