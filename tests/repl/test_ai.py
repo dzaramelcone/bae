@@ -13,7 +13,7 @@ from bae.markers import Dep
 from bae.node import Node
 from bae.repl.ai import (
     AI, _build_context, _load_prompt, _PROMPT_FILE, run_tool_calls,
-    _tool_summary, _is_error_output, _error_type_name,
+    _tool_summary, _is_error_output, _error_type_name, _SIMPLE_TOOL_RE,
 )
 
 
@@ -958,3 +958,139 @@ class TestAsyncStdoutCapture:
         output = py_writes[0][0][1]
         assert "before await" in output
         assert "printed during await" in output
+
+
+# --- TestSimpleToolRegex ---
+
+
+class TestSimpleToolRegex:
+    """Tests for _SIMPLE_TOOL_RE: matches simple tool calls in <run> blocks."""
+
+    def test_matches_read(self):
+        assert _SIMPLE_TOOL_RE.match('read("bae")')
+
+    def test_matches_glob(self):
+        assert _SIMPLE_TOOL_RE.match('glob("*.py")')
+
+    def test_matches_grep(self):
+        assert _SIMPLE_TOOL_RE.match('grep("pattern")')
+
+    def test_matches_write(self):
+        assert _SIMPLE_TOOL_RE.match('write("path", "content")')
+
+    def test_matches_edit(self):
+        assert _SIMPLE_TOOL_RE.match('edit("path", old="x", new="y")')
+
+    def test_no_match_assignment(self):
+        assert _SIMPLE_TOOL_RE.match('x = read("bae")') is None
+
+    def test_no_match_nested(self):
+        assert _SIMPLE_TOOL_RE.match('print(read("bae"))') is None
+
+    def test_no_match_for_loop(self):
+        assert _SIMPLE_TOOL_RE.match('for f in glob("*.py"): print(f)') is None
+
+    def test_no_match_plain_python(self):
+        assert _SIMPLE_TOOL_RE.match('x = 1 + 2') is None
+
+
+# --- TestRunBlockToolDetection ---
+
+
+class TestRunBlockToolDetection:
+    """Tests for tool call detection in <run> block handler."""
+
+    @pytest.fixture
+    def eval_ai(self, mock_lm, mock_router):
+        ai = AI(lm=mock_lm, router=mock_router, namespace={}, max_eval_iters=3)
+        ai._send = AsyncMock()
+        return ai
+
+    @pytest.mark.asyncio
+    async def test_tool_call_in_run_block_emits_tool_translated(self, eval_ai):
+        """read('bae') in <run> block emits tool_translated, not ai_exec."""
+        eval_ai._send.side_effect = [
+            '<run>\nread("bae")\n</run>',
+            "Done.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = ("line1\nline2\nline3", "")
+            await eval_ai("read bae")
+
+        py_writes = [
+            c for c in eval_ai._router.write.call_args_list
+            if c[0][0] == "py"
+        ]
+        # Should be exactly 1 write: tool_translated (not ai_exec + ai_exec_result)
+        assert len(py_writes) == 1
+        meta = py_writes[0].kwargs["metadata"]
+        assert meta["type"] == "tool_translated"
+        assert "tool_summary" in meta
+        assert "\u25c6" in meta["tool_summary"]  # diamond bullet
+
+    @pytest.mark.asyncio
+    async def test_non_tool_run_block_emits_ai_exec(self, eval_ai):
+        """Non-tool <run> blocks still emit ai_exec/ai_exec_result."""
+        eval_ai._send.side_effect = [
+            "<run>\nx = 1 + 2\n</run>",
+            "Done.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = (3, "")
+            await eval_ai("compute")
+
+        py_writes = [
+            c for c in eval_ai._router.write.call_args_list
+            if c[0][0] == "py"
+        ]
+        types = [c.kwargs["metadata"]["type"] for c in py_writes]
+        assert "ai_exec" in types
+        assert "ai_exec_result" in types
+        assert "tool_translated" not in types
+
+    @pytest.mark.asyncio
+    async def test_tool_call_summary_contains_resource_prefix(self, eval_ai):
+        """When inside a resource, tool_summary includes [resource] prefix."""
+        from bae.repl.spaces import ResourceRegistry
+
+        reg = ResourceRegistry()
+        eval_ai._registry = reg
+        # Simulate being inside a resource
+        mock_space = MagicMock()
+        mock_space.name = "source"
+        reg._stack = [mock_space]
+
+        eval_ai._send.side_effect = [
+            '<run>\nread("bae")\n</run>',
+            "Done.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = ("line1\nline2", "")
+            await eval_ai("read bae")
+
+        py_writes = [
+            c for c in eval_ai._router.write.call_args_list
+            if c[0][0] == "py"
+        ]
+        meta = py_writes[0].kwargs["metadata"]
+        assert meta["type"] == "tool_translated"
+        assert "[source]" in meta["tool_summary"]
+
+    @pytest.mark.asyncio
+    async def test_tool_call_error_in_run_block(self, eval_ai):
+        """Error from tool call in <run> block sets is_error in metadata."""
+        eval_ai._send.side_effect = [
+            '<run>\nread("bad")\n</run>',
+            "Error noted.",
+        ]
+        with patch("bae.repl.ai.async_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.side_effect = Exception("boom")
+            await eval_ai("read bad")
+
+        py_writes = [
+            c for c in eval_ai._router.write.call_args_list
+            if c[0][0] == "py"
+        ]
+        meta = py_writes[0].kwargs["metadata"]
+        assert meta["type"] == "tool_translated"
+        assert meta["is_error"] is True

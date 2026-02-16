@@ -88,7 +88,7 @@ class AI:
         namespace: dict,
         tm: TaskManager | None = None,
         label: str = "1",
-        model: str = "claude-sonnet-4-20250514",
+        model: str = "claude-opus-4-6",
         timeout: int = 60,
         max_eval_iters: int = 0,
         tool_router: ToolRouter | None = None,
@@ -137,9 +137,17 @@ class AI:
                 all_outputs = []
                 for tag, output, is_error in tool_results:
                     summary = _tool_summary(tag, output, is_error=is_error, resource=resource_name)
-                    self._router.write("py", tag, mode="PY",
-                        metadata={"type": "tool_translated", "label": self._label,
-                                  "tool_summary": summary, "is_error": is_error})
+                    self._router.write(
+                        "py",
+                        tag,
+                        mode="PY",
+                        metadata={
+                            "type": "tool_translated",
+                            "label": self._label,
+                            "tool_summary": summary,
+                            "is_error": is_error,
+                        },
+                    )
                     all_outputs.append(output)
 
                 combined = "\n---\n".join(all_outputs)
@@ -158,6 +166,7 @@ class AI:
             outputs: list[str] = []
             for code in blocks:
                 output = ""
+                is_error = False
                 try:
                     result, captured = await async_exec(code, self._namespace)
                     if asyncio.iscoroutine(result):
@@ -177,10 +186,39 @@ class AI:
                     raise
                 except BaseException:
                     output = traceback.format_exc()
+                    is_error = True
 
-                self._router.write("py", code, mode="PY", metadata={"type": "ai_exec", "label": self._label})
-                if output:
-                    self._router.write("py", output, mode="PY", metadata={"type": "ai_exec_result", "label": self._label})
+                # Detect simple tool calls and render as summaries
+                tool_m = _SIMPLE_TOOL_RE.match(code.strip())
+                if tool_m:
+                    tool_name = tool_m.group(1)
+                    tool_arg = tool_m.group(2).strip().strip("'\"")
+                    tag = f"<{_TOOL_HUMAN_NAMES_REV.get(tool_name, tool_name.title())}:{tool_arg}>"
+                    if not is_error:
+                        is_error = _is_error_output(output)
+                    summary = _tool_summary(tag, output, is_error=is_error, resource=resource_name)
+                    self._router.write(
+                        "py",
+                        tag,
+                        mode="PY",
+                        metadata={
+                            "type": "tool_translated",
+                            "label": self._label,
+                            "tool_summary": summary,
+                            "is_error": is_error,
+                        },
+                    )
+                else:
+                    self._router.write(
+                        "py", code, mode="PY", metadata={"type": "ai_exec", "label": self._label}
+                    )
+                    if output:
+                        self._router.write(
+                            "py",
+                            output,
+                            mode="PY",
+                            metadata={"type": "ai_exec_result", "label": self._label},
+                        )
                 outputs.append(output)
 
             combined = "\n---\n".join(outputs)
@@ -195,8 +233,9 @@ class AI:
             response = await self._send(self._with_location(feedback))
             await asyncio.sleep(0)  # cancellation checkpoint
 
-        self._router.write("ai", response, mode="NL",
-            metadata={"type": "response", "label": self._label})
+        self._router.write(
+            "ai", response, mode="NL", metadata={"type": "response", "label": self._label}
+        )
         return response
 
     async def _send(self, prompt: str) -> str:
@@ -207,17 +246,21 @@ class AI:
         """
         cmd = [
             "claude",
-            "-p", prompt,
-            "--model", self._model,
-            "--output-format", "text",
-            "--tools", "",
+            "-p",
+            prompt,
+            "--model",
+            self._model,
+            "--output-format",
+            "text",
+            "--tools",
+            "",
             "--strict-mcp-config",
-            "--setting-sources", "",
+            "--setting-sources",
+            "",
         ]
 
         if self._call_count == 0:
-            cmd += ["--session-id", self._session_id,
-                    "--system-prompt", _load_prompt()]
+            cmd += ["--session-id", self._session_id, "--system-prompt", _load_prompt()]
         else:
             cmd += ["--resume", self._session_id]
 
@@ -235,7 +278,8 @@ class AI:
             self._tm.register_process(process)
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(), timeout=self._timeout,
+                process.communicate(),
+                timeout=self._timeout,
             )
         except asyncio.TimeoutError:
             process.kill()
@@ -275,7 +319,9 @@ class AI:
         return await self._lm.fill(target, context or {}, target.__name__)
 
     async def choose_type(
-        self, types: list[type[Node]], context: dict | None = None,
+        self,
+        types: list[type[Node]],
+        context: dict | None = None,
     ) -> type[Node]:
         """Pick successor type from candidates via bae's LM choose_type."""
         return await self._lm.choose_type(types, context or {})
@@ -291,11 +337,19 @@ class AI:
         return f"ai:{self._label} -- await ai('question'). session {sid}, {n} calls."
 
 
+_SIMPLE_TOOL_RE = re.compile(r'^(read|write|edit|glob|grep)\((.+)\)$', re.DOTALL)
+
+_TOOL_HUMAN_NAMES_REV = {"read": "R", "write": "W", "edit": "E", "glob": "G", "grep": "Grep"}
+
 _TOOL_NAMES = {
-    "r": "R", "read": "R",
-    "w": "W", "write": "W",
-    "e": "E", "edit": "E",
-    "g": "G", "glob": "G",
+    "r": "R",
+    "read": "R",
+    "w": "W",
+    "write": "W",
+    "e": "E",
+    "edit": "E",
+    "g": "G",
+    "glob": "G",
     "grep": "Grep",
 }
 
@@ -391,24 +445,42 @@ def run_tool_calls(text: str, *, router: ToolRouter | None = None) -> list[tuple
     for wm in _WRITE_TAG_RE.finditer(prose):
         tag = wm.group(0).split("\n", 1)[0].strip()
         if router:
-            pending.append((wm.start(), tag,
-                            lambda fp=wm.group(2), c=wm.group(3): router.dispatch("write", fp, content=c)))
+            pending.append(
+                (
+                    wm.start(),
+                    tag,
+                    lambda fp=wm.group(2), c=wm.group(3): router.dispatch("write", fp, content=c),
+                )
+            )
         else:
-            pending.append((wm.start(), tag,
-                            lambda fp=wm.group(2), c=wm.group(3): _exec_write(fp, c)))
+            pending.append(
+                (wm.start(), tag, lambda fp=wm.group(2), c=wm.group(3): _exec_write(fp, c))
+            )
         consumed.update(range(wm.start(), wm.end()))
 
     # Edit-with-replacement (group 2=filepath, 3=start, 4=end, 5=content)
     for em in _EDIT_REPLACE_RE.finditer(prose):
         tag = em.group(0).split("\n", 1)[0].strip()
         if router:
-            pending.append((em.start(), tag,
-                            lambda fp=em.group(2), s=int(em.group(3)),
-                            e=int(em.group(4)), c=em.group(5): router.dispatch("edit", fp, start=s, end=e, content=c)))
+            pending.append(
+                (
+                    em.start(),
+                    tag,
+                    lambda fp=em.group(2), s=int(em.group(3)), e=int(em.group(4)), c=em.group(5): (
+                        router.dispatch("edit", fp, start=s, end=e, content=c)
+                    ),
+                )
+            )
         else:
-            pending.append((em.start(), tag,
-                            lambda fp=em.group(2), s=int(em.group(3)),
-                            e=int(em.group(4)), c=em.group(5): _exec_edit_replace(fp, s, e, c)))
+            pending.append(
+                (
+                    em.start(),
+                    tag,
+                    lambda fp=em.group(2), s=int(em.group(3)), e=int(em.group(4)), c=em.group(5): (
+                        _exec_edit_replace(fp, s, e, c)
+                    ),
+                )
+            )
         consumed.update(range(em.start(), em.end()))
 
     # Single-line tags
@@ -420,14 +492,14 @@ def run_tool_calls(text: str, *, router: ToolRouter | None = None) -> list[tuple
             dispatch_name = _TOOL_DISPATCH.get(tool)
             if dispatch_name:
                 tag = m.group(0).strip()
-                pending.append((m.start(), tag,
-                                lambda d=dispatch_name, a=m.group(2): router.dispatch(d, a)))
+                pending.append(
+                    (m.start(), tag, lambda d=dispatch_name, a=m.group(2): router.dispatch(d, a))
+                )
         else:
             fn = _TOOL_EXEC.get(tool) if tool else None
             if fn:
                 tag = m.group(0).strip()
-                pending.append((m.start(), tag,
-                                lambda f=fn, a=m.group(2): f(a)))
+                pending.append((m.start(), tag, lambda f=fn, a=m.group(2): f(a)))
 
     # OSC 8 hyperlink-wrapped tool calls
     for m in _OSC8_TOOL_RE.finditer(prose):
@@ -438,14 +510,14 @@ def run_tool_calls(text: str, *, router: ToolRouter | None = None) -> list[tuple
             dispatch_name = _TOOL_DISPATCH.get(tool)
             if dispatch_name:
                 tag = f"<{m.group(1)}:{m.group(2)}>"
-                pending.append((m.start(), tag,
-                                lambda d=dispatch_name, a=m.group(2): router.dispatch(d, a)))
+                pending.append(
+                    (m.start(), tag, lambda d=dispatch_name, a=m.group(2): router.dispatch(d, a))
+                )
         else:
             fn = _TOOL_EXEC.get(tool) if tool else None
             if fn:
                 tag = f"<{m.group(1)}:{m.group(2)}>"
-                pending.append((m.start(), tag,
-                                lambda f=fn, a=m.group(2): f(a)))
+                pending.append((m.start(), tag, lambda f=fn, a=m.group(2): f(a)))
 
     # Execute in order
     pending.sort(key=lambda x: x[0])
@@ -493,14 +565,27 @@ def _build_context(namespace: dict) -> str:
     if isinstance(trace, list) and trace:
         lines.append(f">>> _trace[-{min(5, len(trace))}:]")
         for i, n in enumerate(trace[-5:]):
-            lines.append(f"  {i+1}. {type(n).__name__}")
+            lines.append(f"  {i + 1}. {type(n).__name__}")
 
     # User variables (skip internals, modules, bae types, resource navigation)
     _SKIP = {
-        "__builtins__", "ai", "ns", "store", "channels",
-        "Node", "Graph", "Dep", "Recall", "GraphResult",
-        "LM", "NodeConfig", "Annotated", "asyncio", "os",
-        "home", "back",
+        "__builtins__",
+        "ai",
+        "ns",
+        "store",
+        "channels",
+        "Node",
+        "Graph",
+        "Dep",
+        "Recall",
+        "GraphResult",
+        "LM",
+        "NodeConfig",
+        "Annotated",
+        "asyncio",
+        "os",
+        "home",
+        "back",
     }
     user_vars: list[str] = []
     for name, obj in sorted(namespace.items()):
