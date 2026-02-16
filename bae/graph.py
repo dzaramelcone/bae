@@ -16,7 +16,7 @@ from bae.exceptions import BaeError, DepError, RecallError
 from bae.lm import LM
 from bae.markers import Effect
 from bae.node import Node, _has_ellipsis_body, _unwrap_annotated, _wants_lm
-from bae.resolver import LM_KEY, classify_fields, resolve_fields, validate_node_deps
+from bae.resolver import LM_KEY, _engine_dep_cache, classify_fields, resolve_fields, validate_node_deps
 from bae.result import GraphResult
 
 logger = logging.getLogger(__name__)
@@ -324,6 +324,11 @@ class Graph:
         cache: dict = {LM_KEY: lm}
         if dep_cache is not None:
             cache.update(dep_cache)
+        engine_cache = _engine_dep_cache.get(None)
+        if engine_cache is not None:
+            for k, v in engine_cache.items():
+                if k not in cache:
+                    cache[k] = v
         current: Node | None = start_node
         iters = 0
 

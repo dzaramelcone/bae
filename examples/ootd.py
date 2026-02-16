@@ -22,7 +22,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
-from bae import Dep, Graph, Node, Recall, graph
+from bae import Dep, Gate, Graph, Node, Recall, graph
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -179,7 +179,7 @@ class UserInfo(BaseModel):
 
 class IsTheUserGettingDressed(Node):
     user_info: UserInfo
-    user_message: str  # caller provides this — start node fields are always user-provided
+    user_message: Annotated[str, Gate(description="what's the occasion?")] = ""
 
     async def __call__(self) -> AnticipateUsersDay | No: ...
 

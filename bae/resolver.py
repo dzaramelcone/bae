@@ -8,6 +8,7 @@ by a callable), 'recall' (populated from the execution trace), or 'plain'
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import graphlib
 import inspect
 from typing import Annotated, get_args, get_origin, get_type_hints
@@ -17,6 +18,11 @@ from bae.markers import Dep, Gate, Recall
 
 LM_KEY = object()  # sentinel for LM in dep cache
 GATE_HOOK_KEY = object()  # sentinel for gate hook callback in dep cache
+
+# Engine sets this so arun picks up the gate hook even from pre-built coroutines
+_engine_dep_cache: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "_engine_dep_cache", default=None
+)
 
 
 def _is_node_type(t: object) -> bool:

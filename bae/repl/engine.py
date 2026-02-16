@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from bae.lm import LM
-from bae.resolver import GATE_HOOK_KEY, LM_KEY
+from bae.resolver import GATE_HOOK_KEY, LM_KEY, _engine_dep_cache
 
 if TYPE_CHECKING:
     from bae.graph import Graph
@@ -137,6 +137,25 @@ class GraphRegistry:
         tm.submit(coro, name=f"graph:{run_id}:{graph.start.__name__}", mode="graph")
         return run
 
+    def _make_gate_hook(self, run: GraphRun, notify=None):
+        """Build a gate hook closure for a specific graph run."""
+        async def hook(node_cls, gate_fields):
+            gates = []
+            for field_name, field_type, description in gate_fields:
+                gate = self.create_gate(
+                    run.run_id, field_name, field_type, description,
+                    node_cls.__name__,
+                )
+                gates.append(gate)
+            run.state = GraphState.WAITING
+            if notify is not None:
+                for g in gates:
+                    notify(f"[{g.gate_id}] {g.node_type}.{g.schema_display}")
+            results = await asyncio.gather(*[g.future for g in gates])
+            run.state = GraphState.RUNNING
+            return {g.field_name: val for g, val in zip(gates, results)}
+        return hook
+
     async def _execute(
         self, run: GraphRun, *, lm: LM | None = None, notify=None, **kwargs,
     ):
@@ -146,24 +165,10 @@ class GraphRegistry:
                 lm = ClaudeCLIBackend()
             timing_lm = TimingLM(lm, run)
 
-            async def _gate_hook(node_cls, gate_fields):
-                """Create InputGates for gate-annotated fields and await resolution."""
-                gates = []
-                for field_name, field_type, description in gate_fields:
-                    gate = self.create_gate(
-                        run.run_id, field_name, field_type, description,
-                        node_cls.__name__,
-                    )
-                    gates.append(gate)
-                run.state = GraphState.WAITING
-                if notify is not None:
-                    for g in gates:
-                        notify(f"[{g.gate_id}] {g.node_type}.{g.schema_display}")
-                results = await asyncio.gather(*[g.future for g in gates])
-                run.state = GraphState.RUNNING
-                return {g.field_name: val for g, val in zip(gates, results)}
-
-            dep_cache = {LM_KEY: timing_lm, GATE_HOOK_KEY: _gate_hook}
+            dep_cache = {
+                LM_KEY: timing_lm,
+                GATE_HOOK_KEY: self._make_gate_hook(run, notify),
+            }
             result = await run.graph.arun(lm=timing_lm, dep_cache=dep_cache, **kwargs)
             run.result = result
             run.state = GraphState.DONE
@@ -189,20 +194,22 @@ class GraphRegistry:
         """Submit a pre-built coroutine as a managed graph run.
 
         Used when `run <expr>` evaluates to an already-constructed coroutine
-        (e.g., `ootd(user_info=..., user_message=...)`). The coroutine is
-        wrapped with lifecycle tracking but TimingLM cannot be injected
-        since the LM is already bound inside the coroutine.
+        (e.g., `ootd(user_info=..., user_message=...)`). The gate hook is
+        injected via contextvar so arun picks it up automatically.
         """
         run_id = f"g{self._next_id}"
         self._next_id += 1
         run = GraphRun(run_id=run_id, graph=None)
         self._runs[run_id] = run
-        wrapped = self._wrap_coro(run, coro)
+        wrapped = self._wrap_coro(run, coro, notify=notify)
         tm.submit(wrapped, name=f"graph:{run_id}:{name}", mode="graph")
         return run
 
-    async def _wrap_coro(self, run: GraphRun, coro):
-        """Wrap a coroutine with lifecycle tracking."""
+    async def _wrap_coro(self, run: GraphRun, coro, *, notify=None):
+        """Wrap a coroutine with lifecycle tracking and gate hook injection."""
+        token = _engine_dep_cache.set(
+            {GATE_HOOK_KEY: self._make_gate_hook(run, notify)}
+        )
         try:
             result = await coro
             run.state = GraphState.DONE
@@ -221,6 +228,7 @@ class GraphRegistry:
                 run.result = GraphResult(node=None, trace=e.trace)
             raise
         finally:
+            _engine_dep_cache.reset(token)
             run.ended_ns = time.perf_counter_ns()
             self._archive(run)
 
