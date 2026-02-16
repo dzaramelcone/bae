@@ -368,16 +368,18 @@ class Graph:
 
                 # 3. Append to trace (after resolution, before __call__)
                 trace.append(current)
+                node_name = current.__class__.__name__
 
                 # 4. Determine routing and execute
                 strategy = _get_routing_strategy(current.__class__)
 
                 if strategy[0] == "terminal":
-                    # Terminal node -- already in trace, exit
+                    logger.info("%s terminal", node_name)
                     current = None
                 elif strategy[0] == "custom":
                     # Custom __call__ logic
                     source_node = current
+                    logger.info("%s __call__", node_name)
                     if _wants_lm(current.__class__.__call__):
                         current = await current(lm)
                     else:
@@ -423,9 +425,11 @@ class Graph:
                     source_cls = current.__class__
                     if strategy[0] == "make":
                         target_type = strategy[1]
+                        logger.info("%s -> fill %s", node_name, target_type.__name__)
                     elif strategy[0] == "decide":
                         types_list = list(strategy[1])
                         context = _build_context(current)
+                        logger.info("%s -> decide [%s]", node_name, ", ".join(t.__name__ for t in types_list))
                         target_type = await lm.choose_type(types_list, context)
                     else:
                         current = None
@@ -435,6 +439,7 @@ class Graph:
                     # Resolve target's dep/recall fields before fill
                     target_resolved = await resolve_fields(target_type, trace, cache)
                     instruction = _build_instruction(target_type)
+                    logger.info("fill %s", target_type.__name__)
                     current = await lm.fill(
                         target_type, target_resolved, instruction, source=current
                     )

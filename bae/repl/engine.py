@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import logging
 import resource
 import sys
 import time
@@ -13,6 +14,23 @@ from typing import TYPE_CHECKING
 
 from bae.lm import LM
 from bae.resolver import DEP_TIMING_KEY, GATE_HOOK_KEY, LM_KEY, _engine_dep_cache
+
+_graph_logger = logging.getLogger("bae.graph")
+
+
+class _NotifyHandler(logging.Handler):
+    """Forward graph logger messages to the engine's notify callback."""
+
+    def __init__(self, run_id: str, notify):
+        super().__init__(logging.INFO)
+        self._run_id = run_id
+        self._notify = notify
+
+    def emit(self, record):
+        self._notify(
+            f"{self._run_id} {record.getMessage()}",
+            {"type": "lifecycle", "event": "transition", "run_id": self._run_id},
+        )
 
 if TYPE_CHECKING:
     from bae.graph import Graph
@@ -38,9 +56,9 @@ class OutputPolicy(enum.Enum):
         if self == OutputPolicy.SILENT:
             return False
         if self == OutputPolicy.QUIET:
-            return event in ("fail", "gate", "error")
+            return event in ("fail", "cancel", "gate", "error")
         if self == OutputPolicy.NORMAL:
-            return event in ("start", "complete", "fail", "gate", "error")
+            return event in ("start", "complete", "fail", "cancel", "gate", "error")
         return True  # VERBOSE
 
 
@@ -144,7 +162,7 @@ class GraphRegistry:
         self._next_id: int = 1
         self._completed: deque[GraphRun] = deque(maxlen=20)
         self._pending_gates: dict[str, InputGate] = {}
-        self._gate_counter: int = 0
+        self._gate_counters: dict[str, int] = {}  # per-graph gate counter
 
     def submit(
         self,
@@ -204,6 +222,11 @@ class GraphRegistry:
         def _dep_timing_hook(name, duration_ms):
             run.dep_timings.append((name, duration_ms))
 
+        log_handler = None
+        if policy == OutputPolicy.VERBOSE and notify:
+            log_handler = _NotifyHandler(run.run_id, notify)
+            _graph_logger.addHandler(log_handler)
+
         try:
             if lm is None:
                 from bae.lm import ClaudeCLIBackend
@@ -228,16 +251,18 @@ class GraphRegistry:
             run.result = result
             run.state = GraphState.DONE
 
-            elapsed_ms = (time.perf_counter_ns() - run.started_ns) / 1_000_000
-            _emit("complete", f"{run.run_id} done ({elapsed_ms:.0f}ms)", {
+            elapsed_s = (time.perf_counter_ns() - run.started_ns) / 1e9
+            _emit("complete", f"{run.run_id} done ({elapsed_s:.1f}s)", {
                 "type": "lifecycle", "event": "complete", "run_id": run.run_id,
-                "elapsed_ms": elapsed_ms,
             })
 
             return result
         except asyncio.CancelledError:
             run.state = GraphState.CANCELLED
             self.cancel_gates(run.run_id)
+            _emit("cancel", f"{run.run_id} cancelled", {
+                "type": "lifecycle", "event": "cancel", "run_id": run.run_id,
+            })
             raise
         except Exception as e:
             run.state = GraphState.FAILED
@@ -247,10 +272,11 @@ class GraphRegistry:
                 run.result = GraphResult(node=None, trace=e.trace)
             _emit("fail", f"{run.run_id} failed: {run.error}", {
                 "type": "lifecycle", "event": "fail", "run_id": run.run_id,
-                "error": run.error,
             })
             raise
         finally:
+            if log_handler:
+                _graph_logger.removeHandler(log_handler)
             run.ended_ns = time.perf_counter_ns()
             self._archive(run)
 
@@ -295,6 +321,11 @@ class GraphRegistry:
         def _dep_timing_hook(name, duration_ms):
             run.dep_timings.append((name, duration_ms))
 
+        log_handler = None
+        if policy == OutputPolicy.VERBOSE and notify:
+            log_handler = _NotifyHandler(run.run_id, notify)
+            _graph_logger.addHandler(log_handler)
+
         token = _engine_dep_cache.set({
             GATE_HOOK_KEY: self._make_gate_hook(run, notify),
             DEP_TIMING_KEY: _dep_timing_hook,
@@ -313,16 +344,18 @@ class GraphRegistry:
             if hasattr(result, "trace"):
                 run.result = result
 
-            elapsed_ms = (time.perf_counter_ns() - run.started_ns) / 1_000_000
-            _emit("complete", f"{run.run_id} done ({elapsed_ms:.0f}ms)", {
+            elapsed_s = (time.perf_counter_ns() - run.started_ns) / 1e9
+            _emit("complete", f"{run.run_id} done ({elapsed_s:.1f}s)", {
                 "type": "lifecycle", "event": "complete", "run_id": run.run_id,
-                "elapsed_ms": elapsed_ms,
             })
 
             return result
         except asyncio.CancelledError:
             run.state = GraphState.CANCELLED
             self.cancel_gates(run.run_id)
+            _emit("cancel", f"{run.run_id} cancelled", {
+                "type": "lifecycle", "event": "cancel", "run_id": run.run_id,
+            })
             raise
         except Exception as e:
             run.state = GraphState.FAILED
@@ -332,10 +365,11 @@ class GraphRegistry:
                 run.result = GraphResult(node=None, trace=e.trace)
             _emit("fail", f"{run.run_id} failed: {run.error}", {
                 "type": "lifecycle", "event": "fail", "run_id": run.run_id,
-                "error": run.error,
             })
             raise
         finally:
+            if log_handler:
+                _graph_logger.removeHandler(log_handler)
             _engine_dep_cache.reset(token)
             run.ended_ns = time.perf_counter_ns()
             self._archive(run)
@@ -355,8 +389,9 @@ class GraphRegistry:
         node_type: str,
     ) -> InputGate:
         """Create and register an InputGate for a pending human input."""
-        gate_id = f"{run_id}.{self._gate_counter}"
-        self._gate_counter += 1
+        counter = self._gate_counters.get(run_id, 0)
+        gate_id = f"{run_id}.{counter}"
+        self._gate_counters[run_id] = counter + 1
         gate = InputGate(
             gate_id=gate_id,
             run_id=run_id,

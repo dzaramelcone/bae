@@ -94,37 +94,11 @@ async def _cmd_run(arg: str, shell) -> None:
             )
             return
 
-    shell.router.write(
-        "graph", f"submitted {run.run_id}", mode="GRAPH",
-        metadata={"type": "lifecycle", "run_id": run.run_id},
-    )
-    _attach_done_callback(run, shell)
-
-
-def _attach_done_callback(run, shell):
-    """Surface task completion/failure/cancellation through the graph channel."""
-    for tt in shell.tm.active():
-        if tt.name.startswith(f"graph:{run.run_id}:"):
-            def _on_done(task, _run=run):
-                elapsed_ms = (_run.ended_ns - _run.started_ns) / 1_000_000
-                elapsed_s = elapsed_ms / 1000
-                if task.cancelled():
-                    shell.router.write(
-                        "graph", f"{_run.run_id} cancelled", mode="GRAPH",
-                        metadata={"type": "lifecycle", "event": "cancel", "run_id": _run.run_id},
-                    )
-                elif task.exception() is not None:
-                    shell.router.write(
-                        "graph", f"{_run.run_id} failed: {_run.error}", mode="GRAPH",
-                        metadata={"type": "error", "run_id": _run.run_id, "elapsed_ms": elapsed_ms},
-                    )
-                else:
-                    shell.router.write(
-                        "graph", f"{_run.run_id} done ({elapsed_s:.1f}s)", mode="GRAPH",
-                        metadata={"type": "lifecycle", "event": "complete", "run_id": _run.run_id, "elapsed_ms": elapsed_ms},
-                    )
-            tt.task.add_done_callback(_on_done)
-            break
+    if policy.should_emit("start"):
+        shell.router.write(
+            "graph", f"submitted {run.run_id}", mode="GRAPH",
+            metadata={"type": "lifecycle", "run_id": run.run_id},
+        )
 
 
 async def _cmd_list(arg: str, shell) -> None:

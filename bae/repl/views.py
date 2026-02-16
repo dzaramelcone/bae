@@ -110,7 +110,7 @@ class UserView:
         if content_type == "lifecycle" and channel_name == "graph":
             label = f"[{channel_name}:{meta.get('run_id', '')}]"
             event = meta.get("event", "")
-            style_map = {"start": "fg:#808080", "complete": "fg:#87ff87", "fail": "fg:red", "cancel": "fg:ansiyellow"}
+            style_map = {"start": "fg:#808080", "complete": "fg:#87ff87", "fail": "fg:red", "cancel": "fg:ansiyellow", "transition": "fg:#808080"}
             style = style_map.get(event, "")
             print_formatted_text(FormattedText([
                 (f"{color} bold", label),
