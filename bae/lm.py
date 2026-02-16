@@ -323,90 +323,6 @@ class LM(Protocol):
         ...
 
 
-class AgenticBackend:
-    """LM backend with multi-turn tool use during fill().
-
-    Two-phase fill: agent_loop runs <run> blocks for research,
-    then structured extraction produces typed output.
-    Delegates choose_type/make/decide to a wrapped ClaudeCLIBackend.
-    """
-
-    def __init__(self, model: str = "claude-sonnet-4-20250514", max_iters: int = 5):
-        self.model = model
-        self.max_iters = max_iters
-        self._cli = ClaudeCLIBackend(model=model)
-
-    async def fill(
-        self,
-        target: type[T],
-        resolved: dict[str, object],
-        instruction: str,
-        source: "Node | None" = None,
-    ) -> T:
-        """Two-phase fill: agentic research, then structured extraction."""
-        import uuid
-
-        from bae.agent import _agent_namespace, _cli_send, agent_loop
-
-        session_id = str(uuid.uuid4())
-        call_count = 0
-
-        async def send(text: str) -> str:
-            nonlocal call_count
-            result = await _cli_send(
-                text, model=self.model, session_id=session_id,
-                call_count=call_count,
-            )
-            call_count += 1
-            return result
-
-        plain_model = _build_plain_model(target)
-        schema = transform_schema(plain_model)
-
-        prompt = _build_fill_prompt(target, resolved, instruction, source)
-        import json
-
-        prompt += (
-            f"\n\nTarget schema:\n{json.dumps(schema, indent=2)}"
-            "\n\nUse Python in <run> tags to research and gather information, then provide your answer."
-        )
-
-        namespace = _agent_namespace()
-
-        # Phase 1: Agentic research
-        final_response = await agent_loop(
-            prompt, send=send, namespace=namespace, max_iters=self.max_iters,
-        )
-
-        # Phase 2: Structured extraction
-        extraction_prompt = (
-            f"Based on your research:\n\n{final_response}\n\n"
-            f"Extract the structured data for: {instruction}"
-        )
-        data = await self._cli._run_cli_json(extraction_prompt, schema)
-
-        validated = validate_plain_fields(data, target)
-        all_fields = dict(resolved)
-        all_fields.update(validated)
-        return target.model_construct(**all_fields)
-
-    async def choose_type(
-        self,
-        types: list[type["Node"]],
-        context: dict[str, object],
-    ) -> type["Node"]:
-        """Pick successor type -- delegates to CLI backend."""
-        return await self._cli.choose_type(types, context)
-
-    async def make(self, node: "Node", target: type[T]) -> T:
-        """Produce node instance -- delegates to CLI backend."""
-        return await self._cli.make(node, target)
-
-    async def decide(self, node: "Node") -> "Node | None":
-        """Decide next node -- delegates to CLI backend."""
-        return await self._cli.decide(node)
-
-
 class ClaudeCLIBackend:
     """LLM backend using Claude CLI subprocess."""
 
@@ -430,7 +346,7 @@ class ClaudeCLIBackend:
         data = await self._run_cli_json(full_prompt, schema)
         return target.model_validate(data)
 
-    async def _run_cli_json(self, prompt: str, schema: dict) -> dict | None:
+    async def _run_cli_json(self, prompt: str, schema: dict, tools: list[str] | None = None) -> dict | None:
         """Run Claude CLI with JSON schema and extract structured output."""
         import json
 
@@ -438,6 +354,8 @@ class ClaudeCLIBackend:
         # (e.g. format:uri from HttpUrl). The API supports format but the CLI
         # doesn't create the structured output tool when it's present.
         clean_schema = _strip_format(schema)
+
+        tool_arg = ",".join(tools) if tools else ""
 
         cmd = [
             "claude",
@@ -451,25 +369,28 @@ class ClaudeCLIBackend:
             json.dumps(clean_schema),  # constrained decoding via structured output tool
             "--no-session-persistence",  # don't save to CLI session history
             "--tools",
-            "",  # disable built-in tools (Bash, Edit, etc.)
+            tool_arg,  # enable declared tools or disable all
             "--strict-mcp-config",  # disable MCP servers (no --mcp-config = none)
             "--setting-sources",
             "",  # skip loading project/user settings
             "--system-prompt",  # override default system prompt to prevent
             "You are a structured data generator. "  # CLI from leaking cwd/env/project context
-            "Be brief and concise. "  # into LLM calls
+            "Fill each field thoroughly. "  # into LLM calls
             "Respond only with the requested data.",
         ]
 
+        timeout = self.timeout if not tools else max(self.timeout, 300)
+
         process = await asyncio.create_subprocess_exec(
             *cmd,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
         )
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(), timeout=self.timeout
+                process.communicate(), timeout=timeout
             )
         except asyncio.TimeoutError:
             process.kill()
@@ -595,7 +516,8 @@ class ClaudeCLIBackend:
 
         # Call CLI with JSON schema constraining output to plain fields only
         schema = transform_schema(plain_model)
-        data = await self._run_cli_json(prompt, schema)
+        tools = getattr(target, 'node_config', {}).get('tools')
+        data = await self._run_cli_json(prompt, schema, tools=tools)
 
         # Validate plain fields (LLM boundary — FillError on failure)
         validated = validate_plain_fields(data, target)
