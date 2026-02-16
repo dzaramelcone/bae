@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 Phase: 29 (Observability)
 Plan: 03 of 03 complete
 Status: Phase 29 verified (3/3 must-haves passed)
-Last activity: 2026-02-16 - Completed quick task 2: codebase cleanup audit (8 priorities, zero regressions)
+Last activity: 2026-02-16 - Completed quick task 2: execute refactor in .planning/audit
 
 Progress: v1-v5 done | v6.0 [##########] 100%
 
@@ -121,7 +121,7 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 1 | remove graph mode and all associated tests | 2026-02-16 | ea7cc27 | [1-remove-graph-mode-and-all-associated-tes](./quick/1-remove-graph-mode-and-all-associated-tes/) |
-| 2 | codebase cleanup audit execution (8 priorities) | 2026-02-16 | acd8392 | [2-execute-refactor-in-planning-audit](./quick/2-execute-refactor-in-planning-audit/) |
+| 2 | execute refactor in .planning/audit | 2026-02-16 | eb2714a | [2-execute-refactor-in-planning-audit](./quick/2-execute-refactor-in-planning-audit/) |
 
 ### Roadmap Evolution
 
