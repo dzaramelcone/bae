@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 ## Current Position
 
 Phase: 28 (Input Gates)
-Plan: 01 of 03 complete
-Status: Executing phase 28
-Last activity: 2026-02-15 -- 28-01 Gate marker + InputGate infrastructure
+Plan: 02 of 03 remaining (01 + 03 complete)
+Status: Executing phase 28 -- plan 02 pending
+Last activity: 2026-02-15 -- 28-03 Shell UX: toolbar badge, @g routing, shush toggle
 
 Progress: v1-v5 done | v6.0 [####......] 20%
 
@@ -28,6 +28,7 @@ Progress: v1-v5 done | v6.0 [####......] 20%
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
+| 28-03 | Shell UX: badge, @g routing, shush | 8min | 2 | 4 |
 | 28-01 | Gate marker + InputGate infrastructure | 3min | 2 | 6 |
 | 27-06 | stdin isolation + inspect formatting | 3min | 2 | 3 |
 | 27-04 | LM timeout, partial trace, flattened params | 5min | 3 | 7 |
@@ -48,6 +49,9 @@ Progress: v1-v5 done | v6.0 [####......] 20%
 
 See PROJECT.md Key Decisions table for full history.
 
+- 28-03: Gate routing only from non-NL modes -- NL preserves @label session routing
+- 28-03: Pydantic TypeAdapter for gate value coercion -- reuses existing dependency
+- 28-03: Shush toggle as GRAPH mode command, not key binding -- consistent with dispatch pattern
 - 28-01: Gate marker is frozen dataclass with description field, matching Dep/Recall/Effect pattern
 - 28-01: Gate fields classified as "gate" -- automatically excluded from LM plain model by existing equality check
 - 28-01: InputGate uses asyncio.Future with schema metadata; gate IDs are run_id.counter format
@@ -108,6 +112,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 28-01-PLAN.md (Gate marker + InputGate infrastructure)
+Stopped at: Completed 28-03-PLAN.md (Shell UX: toolbar badge, @g routing, shush toggle)
 Branch: main
 Resume file: None
