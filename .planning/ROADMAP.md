@@ -72,7 +72,7 @@
 
 - [x] **Phase 26: Engine Foundation** - Registry, engine wrapper, timing, TaskManager integration (2026-02-15)
 - [x] **Phase 27: Graph Mode** - Command interface, flat params, ANSI rendering, trace on failure (2026-02-15)
-- [ ] **Phase 28: Input Gates** - Future-based human-in-the-loop suspension with routing UX
+- [x] **Phase 28: Input Gates** - Future-based human-in-the-loop suspension with routing UX (2026-02-15)
 - [ ] **Phase 29: Observability** - Channel integration, debug views, metrics, scaling validation
 
 ## Phase Details
@@ -128,9 +128,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 28-01-PLAN.md -- Gate marker, resolver classification, InputGate dataclass, WAITING state, gate registry
-- [ ] 28-02-PLAN.md -- Engine gate execution interception, GRAPH mode input command with type coercion
-- [ ] 28-03-PLAN.md -- Toolbar gates badge, cross-mode @g routing, shush mode toggle
+- [x] 28-01-PLAN.md -- Gate marker, resolver classification, InputGate dataclass, WAITING state, gate registry
+- [x] 28-02-PLAN.md -- Engine gate execution interception, GRAPH mode input command with type coercion
+- [x] 28-03-PLAN.md -- Toolbar gates badge, cross-mode @g routing, shush mode toggle
 
 ### Phase 29: Observability
 **Goal**: Full visibility into graph execution through the channel/view system with scaling validation
@@ -179,7 +179,7 @@ Plans:
 | 25. Views Completion | v5.0 | 3/3 | Complete | 2026-02-14 |
 | 26. Engine Foundation | v6.0 | 4/4 | Complete | 2026-02-15 |
 | 27. Graph Mode | v6.0 | 6/6 | Complete | 2026-02-15 |
-| 28. Input Gates | v6.0 | 0/3 | Planned | - |
+| 28. Input Gates | v6.0 | 3/3 | Complete | 2026-02-15 |
 | 29. Observability | v6.0 | 0/TBD | Not started | - |
 
 ---
