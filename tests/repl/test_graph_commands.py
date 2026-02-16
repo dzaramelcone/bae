@@ -281,7 +281,7 @@ class TestCmdCancel:
 
 class TestCmdInspect:
     async def test_inspect_completed_run(self, shell):
-        """inspect <id> shows run details with node types."""
+        """inspect <id> shows inline timing and JSON-formatted terminal fields."""
         g = Graph(start=TStart)
         shell.engine.submit(g, shell.tm, lm=shell._lm, message="hi")
         await _drain(shell.tm)
@@ -291,6 +291,28 @@ class TestCmdInspect:
         assert "done" in out
         assert "TStart" in out
         assert "TEnd" in out
+        # Timing appears inline (ms suffix present)
+        assert "ms" in out
+        # Terminal node fields formatted as JSON (quoted keys, not raw dict repr)
+        assert '"reply"' in out
+
+    async def test_inspect_inline_timing(self, shell):
+        """inspect shows timing values inline with filled node names on same line."""
+        g = Graph(start=TStart)
+        shell.engine.submit(g, shell.tm, lm=shell._lm, message="hi")
+        await _drain(shell.tm)
+        await dispatch_graph("inspect g1", shell)
+        out = _output(shell.router)
+        # TEnd goes through fill → has timing inline on same line
+        # TStart is constructed from kwargs → no timing recorded
+        lines = out.splitlines()
+        tend_lines = [l for l in lines if "TEnd" in l and "ms" in l]
+        assert len(tend_lines) >= 1, f"Expected TEnd with ms timing, got:\n{out}"
+        # TStart should appear in trace but without ms (no fill call)
+        tstart_lines = [l for l in lines if "TStart" in l and "Trace" not in l]
+        assert len(tstart_lines) >= 1, f"Expected TStart in trace, got:\n{out}"
+        # No separate "Timings:" section for a complete run with trace
+        assert "Timings:" not in out
 
     async def test_inspect_sends_ansi_metadata(self, shell):
         """inspect passes metadata type=ansi to router.write."""

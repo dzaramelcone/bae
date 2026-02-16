@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import traceback
 
@@ -154,7 +155,7 @@ async def _cmd_cancel(arg: str, shell) -> None:
 
 
 async def _cmd_inspect(arg: str, shell) -> None:
-    """Display full execution trace with node timings and field values."""
+    """Display full execution trace with inline timing and terminal node fields."""
     arg = arg.strip()
     if not arg:
         shell.router.write("graph", "usage: inspect <id>", mode="GRAPH")
@@ -175,23 +176,39 @@ async def _cmd_inspect(arg: str, shell) -> None:
     if run.graph:
         parts.append(f"Graph: {run.graph.start.__name__}")
 
-    if run.node_timings:
+    if run.result and run.result.trace:
+        trace = run.result.trace
+        # Build consumed-index lookup: match timings to trace by type name
+        timing_by_name: dict[str, list] = {}
+        for nt in run.node_timings:
+            timing_by_name.setdefault(nt.node_type, []).append(nt)
+        consumed: dict[str, int] = {}
+        parts.append("")
+        parts.append("Trace:")
+        for i, node in enumerate(trace):
+            idx = i + 1
+            name = type(node).__name__
+            # Find next unconsumed timing for this type
+            pos = consumed.get(name, 0)
+            candidates = timing_by_name.get(name, [])
+            if pos < len(candidates):
+                ms = candidates[pos].duration_ms
+                line = f"  {idx}. {name}  {ms:.0f}ms"
+                consumed[name] = pos + 1
+            else:
+                line = f"  {idx}. {name}"
+            parts.append(line)
+            # Terminal node: show fields as indented JSON
+            if idx == len(trace):
+                fields_json = json.dumps(node.model_dump(), indent=2, default=str)
+                for jline in fields_json.splitlines():
+                    parts.append(f"     {jline}")
+    elif run.node_timings:
+        # Fallback: no trace but timings exist (e.g. partial failed run)
         parts.append("")
         parts.append("Timings:")
         for nt in run.node_timings:
             parts.append(f"  {nt.node_type}  {nt.duration_ms:.0f}ms")
-
-    if run.result and run.result.trace:
-        parts.append("")
-        parts.append("Trace:")
-        trace = run.result.trace
-        for i, node in enumerate(trace, 1):
-            if i == len(trace):
-                # Terminal node: show all fields
-                fields = node.model_dump()
-                parts.append(f"  {i}. {type(node).__name__}  {fields}")
-            else:
-                parts.append(f"  {i}. {type(node).__name__}")
 
     text = Text("\n".join(parts))
     shell.router.write("graph", _rich_to_ansi(text).rstrip("\n"), mode="GRAPH", metadata={"type": "ansi"})
