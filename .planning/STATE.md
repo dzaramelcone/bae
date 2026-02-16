@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-15)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v6.0 Graph Runtime -- Phase 27 Graph Mode complete (all gap closure plans executed)
+**Current focus:** v6.0 Graph Runtime -- Phase 28 Input Gates
 
 ## Current Position
 
-Phase: 27 (Graph Mode)
-Plan: 06 of 06 complete
-Status: Phase 27 complete (all UAT gaps closed)
-Last activity: 2026-02-15 -- 27-06 stdin isolation + inspect formatting
+Phase: 28 (Input Gates)
+Plan: 01 of 03 complete
+Status: Executing phase 28
+Last activity: 2026-02-15 -- 28-01 Gate marker + InputGate infrastructure
 
 Progress: v1-v5 done | v6.0 [####......] 20%
 
@@ -28,6 +28,7 @@ Progress: v1-v5 done | v6.0 [####......] 20%
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
+| 28-01 | Gate marker + InputGate infrastructure | 3min | 2 | 6 |
 | 27-06 | stdin isolation + inspect formatting | 3min | 2 | 3 |
 | 27-04 | LM timeout, partial trace, flattened params | 5min | 3 | 7 |
 | 27-05 | ANSI rendering fix for graph commands | 2min | 2 | 3 |
@@ -47,6 +48,10 @@ Progress: v1-v5 done | v6.0 [####......] 20%
 
 See PROJECT.md Key Decisions table for full history.
 
+- 28-01: Gate marker is frozen dataclass with description field, matching Dep/Recall/Effect pattern
+- 28-01: Gate fields classified as "gate" -- automatically excluded from LM plain model by existing equality check
+- 28-01: InputGate uses asyncio.Future with schema metadata; gate IDs are run_id.counter format
+- 28-01: cancel_gates called in both _execute and _wrap_coro CancelledError handlers
 - 27-06: Name-based timing lookup with consumed-index -- start node has no timing entry (constructed from kwargs)
 - 27-04: ClaudeCLIBackend timeout 20 -> 120s for reliable complex graph execution
 - 27-04: Outer try/except around arun while-loop attaches .trace to any unhandled exception
@@ -103,6 +108,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 27-06-PLAN.md (stdin isolation + inspect formatting)
+Stopped at: Completed 28-01-PLAN.md (Gate marker + InputGate infrastructure)
 Branch: main
 Resume file: None
