@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 Phase: 29 (Observability)
 Plan: 03 of 03 complete
 Status: Phase 29 verified (3/3 must-haves passed)
-Last activity: 2026-02-15 -- Phase 29 execution complete
+Last activity: 2026-02-16 - Completed quick task 1: remove graph mode and all associated tests
 
 Progress: v1-v5 done | v6.0 [##########] 100%
 
@@ -115,6 +115,12 @@ See PROJECT.md Key Decisions table for full history.
 ### Blockers/Concerns
 
 None.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 1 | remove graph mode and all associated tests | 2026-02-16 | ea7cc27 | [1-remove-graph-mode-and-all-associated-tes](./quick/1-remove-graph-mode-and-all-associated-tes/) |
 
 ### Roadmap Evolution
 
