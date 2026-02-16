@@ -26,7 +26,9 @@ if TYPE_CHECKING:
     from bae.lm import LM
     from bae.node import Node
     from bae.repl.channels import ChannelRouter
+    from bae.repl.resource import ResourceRegistry
     from bae.repl.tasks import TaskManager
+    from bae.repl.tools import ToolRouter
 
 _EXEC_BLOCK_RE = re.compile(
     r"<run>\s*\n?(.*?)\n?\s*</run>",
@@ -83,6 +85,8 @@ class AI:
         model: str = "claude-sonnet-4-20250514",
         timeout: int = 60,
         max_eval_iters: int = 0,
+        tool_router: ToolRouter | None = None,
+        registry: ResourceRegistry | None = None,
     ) -> None:
         self._lm = lm
         self._router = router
@@ -92,6 +96,8 @@ class AI:
         self._model = model
         self._timeout = timeout
         self._max_eval_iters = max_eval_iters
+        self._tool_router = tool_router
+        self._registry = registry
         self._session_id = str(uuid.uuid4())
         self._call_count = 0
 
@@ -109,7 +115,7 @@ class AI:
         parts.append(prompt)
         full_prompt = "\n\n".join(parts)
 
-        response = await self._send(full_prompt)
+        response = await self._send(self._with_location(full_prompt))
         await asyncio.sleep(0)  # cancellation checkpoint
         self._router.write("ai", response, mode="NL", metadata={"type": "response", "label": self._label})
 
@@ -117,7 +123,7 @@ class AI:
         while not self._max_eval_iters or _iters < self._max_eval_iters:
             _iters += 1
             # Tool call tags take precedence over <run> blocks
-            tool_results = run_tool_calls(response)
+            tool_results = run_tool_calls(response, router=self._tool_router)
             if tool_results:
                 all_outputs = []
                 for tag, output in tool_results:
@@ -130,7 +136,7 @@ class AI:
                 combined = "\n---\n".join(all_outputs)
                 feedback = f"[Tool output]\n{combined}"
                 await asyncio.sleep(0)  # cancellation checkpoint
-                response = await self._send(feedback)
+                response = await self._send(self._with_location(feedback))
                 await asyncio.sleep(0)  # cancellation checkpoint
                 self._router.write("ai", response, mode="NL",
                     metadata={"type": "response", "label": self._label})
@@ -179,7 +185,7 @@ class AI:
             feedback = f"[Output]\n{combined}"
 
             await asyncio.sleep(0)  # cancellation checkpoint
-            response = await self._send(feedback)
+            response = await self._send(self._with_location(feedback))
             await asyncio.sleep(0)  # cancellation checkpoint
             self._router.write("ai", response, mode="NL", metadata={"type": "response", "label": self._label})
 
@@ -246,6 +252,12 @@ class AI:
         """Start a fresh CLI session after cancellation or lock error."""
         self._session_id = str(uuid.uuid4())
         self._call_count = 0
+
+    def _with_location(self, prompt: str) -> str:
+        """Prepend resource location to prompt when navigated into a resource."""
+        if self._registry is None or self._registry.current is None:
+            return prompt
+        return f"[Location: {self._registry.breadcrumb()}]\n{prompt}"
 
     async def fill(self, target: type[Node], context: dict | None = None) -> Node:
         """Populate a node's plain fields via bae's LM fill."""
@@ -360,6 +372,15 @@ _TOOL_EXEC = {
     "Grep": _exec_grep,
 }
 
+# Mapping from normalized tool name to router dispatch name
+_TOOL_DISPATCH = {
+    "R": "read",
+    "W": "write",
+    "E": "edit",
+    "G": "glob",
+    "Grep": "grep",
+}
+
 
 def _tool_summary(tag: str, output: str) -> str:
     """Human-readable one-liner summarizing a tool call result.
@@ -390,7 +411,7 @@ def _tool_summary(tag: str, output: str) -> str:
     return output
 
 
-def run_tool_calls(text: str) -> list[tuple[str, str]]:
+def run_tool_calls(text: str, *, router: ToolRouter | None = None) -> list[tuple[str, str]]:
     """Detect and execute ALL tool call tags in prose.
 
     Returns list of (description, output) pairs. Empty list if no tags found.
@@ -398,6 +419,9 @@ def run_tool_calls(text: str) -> list[tuple[str, str]]:
 
     Accepts case-insensitive tags, full word variants (Read, Write, Edit,
     Glob, Grep), and OSC 8 hyperlink-wrapped tool calls.
+
+    When router is provided, dispatches through ToolRouter instead of
+    calling _exec_* functions directly.
     """
     # Strip executable and illustrative blocks before scanning
     prose = _EXEC_BLOCK_RE.sub("", text)
@@ -410,16 +434,25 @@ def run_tool_calls(text: str) -> list[tuple[str, str]]:
     # Write tags (group 2=filepath, group 3=content)
     for wm in _WRITE_TAG_RE.finditer(prose):
         tag = wm.group(0).split("\n", 1)[0].strip()
-        pending.append((wm.start(), tag,
-                        lambda fp=wm.group(2), c=wm.group(3): _exec_write(fp, c)))
+        if router:
+            pending.append((wm.start(), tag,
+                            lambda fp=wm.group(2), c=wm.group(3): router.dispatch("write", fp, content=c)))
+        else:
+            pending.append((wm.start(), tag,
+                            lambda fp=wm.group(2), c=wm.group(3): _exec_write(fp, c)))
         consumed.update(range(wm.start(), wm.end()))
 
     # Edit-with-replacement (group 2=filepath, 3=start, 4=end, 5=content)
     for em in _EDIT_REPLACE_RE.finditer(prose):
         tag = em.group(0).split("\n", 1)[0].strip()
-        pending.append((em.start(), tag,
-                        lambda fp=em.group(2), s=int(em.group(3)),
-                        e=int(em.group(4)), c=em.group(5): _exec_edit_replace(fp, s, e, c)))
+        if router:
+            pending.append((em.start(), tag,
+                            lambda fp=em.group(2), s=int(em.group(3)),
+                            e=int(em.group(4)), c=em.group(5): router.dispatch("edit", fp, start=s, end=e, content=c)))
+        else:
+            pending.append((em.start(), tag,
+                            lambda fp=em.group(2), s=int(em.group(3)),
+                            e=int(em.group(4)), c=em.group(5): _exec_edit_replace(fp, s, e, c)))
         consumed.update(range(em.start(), em.end()))
 
     # Single-line tags
@@ -427,22 +460,36 @@ def run_tool_calls(text: str) -> list[tuple[str, str]]:
         if m.start() in consumed:
             continue
         tool = _TOOL_NAMES.get(m.group(1).lower())
-        fn = _TOOL_EXEC.get(tool) if tool else None
-        if fn:
-            tag = m.group(0).strip()
-            pending.append((m.start(), tag,
-                            lambda f=fn, a=m.group(2): f(a)))
+        if router and tool:
+            dispatch_name = _TOOL_DISPATCH.get(tool)
+            if dispatch_name:
+                tag = m.group(0).strip()
+                pending.append((m.start(), tag,
+                                lambda d=dispatch_name, a=m.group(2): router.dispatch(d, a)))
+        else:
+            fn = _TOOL_EXEC.get(tool) if tool else None
+            if fn:
+                tag = m.group(0).strip()
+                pending.append((m.start(), tag,
+                                lambda f=fn, a=m.group(2): f(a)))
 
     # OSC 8 hyperlink-wrapped tool calls
     for m in _OSC8_TOOL_RE.finditer(prose):
         if m.start() in consumed:
             continue
         tool = _TOOL_NAMES.get(m.group(1).lower())
-        fn = _TOOL_EXEC.get(tool) if tool else None
-        if fn:
-            tag = f"<{m.group(1)}:{m.group(2)}>"
-            pending.append((m.start(), tag,
-                            lambda f=fn, a=m.group(2): f(a)))
+        if router and tool:
+            dispatch_name = _TOOL_DISPATCH.get(tool)
+            if dispatch_name:
+                tag = f"<{m.group(1)}:{m.group(2)}>"
+                pending.append((m.start(), tag,
+                                lambda d=dispatch_name, a=m.group(2): router.dispatch(d, a)))
+        else:
+            fn = _TOOL_EXEC.get(tool) if tool else None
+            if fn:
+                tag = f"<{m.group(1)}:{m.group(2)}>"
+                pending.append((m.start(), tag,
+                                lambda f=fn, a=m.group(2): f(a)))
 
     # Execute in order
     pending.sort(key=lambda x: x[0])
@@ -469,6 +516,7 @@ def _build_context(namespace: dict) -> str:
     """
     from bae.graph import Graph
     from bae.node import Node
+    from bae.repl.resource import ResourceHandle
 
     lines: list[str] = []
 
@@ -490,17 +538,20 @@ def _build_context(namespace: dict) -> str:
         for i, n in enumerate(trace[-5:]):
             lines.append(f"  {i+1}. {type(n).__name__}")
 
-    # User variables (skip internals, modules, bae types)
+    # User variables (skip internals, modules, bae types, resource navigation)
     _SKIP = {
         "__builtins__", "ai", "ns", "store", "channels",
         "Node", "Graph", "Dep", "Recall", "GraphResult",
         "LM", "NodeConfig", "Annotated", "asyncio", "os",
+        "homespace", "back",
     }
     user_vars: list[str] = []
     for name, obj in sorted(namespace.items()):
         if name.startswith("_") or name in _SKIP:
             continue
         if inspect.ismodule(obj):
+            continue
+        if isinstance(obj, ResourceHandle):
             continue
         if isinstance(obj, type) and issubclass(obj, Node):
             user_vars.append(f"  {name}  class  {obj.__name__}")
