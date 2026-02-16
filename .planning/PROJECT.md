@@ -69,7 +69,17 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 
 ### Active
 
-(No active milestone -- planning next)
+## Current Milestone: v7.0 Hypermedia Resourcespace
+
+**Goal:** Replace the AI's flat namespace with a self-describing, navigable resource tree where standard tools operate on the current resource context.
+
+**Target features:**
+- Tool call pruning (I/O only, 500 token cap per resourcespace output)
+- Resourcespace core (resources declare supported tools, context-scoped operations, homespace navigation)
+- Source resourcespace (agent modifies bae REPL source code)
+- Memory resourcespace (explore and tag session memories)
+- Task resourcespace (CRUD/search, cross-session persistence)
+- Search resourcespace (cross-resourcespace search with navigation)
 
 ### Out of Scope
 
@@ -157,4 +167,4 @@ Reference implementation: `examples/ootd.py` -- outfit recommendation graph with
 - Phase 30 VERIFICATION.md stale (AgenticBackend removed post-verification)
 
 ---
-*Last updated: 2026-02-15 after stale reference cleanup*
+*Last updated: 2026-02-16 after v7.0 milestone started*
