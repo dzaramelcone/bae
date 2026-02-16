@@ -24,6 +24,7 @@ from bae.repl.ai import AI
 from bae.repl.bash import dispatch_bash
 from bae.repl.engine import GraphRegistry
 from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, toggle_channels
+from bae.repl.resource import ResourceRegistry, ResourceHandle
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
 from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mode
@@ -36,11 +37,13 @@ from bae.repl.toolbar import (
     ToolbarConfig,
     make_cwd_widget,
     make_gates_widget,
+    make_location_widget,
     make_mem_widget,
     make_mode_widget,
     make_tasks_widget,
     make_view_widget,
 )
+from bae.repl.tools import ToolRouter
 
 # Register kitty keyboard protocol Shift+Enter (CSI u encoding).
 # Terminals supporting the kitty protocol (Ghostty, kitty, iTerm2 CSI u mode)
@@ -224,6 +227,11 @@ class CortexShell:
         from bae.lm import ClaudeCLIBackend
 
         self._lm = ClaudeCLIBackend()
+        self.registry = ResourceRegistry()
+        self._tool_router = ToolRouter(self.registry)
+        self.namespace["homespace"] = lambda: self.registry.homespace()
+        self.namespace["back"] = lambda: self.registry.back()
+        # Seed resource handles for registered resourcespaces dynamically
         self._ai_sessions: dict[str, AI] = {}
         self._active_session: str = "1"
         self.ai = self._get_or_create_session("1")
@@ -234,6 +242,7 @@ class CortexShell:
         self.toolbar.add("view", make_view_widget(self))
         self.toolbar.add("tasks", make_tasks_widget(self))
         self.toolbar.add("gates", make_gates_widget(self))
+        self.toolbar.add("location", make_location_widget(self))
         self.toolbar.add("mem", make_mem_widget())
         self.toolbar.add("cwd", make_cwd_widget())
         self.namespace["toolbar"] = self.toolbar
@@ -263,6 +272,7 @@ class CortexShell:
                     "toolbar.view": "bg:#303030 #ffaf87",
                     "toolbar.tasks": "fg:ansiyellow bold",
                     "toolbar.gates": "fg:ansimagenta bold",
+                    "toolbar.location": "fg:ansigreen",
                     "toolbar.mem": "#808080",
                     "toolbar.cwd": "#808080",
                 }
@@ -300,6 +310,8 @@ class CortexShell:
                 namespace=self.namespace,
                 tm=self.tm,
                 label=label,
+                tool_router=self._tool_router,
+                registry=self.registry,
             )
         return self._ai_sessions[label]
 

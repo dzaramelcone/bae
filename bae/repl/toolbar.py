@@ -123,6 +123,15 @@ def make_gates_widget(shell) -> ToolbarWidget:
     return widget
 
 
+def make_location_widget(shell) -> ToolbarWidget:
+    """Built-in widget: current resource location (hidden at root)."""
+    def widget():
+        if not hasattr(shell, 'registry') or shell.registry.current is None:
+            return []
+        return [("class:toolbar.location", f" {shell.registry.breadcrumb()} ")]
+    return widget
+
+
 def make_view_widget(shell) -> ToolbarWidget:
     """Built-in widget: active view mode (hidden in default user view)."""
     def widget():
