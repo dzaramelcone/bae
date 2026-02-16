@@ -56,6 +56,23 @@ class MultiGatedStart(Node):
     def __call__(self) -> MultiGatedNode: ...
 
 
+class Middle(Node):
+    summary: str
+
+    async def __call__(self) -> End:
+        await asyncio.sleep(0.01)
+        return End.model_construct(reply="done")
+
+
+class StressStart(Node):
+    """Start node for concurrent stress test with simulated work."""
+    text: str
+
+    async def __call__(self) -> Middle:
+        await asyncio.sleep(0.01)
+        return Middle.model_construct(summary="mid")
+
+
 async def slow_dep() -> str:
     await asyncio.sleep(0.01)
     return "computed"
@@ -824,3 +841,104 @@ async def _drain_tasks(tm: TaskManager):
             await tt.task
         except (asyncio.CancelledError, Exception):
             pass
+
+
+# --- Concurrent stress tests ---
+
+
+async def test_concurrent_graphs_no_starvation():
+    """15 concurrent graphs complete within timeout with no event loop starvation."""
+    from bae.graph import Graph
+
+    graph = Graph(start=StressStart)
+    registry = GraphRegistry()
+    tm = TaskManager()
+    events = []
+
+    def notify(content, meta=None):
+        events.append((content, meta))
+
+    runs = []
+    for _ in range(15):
+        run = registry.submit(
+            graph, tm, lm=MockLM(), notify=notify, text=f"stress",
+        )
+        runs.append(run)
+
+    # Wait for all 15 to complete with 10s timeout
+    async with asyncio.timeout(10):
+        while registry.active():
+            await asyncio.sleep(0.05)
+
+    await _drain_tasks(tm)
+
+    # All 15 completed with DONE
+    for run in runs:
+        assert run.state == GraphState.DONE, f"{run.run_id} state={run.state}"
+
+    # Each run has rss_delta_bytes as int
+    for run in runs:
+        assert isinstance(run.rss_delta_bytes, int), f"{run.run_id} rss not int"
+
+    # No run took more than 5 seconds (no starvation)
+    for run in runs:
+        elapsed_s = (run.ended_ns - run.started_ns) / 1e9
+        assert elapsed_s < 5, f"{run.run_id} took {elapsed_s:.1f}s (starvation)"
+
+    # At least one start and one complete per graph (30+ lifecycle events)
+    lifecycle = [(c, m) for c, m in events if m and m.get("type") == "lifecycle"]
+    starts = [m for _, m in lifecycle if m.get("event") == "start"]
+    completes = [m for _, m in lifecycle if m.get("event") == "complete"]
+    assert len(starts) >= 15, f"expected 15+ starts, got {len(starts)}"
+    assert len(completes) >= 15, f"expected 15+ completes, got {len(completes)}"
+    assert len(lifecycle) >= 30, f"expected 30+ lifecycle events, got {len(lifecycle)}"
+
+    # No exceptions (all DONE already verified above)
+
+
+async def test_concurrent_no_channel_flood():
+    """QUIET policy prevents channel flooding for 15 successful graphs."""
+    from pathlib import Path
+    import tempfile
+    from bae.graph import Graph
+    from bae.repl.channels import ChannelRouter
+    from bae.repl.store import SessionStore
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = SessionStore(Path(tmpdir) / "test.db")
+        router = ChannelRouter()
+        router.register("graph", color="#ffaf87", store=store)
+        # Suppress terminal output during test
+        router._channels["graph"].visible = False
+
+        graph = Graph(start=StressStart)
+        registry = GraphRegistry()
+        tm = TaskManager()
+
+        def notify(content, meta=None):
+            router.write("graph", content, mode="GRAPH", metadata=meta)
+
+        for _ in range(15):
+            registry.submit(
+                graph, tm, lm=MockLM(), notify=notify,
+                policy=OutputPolicy.QUIET, text="quiet",
+            )
+
+        async with asyncio.timeout(10):
+            while registry.active():
+                await asyncio.sleep(0.05)
+
+        await _drain_tasks(tm)
+
+        # Channel buffer bounded (QUIET + no failures = no events emitted)
+        buf = router._channels["graph"]._buffer
+        assert len(buf) < 100, f"channel buffer has {len(buf)} entries (flooding)"
+
+        # QUIET successful graphs should emit zero events (only fail/gate/error emit)
+        entries = store.session_entries()
+        graph_entries = [e for e in entries if e["channel"] == "graph"]
+        assert len(graph_entries) == 0, (
+            f"QUIET successful graphs should emit 0 events, got {len(graph_entries)}"
+        )
+
+        store.close()
