@@ -106,10 +106,7 @@ See PROJECT.md Key Decisions table for full history.
 
 ### Pending Todos
 
-- Update `tests/traces/json_structured_fill_reference.py` -- drifted from real backend
-- Bump Python requirement to 3.14 stable
-- AI streaming/progressive display for NL responses
-- Session store: conversation indexing agent
+- Session store: conversation indexing agent (deferred)
 
 ### Blockers/Concerns
 

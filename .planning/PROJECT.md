@@ -95,9 +95,9 @@ DSPy compiles agent graphs from type hints and class names - no manual prompt wr
 
 Shipped v6.0 Graph Runtime. 6,130 lines in bae/, 10,368 lines in tests/.
 
-Tech stack: Python 3.14+, Pydantic, pydantic-ai, dspy, Anthropic SDK, prompt_toolkit, Rich.
+Tech stack: Python 3.14+, Pydantic, prompt_toolkit, Rich, Typer.
 
-Three LM backends: PydanticAIBackend, ClaudeCLIBackend, DSPyBackend -- each with v1 (make/decide) and v2 (choose_type/fill) methods, all async.
+One LM backend: ClaudeCLIBackend with v1 (make/decide) and v2 (choose_type/fill) methods, all async. PydanticAIBackend and DSPyBackend removed — Claude CLI subprocess is the only backend.
 
 Cortex architecture: Custom REPL on prompt_toolkit with 3 modes (NL/PY/BASH) sharing one Python namespace. Graph engine runs concurrent graphs as managed tasks with lifecycle tracking, per-node timing, and human-in-the-loop gates (asyncio.Future). All output flows through labeled channels with pluggable view formatters (UserView, DebugView, AISelfView). AI agent lives in namespace as callable object with extracted agent core (bae/agent.py). SessionStore (SQLite + FTS5) persists all I/O including graph lifecycle events for cross-session memory.
 
@@ -117,7 +117,7 @@ Reference implementation: `examples/ootd.py` -- outfit recommendation graph with
 ## Constraints
 
 - **Python**: 3.14+ -- PEP 649 eliminates forward ref issues
-- **Dependencies**: pydantic, pydantic-ai, dspy, anthropic, prompt_toolkit, rich
+- **Dependencies**: pydantic, prompt_toolkit, rich, typer, pygments
 - **Interface**: Async -- parallel dep resolution, subgraph composition
 
 ## Key Decisions
@@ -153,11 +153,8 @@ Reference implementation: `examples/ootd.py` -- outfit recommendation graph with
 
 ## Known Issues
 
-- PydanticAIBackend.choose_type uses free-text string + fuzzy matching -- may rip out PydanticAI entirely
-- tests/traces/json_structured_fill_reference.py drifted from real backend
-- AI streaming/progressive display deferred (NL responses currently blocking)
 - GraphRegistry.active() and .get() orphaned after GRAPH mode removal (functional, unused)
 - Phase 30 VERIFICATION.md stale (AgenticBackend removed post-verification)
 
 ---
-*Last updated: 2026-02-16 after v6.0 Graph Runtime milestone completed*
+*Last updated: 2026-02-15 after stale reference cleanup*
