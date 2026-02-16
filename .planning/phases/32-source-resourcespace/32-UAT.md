@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 32-source-resourcespace
 source: [32-01-SUMMARY.md, 32-02-SUMMARY.md, 32-03-SUMMARY.md, 32-04-SUMMARY.md]
 started: 2026-02-16T17:00:00Z
@@ -79,16 +79,27 @@ skipped: 8
   reason: "User reported: source.config.read() says 'No resource source.config.read'. @source() hyperlinks cause SyntaxError. Navigation path extends indefinitely (home > source > config > source > deps) instead of minimum path (home > source > deps). Each subresource navigation appends to path instead of replacing."
   severity: major
   test: 1
-  root_cause: ""
-  artifacts: []
-  missing: []
+  root_cause: "ResourceRegistry.navigate() always appends to self._stack. Navigating source.deps after source.config pushes [source, deps] on top of [source, config] making [source, config, source, deps]. Should replace stack from divergence point. Also @resource() hyperlinks aren't valid Python — error messages mislead."
+  artifacts:
+    - path: "bae/repl/resource.py"
+      issue: "navigate() lines 116-138 always append to stack; breadcrumb() just concatenates all stack names"
+  missing:
+    - "Navigate should replace stack from the common ancestor, not append"
+    - "Error messages should use source() not @source() syntax"
   debug_session: ""
 - truth: "read() callable from REPL when inside a resourcespace"
   status: failed
   reason: "User reported: read() not available as bare function in namespace. Entry display shows tools table suggesting read(), glob() etc. but NameError: name 'read' is not defined. Tools are AI-only via ToolRouter, not human-usable."
   severity: major
   test: 2
-  root_cause: ""
-  artifacts: []
-  missing: []
+  root_cause: "navigate() returns display string but never injects tool callables into namespace. ResourceRegistry has no reference to namespace. Need: on navigate, assign namespace['read'] = resource.read for each supported tool, remove unsupported ones."
+  artifacts:
+    - path: "bae/repl/resource.py"
+      issue: "ResourceRegistry.navigate() doesn't inject tool functions into namespace"
+    - path: "bae/repl/shell.py"
+      issue: "CortexShell sets up registry but doesn't pass namespace reference for tool injection"
+  missing:
+    - "Registry needs namespace reference to inject/remove tool functions on navigation"
+    - "On navigate: inject supported tools as bare callables, wrap in NavResult for output"
+    - "On homespace/back: remove tool callables or rebind to new current resource"
   debug_session: ""
