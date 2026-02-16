@@ -259,14 +259,14 @@ class MetaSubresource:
 
     def __init__(self, project_root: Path) -> None:
         self._root = project_root
-        self._module_path = "bae.repl.source"
+        self._module_path = "bae.repl.spaces.source.service"
 
     def _source_file(self) -> Path:
         return _module_to_path(self._root, self._module_path)
 
     def enter(self) -> str:
         return (
-            "Source resourcespace implementation (bae.repl.source)\n\n"
+            "Source resourcespace implementation (bae.repl.spaces.source.service)\n\n"
             "read() for summary, read(symbol) for symbol source, edit(symbol, new_source) to modify"
         )
 

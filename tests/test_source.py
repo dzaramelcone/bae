@@ -451,7 +451,7 @@ class TestTestsSubresource:
 class TestMetaSubresource:
     def test_read_shows_summary(self, src):
         result = src.children()["meta"].read()
-        assert "bae.repl.source" in result
+        assert "bae.repl.spaces.source.service" in result
 
     def test_read_symbol(self, src):
         result = src.children()["meta"].read("DepsSubresource")

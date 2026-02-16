@@ -45,7 +45,7 @@ class ToolRouter:
 
     def _home_dispatch(self, tool: str, arg: str, **kwargs) -> str:
         """Dispatch to filesystem operations at home."""
-        from bae.repl.ai import (
+        from bae.repl.spaces.home import (
             _exec_glob,
             _exec_grep,
             _exec_read,
