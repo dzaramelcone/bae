@@ -138,9 +138,21 @@ Plans:
 - [ ] 32.1-01-PLAN.md — Create spaces/ package structure, move source and home code, backward-compat re-exports
 - [ ] 32.1-02-PLAN.md — Migrate test imports to new paths, clean up ai.py, final audit
 
+### Phase 32.1.1: Subresource Packages + Shim Removal (INSERTED)
+
+**Goal:** Break subresources into own packages, remove all backward-compat shims, update all callsites, enforce package structure in source resourcespace operations
+**Depends on:** Phase 32.1
+**Plans:** 4 plans
+
+Plans:
+- [ ] 32.1.1-01-PLAN.md — Relocate protocol to spaces/view.py, update callsites, delete shims
+- [ ] 32.1.1-02-PLAN.md — Extract subresource classes into own packages with view/service split
+- [ ] 32.1.1-03-PLAN.md — Split home/ into view.py + service.py convention
+- [ ] 32.1.1-04-PLAN.md — Structure enforcement: role-grouped read, tstring-templated write, meta guidance
+
 ### Phase 32.2: UserView Tool Call Stripping (INSERTED)
 
-**Goal:** AI tool calls stripped from UserView output; resource entry shows AI-native tool tags with docstring summaries
+**Goal:** Strip tool call content from UserView and AI context history; prune everything but tool I/O and agent's last message; resource entry shows AI-native tool tags with docstring summaries
 **Depends on:** Phase 32.1
 **Plans:** 0 plans
 
