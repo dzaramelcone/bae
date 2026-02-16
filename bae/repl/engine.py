@@ -44,6 +44,7 @@ class GraphRun:
     current_node: str = ""
     started_ns: int = field(default_factory=time.perf_counter_ns)
     ended_ns: int = 0
+    error: str = ""
 
 
 class TimingLM:
@@ -110,8 +111,9 @@ class GraphRegistry:
         except asyncio.CancelledError:
             run.state = GraphState.CANCELLED
             raise
-        except Exception:
+        except Exception as e:
             run.state = GraphState.FAILED
+            run.error = f"{type(e).__name__}: {e}"
             raise
         finally:
             run.ended_ns = time.perf_counter_ns()

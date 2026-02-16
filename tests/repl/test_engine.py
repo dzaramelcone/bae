@@ -196,6 +196,35 @@ class TestGraphRegistry:
                 pass
         assert run.state == GraphState.FAILED
 
+    async def test_failed_run_stores_error(self, registry, tm):
+        """Failed run stores exception message in run.error."""
+        from bae.graph import Graph
+
+        graph = Graph(start=Start)
+        run = registry.submit(graph, tm, lm=FailingLM(), text="hello")
+        for tt in list(tm._tasks.values()):
+            try:
+                await tt.task
+            except Exception:
+                pass
+        assert run.state == GraphState.FAILED
+        assert "LM exploded" in run.error
+        assert "RuntimeError" in run.error
+
+    async def test_successful_run_has_no_error(self, registry, tm, mock_lm):
+        """Successful run has empty error string."""
+        from bae.graph import Graph
+
+        graph = Graph(start=Start)
+        run = registry.submit(graph, tm, lm=mock_lm, text="hello")
+        for tt in list(tm._tasks.values()):
+            try:
+                await tt.task
+            except Exception:
+                pass
+        assert run.state == GraphState.DONE
+        assert run.error == ""
+
     async def test_run_cancellation_sets_cancelled(self, registry, tm):
         """Submit a graph, revoke via TaskManager, verify run.state == CANCELLED."""
         from bae.graph import Graph
