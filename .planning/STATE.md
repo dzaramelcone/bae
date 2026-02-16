@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 31 of 36 (Resource Protocol + Navigation)
-Plan: 2 of 3 in current phase
-Status: Executing
-Last activity: 2026-02-16 -- Completed 31-02 (ToolRouter dispatch + pruning)
+Plan: 3 of 3 in current phase
+Status: Phase Complete
+Last activity: 2026-02-16 -- Completed 31-03 (Shell integration)
 
-Progress: [██████░░░░] 67%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 101 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 2 v7.0)
+- Total plans completed: 102 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 23 v6.0 + 3 v7.0)
 - v6.0 duration: 1 day (2026-02-15)
 - v5.0 duration: 1 day (2026-02-14)
 
@@ -34,6 +34,8 @@ Progress: [██████░░░░] 67%
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 31-03: homespace/back are lambdas wrapping registry methods, not ResourceHandles
+- v7.0 31-03: Resource location injected via _with_location into every AI _send call
 - v7.0 31-02: ResourceError promoted from dataclass to Exception subclass for raise/except
 - v7.0 31-02: Pruning keeps structural lines (headings, tables), trims content to ~2000 chars
 - v7.0 31-02: read('') at root lists resourcespaces instead of filesystem read
@@ -71,6 +73,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 31-02-PLAN.md
+Stopped at: Completed 31-03-PLAN.md (Phase 31 complete)
 Branch: main
-Resume file: .planning/phases/31-resource-protocol-navigation/31-02-SUMMARY.md
+Resume file: .planning/phases/31-resource-protocol-navigation/31-03-SUMMARY.md
