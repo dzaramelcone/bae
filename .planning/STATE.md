@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-15)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v6.0 Graph Runtime -- Phase 27 Graph Mode complete (gap closure done)
+**Current focus:** v6.0 Graph Runtime -- Phase 27 Graph Mode complete (all gap closure plans executed)
 
 ## Current Position
 
 Phase: 27 (Graph Mode)
-Plan: 05 of 05 complete
-Status: Phase 27 complete (including all gap closure plans)
-Last activity: 2026-02-15 -- 27-04 LM timeout, partial trace, flattened params
+Plan: 06 of 06 complete
+Status: Phase 27 complete (all UAT gaps closed)
+Last activity: 2026-02-15 -- 27-06 stdin isolation + inspect formatting
 
 Progress: v1-v5 done | v6.0 [####......] 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 92 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 16 work)
+- Total plans completed: 93 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 17 work)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -28,6 +28,7 @@ Progress: v1-v5 done | v6.0 [####......] 20%
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
+| 27-06 | stdin isolation + inspect formatting | 3min | 2 | 3 |
 | 27-04 | LM timeout, partial trace, flattened params | 5min | 3 | 7 |
 | 27-05 | ANSI rendering fix for graph commands | 2min | 2 | 3 |
 | 27-03 | Param type injection + ls removal | 2min | 2 | 3 |
@@ -46,6 +47,7 @@ Progress: v1-v5 done | v6.0 [####......] 20%
 
 See PROJECT.md Key Decisions table for full history.
 
+- 27-06: Name-based timing lookup with consumed-index -- start node has no timing entry (constructed from kwargs)
 - 27-04: ClaudeCLIBackend timeout 20 -> 120s for reliable complex graph execution
 - 27-04: Outer try/except around arun while-loop attaches .trace to any unhandled exception
 - 27-04: graph() flattens BaseModel input fields into simple kwargs via _composites closure
@@ -101,6 +103,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 27-04-PLAN.md (LM timeout, partial trace, flattened params)
+Stopped at: Completed 27-06-PLAN.md (stdin isolation + inspect formatting)
 Branch: main
 Resume file: None
