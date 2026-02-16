@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-15)
 
 **Core value:** DSPy compiles agent graphs from type hints and class names - no manual prompt writing
-**Current focus:** v6.0 Graph Runtime -- Phase 28 Input Gates complete
+**Current focus:** v6.0 Graph Runtime -- Phase 29 Observability in progress
 
 ## Current Position
 
-Phase: 28 (Input Gates)
-Plan: 03 of 03 complete
-Status: Phase 28 verified (5/5 must-haves passed)
-Last activity: 2026-02-15 -- Phase 28 execution complete
+Phase: 29 (Observability)
+Plan: 01 of 03 complete
+Status: Executing Phase 29
+Last activity: 2026-02-15 -- Phase 29 Plan 01 complete
 
-Progress: v1-v5 done | v6.0 [########..] 75%
+Progress: v1-v5 done | v6.0 [########..] 78%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 96 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 20 v6.0)
+- Total plans completed: 97 (13 v1.0 + 21 v2.0 + 9 v3.0 + 24 v4.0 + 9 v5.0 + 21 v6.0)
 - v1.0 duration: 1 day (2026-02-04 -> 2026-02-05)
 - v2.0 duration: 2 days (2026-02-07 -> 2026-02-08)
 - v3.0 duration: 5 days (2026-02-04 -> 2026-02-09)
@@ -28,6 +28,7 @@ Progress: v1-v5 done | v6.0 [########..] 75%
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
+| 29-01 | OutputPolicy + dep timing + RSS + events | 4min | 2 | 4 |
 | 28-03 | Shell UX: badge, @g routing, shush | 8min | 2 | 4 |
 | 28-01 | Gate marker + InputGate infrastructure | 3min | 2 | 6 |
 | 27-06 | stdin isolation + inspect formatting | 3min | 2 | 3 |
@@ -50,6 +51,10 @@ Progress: v1-v5 done | v6.0 [########..] 75%
 
 See PROJECT.md Key Decisions table for full history.
 
+- 29-01: DEP_TIMING_KEY as dep_cache sentinel, matching GATE_HOOK_KEY pattern
+- 29-01: notify signature evolved to (content, meta=None) -- backward compatible
+- 29-01: RSS via resource.getrusage high-water mark, not tracemalloc (zero overhead)
+- 29-01: OutputPolicy on GraphRun, set at submit time via policy kwarg
 - 28-03: Gate routing only from non-NL modes -- NL preserves @label session routing
 - 28-03: Pydantic TypeAdapter for gate value coercion -- reuses existing dependency
 - 28-03: Shush toggle as GRAPH mode command, not key binding -- consistent with dispatch pattern
@@ -116,6 +121,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Phase 28 complete -- all 3 plans executed, verified 5/5
+Stopped at: Completed 29-01-PLAN.md (engine instrumentation)
 Branch: main
 Resume file: None
