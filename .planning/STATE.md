@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 ## Current Position
 
 Phase: 29 (Observability)
-Plan: 03 of 03 complete
-Status: Phase 29 complete
-Last activity: 2026-02-15 -- Phase 29 Plan 03 complete
+Plan: 02 of 03 complete
+Status: Executing Phase 29
+Last activity: 2026-02-15 -- Phase 29 Plan 02 complete
 
 Progress: v1-v5 done | v6.0 [########..] 78%
 
@@ -29,6 +29,7 @@ Progress: v1-v5 done | v6.0 [########..] 78%
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | 29-03 | Concurrent stress + store persistence | 2min | 2 | 1 |
+| 29-02 | Display layer wiring: debug, lifecycle views, output policy | 3min | 2 | 5 |
 | 29-01 | OutputPolicy + dep timing + RSS + events | 4min | 2 | 4 |
 | 28-03 | Shell UX: badge, @g routing, shush | 8min | 2 | 4 |
 | 28-01 | Gate marker + InputGate infrastructure | 3min | 2 | 6 |
@@ -55,6 +56,10 @@ See PROJECT.md Key Decisions table for full history.
 - 29-03: StressStart -> Middle -> End with asyncio.sleep simulates realistic concurrent load
 - 29-03: QUIET + successful = zero events, validated via channel buffer and store count
 - 29-03: Cross-session proof via two SessionStore instances on same db file
+- 29-02: Notify shush applies only to gate events -- lifecycle always flows through
+- 29-02: Output policy flags parsed from run arg via split/remove before eval
+- 29-02: GraphRun.policy set at creation time in submit/submit_coro (not deferred)
+- 29-02: Lifecycle events color-coded in UserView: dim=start, green=complete, red=fail, yellow=cancel
 - 29-01: DEP_TIMING_KEY as dep_cache sentinel, matching GATE_HOOK_KEY pattern
 - 29-01: notify signature evolved to (content, meta=None) -- backward compatible
 - 29-01: RSS via resource.getrusage high-water mark, not tracemalloc (zero overhead)
@@ -125,6 +130,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 29-03-PLAN.md (concurrent stress + store persistence)
+Stopped at: Completed 29-02-PLAN.md (display layer wiring)
 Branch: main
 Resume file: None
