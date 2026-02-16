@@ -239,8 +239,6 @@ def run_graph(
     Examples:
         bae run examples.weather_outfit -i '{"location": "Seattle"}'
     """
-    import json
-
     graph = _load_graph_from_module(module)
 
     # Parse input

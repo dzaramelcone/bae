@@ -191,7 +191,7 @@ class Node(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     node_config: ClassVar[NodeConfig] = NodeConfig()
 
-    async def __call__(self, lm: LM, *_args: object, **_kwargs: object) -> Node | None:
+    async def __call__(self, lm: LM) -> Node | None:
         """Execute node logic and return next node.
 
         Override this to implement custom routing logic.
