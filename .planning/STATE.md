@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-15)
 ## Current Position
 
 Phase: 28 (Input Gates)
-Plan: 02 of 03 remaining (01 + 03 complete)
-Status: Executing phase 28 -- plan 02 pending
-Last activity: 2026-02-15 -- 28-03 Shell UX: toolbar badge, @g routing, shush toggle
+Plan: 03 of 03 complete
+Status: Phase 28 complete
+Last activity: 2026-02-15 -- 28-02 Engine gate interception + input/gates commands
 
 Progress: v1-v5 done | v6.0 [####......] 20%
 
@@ -42,6 +42,7 @@ Progress: v1-v5 done | v6.0 [####......] 20%
 | 30-02 | AgenticBackend + AI refactor | 3min | 2 | 5 |
 | 30-01 | Agent Core | 2min | 1 | 2 |
 | 26-01 | dep_cache + hardening | 3min | 1 | 3 |
+| 28-02 | Engine gate interception + input/gates commands | 11min | 2 | 5 |
 
 ## Accumulated Context
 
@@ -86,6 +87,9 @@ See PROJECT.md Key Decisions table for full history.
 - 26-01: Internal dep_cache variable renamed to cache to avoid parameter shadowing
 - 26-01: CancelledError handled separately from TimeoutError (re-raises directly)
 - 26-01: await process.wait() added after process.kill() for both error paths in _run_cli_json
+- 28-02: GATE_HOOK_KEY in resolver.py alongside LM_KEY -- dep_cache hook injection for gate fields
+- 28-02: Gate results cached per (node_cls, 'gates') to prevent double-trigger in arun resolve loop
+- 28-02: Pydantic TypeAdapter for gate value coercion in input command
 
 ### Pending Todos
 
@@ -112,6 +116,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 28-03-PLAN.md (Shell UX: toolbar badge, @g routing, shush toggle)
+Stopped at: Completed 28-02-PLAN.md (Engine gate interception + input/gates commands)
 Branch: main
 Resume file: None
