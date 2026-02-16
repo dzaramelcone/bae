@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 32 of 36 (Source Resourcespace)
-Plan: 5 of 5 in current phase
-Status: Phase Complete
-Last activity: 2026-02-16 -- Completed 32-05 (gap closure: stack fix + tools protocol)
+Plan: 6 of 7 in current phase
+Status: In Progress
+Last activity: 2026-02-16 -- Completed 32-06 (gap closure: package summary counts)
 
 Progress: [█████████████████████] 100%
 
@@ -54,6 +54,7 @@ Recent:
 - v7.0: Subresourcespaces are nested resources (e.g., source.meta())
 - v7.0: Resources provide Python hints on entry for advanced `<run>` operations
 - v7.0 32-02: fnmatch on dotted module paths for glob; grep caps at 50 matches with overflow indicator
+- [Phase 32]: Package detection uses filepath.name == '__init__.py' to branch summary format; packages show subpackage/module counts
 
 ### Pending Todos
 
@@ -81,6 +82,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 32-05-PLAN.md (gap closure complete)
+Stopped at: Completed 32-06-PLAN.md (gap closure: package summary counts)
 Branch: main
-Resume file: .planning/phases/32-source-resourcespace/32-05-SUMMARY.md
+Resume file: .planning/phases/32-source-resourcespace/32-06-SUMMARY.md
