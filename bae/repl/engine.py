@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import enum
 import logging
@@ -136,28 +137,29 @@ class TimingLM:
         self._inner = inner
         self._run = run
 
-    async def fill(self, target, resolved, instruction, source=None):
+    async def _timed(self, method, *args, node_name, **kwargs):
         start = time.perf_counter_ns()
-        result = await self._inner.fill(target, resolved, instruction, source)
+        result = await method(*args, **kwargs)
         end = time.perf_counter_ns()
-        self._run.current_node = target.__name__
+        self._run.current_node = node_name
         self._run.node_timings.append(
-            NodeTiming(node_type=target.__name__, start_ns=start, end_ns=end)
+            NodeTiming(node_type=node_name, start_ns=start, end_ns=end)
         )
         return result
+
+    async def fill(self, target, resolved, instruction, source=None):
+        return await self._timed(
+            self._inner.fill, target, resolved, instruction, source,
+            node_name=target.__name__,
+        )
 
     async def choose_type(self, types, context):
         return await self._inner.choose_type(types, context)
 
     async def make(self, node, target):
-        start = time.perf_counter_ns()
-        result = await self._inner.make(node, target)
-        end = time.perf_counter_ns()
-        self._run.current_node = target.__name__
-        self._run.node_timings.append(
-            NodeTiming(node_type=target.__name__, start_ns=start, end_ns=end)
+        return await self._timed(
+            self._inner.make, node, target, node_name=target.__name__,
         )
-        return result
 
     async def decide(self, node):
         return await self._inner.decide(node)
@@ -211,15 +213,9 @@ class GraphRegistry:
             return {g.field_name: val for g, val in zip(gates, results)}
         return hook
 
-    async def _execute(
-        self,
-        run: GraphRun,
-        *,
-        lm: LM | None = None,
-        notify=None,
-        policy: OutputPolicy = OutputPolicy.NORMAL,
-        **kwargs,
-    ):
+    @contextlib.asynccontextmanager
+    async def _lifecycle(self, run, *, notify, policy):
+        """Shared lifecycle for graph execution: emit, timing, state, cleanup."""
         run.policy = policy
 
         def _emit(event, content, meta=None):
@@ -234,36 +230,20 @@ class GraphRegistry:
             log_handler = _NotifyHandler(run.run_id, notify)
             _graph_logger.addHandler(log_handler)
 
+        _emit("start", f"{run.run_id} started", {
+            "type": "lifecycle", "event": "start", "run_id": run.run_id,
+        })
+        rss_before = _get_rss_bytes()
+
         try:
-            if lm is None:
-                from bae.lm import ClaudeCLIBackend
-                lm = ClaudeCLIBackend()
-            timing_lm = TimingLM(lm, run)
-
-            dep_cache = {
-                LM_KEY: timing_lm,
-                GATE_HOOK_KEY: self._make_gate_hook(run, notify),
-                DEP_TIMING_KEY: _dep_timing_hook,
-            }
-
-            _emit("start", f"{run.run_id} started", {
-                "type": "lifecycle", "event": "start", "run_id": run.run_id,
-            })
-
-            rss_before = _get_rss_bytes()
-            result = await run.graph.arun(lm=timing_lm, dep_cache=dep_cache, **kwargs)
+            yield _dep_timing_hook
             rss_after = _get_rss_bytes()
             run.rss_delta_bytes = rss_after - rss_before
-
-            run.result = result
             run.state = GraphState.DONE
-
             elapsed_s = (time.perf_counter_ns() - run.started_ns) / 1e9
             _emit("complete", f"{run.run_id} done ({elapsed_s:.1f}s)", {
                 "type": "lifecycle", "event": "complete", "run_id": run.run_id,
             })
-
-            return result
         except asyncio.CancelledError:
             run.state = GraphState.CANCELLED
             self.cancel_gates(run.run_id)
@@ -287,6 +267,31 @@ class GraphRegistry:
             run.ended_ns = time.perf_counter_ns()
             self._archive(run)
 
+    async def _execute(
+        self,
+        run: GraphRun,
+        *,
+        lm: LM | None = None,
+        notify=None,
+        policy: OutputPolicy = OutputPolicy.NORMAL,
+        **kwargs,
+    ):
+        async with self._lifecycle(run, notify=notify, policy=policy) as dep_timing_hook:
+            if lm is None:
+                from bae.lm import ClaudeCLIBackend
+                lm = ClaudeCLIBackend()
+            timing_lm = TimingLM(lm, run)
+
+            dep_cache = {
+                LM_KEY: timing_lm,
+                GATE_HOOK_KEY: self._make_gate_hook(run, notify),
+                DEP_TIMING_KEY: dep_timing_hook,
+            }
+
+            result = await run.graph.arun(lm=timing_lm, dep_cache=dep_cache, **kwargs)
+            run.result = result
+            return result
+
     def submit_coro(
         self,
         coro,
@@ -298,9 +303,8 @@ class GraphRegistry:
     ) -> GraphRun:
         """Submit a pre-built coroutine as a managed graph run.
 
-        Used when `run <expr>` evaluates to an already-constructed coroutine
-        (e.g., `ootd(user_info=..., user_message=...)`). The gate hook is
-        injected via contextvar so arun picks it up automatically.
+        Used when `run <expr>` evaluates to an already-constructed coroutine.
+        The gate hook is injected via contextvar so arun picks it up.
         """
         run_id = f"g{self._next_id}"
         self._next_id += 1
@@ -319,67 +323,18 @@ class GraphRegistry:
         policy: OutputPolicy = OutputPolicy.NORMAL,
     ):
         """Wrap a coroutine with lifecycle tracking and gate hook injection."""
-        run.policy = policy
-
-        def _emit(event, content, meta=None):
-            if policy.should_emit(event) and notify:
-                notify(content, meta)
-
-        def _dep_timing_hook(name, duration_ms):
-            run.dep_timings.append((name, duration_ms))
-
-        log_handler = None
-        if policy == OutputPolicy.VERBOSE and notify:
-            log_handler = _NotifyHandler(run.run_id, notify)
-            _graph_logger.addHandler(log_handler)
-
         token = _engine_dep_cache.set({
             GATE_HOOK_KEY: self._make_gate_hook(run, notify),
-            DEP_TIMING_KEY: _dep_timing_hook,
+            DEP_TIMING_KEY: lambda name, dur: run.dep_timings.append((name, dur)),
         })
         try:
-            _emit("start", f"{run.run_id} started", {
-                "type": "lifecycle", "event": "start", "run_id": run.run_id,
-            })
-
-            rss_before = _get_rss_bytes()
-            result = await coro
-            rss_after = _get_rss_bytes()
-            run.rss_delta_bytes = rss_after - rss_before
-
-            run.state = GraphState.DONE
-            if hasattr(result, "trace"):
-                run.result = result
-
-            elapsed_s = (time.perf_counter_ns() - run.started_ns) / 1e9
-            _emit("complete", f"{run.run_id} done ({elapsed_s:.1f}s)", {
-                "type": "lifecycle", "event": "complete", "run_id": run.run_id,
-            })
-
-            return result
-        except asyncio.CancelledError:
-            run.state = GraphState.CANCELLED
-            self.cancel_gates(run.run_id)
-            _emit("cancel", f"{run.run_id} cancelled", {
-                "type": "lifecycle", "event": "cancel", "run_id": run.run_id,
-            })
-            raise
-        except Exception as e:
-            run.state = GraphState.FAILED
-            run.error = f"{type(e).__name__}: {e}"
-            if hasattr(e, "trace"):
-                from bae.result import GraphResult
-                run.result = GraphResult(node=None, trace=e.trace)
-            _emit("fail", f"{run.run_id} failed: {run.error}", {
-                "type": "lifecycle", "event": "fail", "run_id": run.run_id,
-            })
-            raise
+            async with self._lifecycle(run, notify=notify, policy=policy):
+                result = await coro
+                if hasattr(result, "trace"):
+                    run.result = result
+                return result
         finally:
-            if log_handler:
-                _graph_logger.removeHandler(log_handler)
             _engine_dep_cache.reset(token)
-            run.ended_ns = time.perf_counter_ns()
-            self._archive(run)
 
     def _archive(self, run: GraphRun) -> None:
         self._runs.pop(run.run_id, None)

@@ -95,50 +95,42 @@ def _print_task_menu(shell: CortexShell) -> None:
     print_formatted_text(hint)
 
 
-def _build_key_bindings(shell: CortexShell) -> KeyBindings:
-    """Key bindings for cortex REPL."""
-    from prompt_toolkit.filters import Condition
-
-    kb = KeyBindings()
-    task_menu_active = Condition(lambda: shell._task_menu)
+def _bind_mode_controls(kb: KeyBindings, shell: CortexShell) -> None:
+    """Mode cycling, view cycling, submit, newline, and channel toggle."""
 
     @kb.add("s-tab")
     def cycle_mode(event):
-        """Shift+Tab cycles modes."""
         idx = MODE_CYCLE.index(shell.mode)
         shell.mode = MODE_CYCLE[(idx + 1) % len(MODE_CYCLE)]
         event.app.invalidate()
 
     @kb.add("c-v")
     def cycle_view(event):
-        """Ctrl+V cycles view modes."""
         idx = VIEW_CYCLE.index(shell.view_mode)
         shell._set_view(VIEW_CYCLE[(idx + 1) % len(VIEW_CYCLE)])
         event.app.invalidate()
 
     @kb.add("enter")
     def submit(event):
-        """Enter submits input."""
         event.current_buffer.validate_and_handle()
 
     @kb.add("escape", "enter")
     def insert_newline(event):
-        """Escape+Enter inserts newline (also handles kitty Shift+Enter)."""
         event.current_buffer.insert_text("\n")
 
     @kb.add("c-o")
     def open_channel_toggle(event):
-        """Ctrl+O opens channel visibility toggle."""
-
         async def _toggle():
             await toggle_channels(shell.router)
             event.app.invalidate()
-
         event.app.create_background_task(_toggle())
+
+
+def _bind_interrupt(kb: KeyBindings, shell: CortexShell) -> None:
+    """Ctrl-C: exit if idle, kill-all if task menu open, open task menu."""
 
     @kb.add("c-c", eager=True)
     def handle_interrupt(event):
-        """Ctrl-C: exit if idle, kill-all if task menu open, open task menu if tasks running."""
         if shell._task_menu:
             shell.tm.revoke_all(graceful=False)
             shell._task_menu = False
@@ -154,23 +146,27 @@ def _build_key_bindings(shell: CortexShell) -> KeyBindings:
         _print_task_menu(shell)
         event.app.invalidate()
 
+
+def _bind_task_menu(kb: KeyBindings, shell: CortexShell) -> None:
+    """Task menu navigation: dismiss, page, cancel by digit."""
+    from prompt_toolkit.filters import Condition
+
+    task_menu_active = Condition(lambda: shell._task_menu)
+
     @kb.add("escape", eager=True, filter=task_menu_active)
     def dismiss_task_menu(event):
-        """Esc: close task menu, return to normal toolbar."""
         shell._task_menu = False
         shell._task_menu_page = 0
         event.app.invalidate()
 
     @kb.add("left", filter=task_menu_active)
     def task_menu_prev_page(event):
-        """Left arrow: previous page."""
         if shell._task_menu_page > 0:
             shell._task_menu_page -= 1
             event.app.invalidate()
 
     @kb.add("right", filter=task_menu_active)
     def task_menu_next_page(event):
-        """Right arrow: next page."""
         active = shell.tm.active()
         total_pages = (len(active) + TASKS_PER_PAGE - 1) // TASKS_PER_PAGE
         if shell._task_menu_page < total_pages - 1:
@@ -178,10 +174,8 @@ def _build_key_bindings(shell: CortexShell) -> KeyBindings:
             event.app.invalidate()
 
     for digit in "12345":
-
         @kb.add(digit, filter=task_menu_active)
         def cancel_by_digit(event, _d=digit):
-            """Digit key: cancel task at that position on current page."""
             idx = int(_d) - 1
             active = shell.tm.active()
             offset = shell._task_menu_page * TASKS_PER_PAGE
@@ -197,6 +191,13 @@ def _build_key_bindings(shell: CortexShell) -> KeyBindings:
                 _print_task_menu(shell)
             event.app.invalidate()
 
+
+def _build_key_bindings(shell: CortexShell) -> KeyBindings:
+    """Key bindings for cortex REPL."""
+    kb = KeyBindings()
+    _bind_mode_controls(kb, shell)
+    _bind_interrupt(kb, shell)
+    _bind_task_menu(kb, shell)
     return kb
 
 
@@ -374,15 +375,58 @@ class CortexShell:
             metadata={"type": "lifecycle", "run_id": gate.run_id},
         )
 
-    async def _dispatch(self, text: str) -> None:
-        """Route input to the active mode handler.
+    async def _run_py(self, text: str) -> None:
+        """PY mode: execute expression, handle sync/async results."""
+        try:
+            result, captured = await async_exec(text, self.namespace)
+            if captured:
+                self.router.write(
+                    "py", captured.rstrip("\n"), mode="PY", metadata={"type": "stdout"}
+                )
+            if asyncio.iscoroutine(result):
 
-        PY sync expressions execute sequentially. PY async expressions
-        (await ...) are tracked via TaskManager. NL/BASH modes fire
-        as background tasks so prompt_async() stays active.
-        """
+                async def _py_task(coro):
+                    try:
+                        val = await coro
+                        if val is not None:
+                            if _walk_coroutines(val):
+                                n = _walk_coroutines(val, close=True)
+                                msg = f"<{n} unawaited coroutine{'s' if n != 1 else ''}>"
+                                self.router.write(
+                                    "py", msg, mode="PY", metadata={"type": "warning"}
+                                )
+                            else:
+                                self.router.write(
+                                    "py", repr(val), mode="PY", metadata={"type": "expr_result"}
+                                )
+                    except asyncio.CancelledError:
+                        self.router.write("debug", "cancelled py task", mode="DEBUG")
+                    except Exception:
+                        tb = traceback.format_exc()
+                        self.router.write(
+                            "py", tb.rstrip("\n"), mode="PY", metadata={"type": "error"}
+                        )
+
+                self.tm.submit(_py_task(result), name=f"py:{text[:30]}", mode="py")
+            elif result is not None:
+                if _walk_coroutines(result):
+                    n = _walk_coroutines(result, close=True)
+                    msg = f"<{n} unawaited coroutine{'s' if n != 1 else ''}>"
+                    self.router.write("py", msg, mode="PY", metadata={"type": "warning"})
+                    self.namespace.pop("_", None)
+                else:
+                    self.router.write(
+                        "py", repr(result), mode="PY", metadata={"type": "expr_result"}
+                    )
+        except KeyboardInterrupt:
+            pass
+        except Exception:
+            tb = traceback.format_exc()
+            self.router.write("py", tb.rstrip("\n"), mode="PY", metadata={"type": "error"})
+
+    async def _dispatch(self, text: str) -> None:
+        """Route input to the active mode handler."""
         # Cross-mode gate input: @g<digits> <value>
-        # Only from PY/BASH modes. NL mode preserves @label session routing.
         if self.mode in (Mode.PY, Mode.BASH) and text.startswith("@g") and len(text) > 2:
             rest = text[2:]
             space = rest.find(" ")
@@ -393,52 +437,7 @@ class CortexShell:
                 return
 
         if self.mode == Mode.PY:
-            try:
-                result, captured = await async_exec(text, self.namespace)
-                if captured:
-                    self.router.write(
-                        "py", captured.rstrip("\n"), mode="PY", metadata={"type": "stdout"}
-                    )
-                if asyncio.iscoroutine(result):
-
-                    async def _py_task(coro):
-                        try:
-                            val = await coro
-                            if val is not None:
-                                if _walk_coroutines(val):
-                                    n = _walk_coroutines(val, close=True)
-                                    msg = f"<{n} unawaited coroutine{'s' if n != 1 else ''}>"
-                                    self.router.write(
-                                        "py", msg, mode="PY", metadata={"type": "warning"}
-                                    )
-                                else:
-                                    self.router.write(
-                                        "py", repr(val), mode="PY", metadata={"type": "expr_result"}
-                                    )
-                        except asyncio.CancelledError:
-                            self.router.write("debug", "cancelled py task", mode="DEBUG")
-                        except Exception:
-                            tb = traceback.format_exc()
-                            self.router.write(
-                                "py", tb.rstrip("\n"), mode="PY", metadata={"type": "error"}
-                            )
-
-                    self.tm.submit(_py_task(result), name=f"py:{text[:30]}", mode="py")
-                elif result is not None:
-                    if _walk_coroutines(result):
-                        n = _walk_coroutines(result, close=True)
-                        msg = f"<{n} unawaited coroutine{'s' if n != 1 else ''}>"
-                        self.router.write("py", msg, mode="PY", metadata={"type": "warning"})
-                        self.namespace.pop("_", None)
-                    else:
-                        self.router.write(
-                            "py", repr(result), mode="PY", metadata={"type": "expr_result"}
-                        )
-            except KeyboardInterrupt:
-                pass
-            except Exception:
-                tb = traceback.format_exc()
-                self.router.write("py", tb.rstrip("\n"), mode="PY", metadata={"type": "error"})
+            await self._run_py(text)
         elif self.mode == Mode.NL:
             prompt = text
             if text.startswith("@") and len(text) > 1:

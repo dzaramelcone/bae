@@ -30,6 +30,39 @@ _SUPPORTED_FORMATS = {
 }
 
 
+def _transform_object(schema: dict, strict: dict) -> None:
+    """Transform object-type schema: properties, additionalProperties, required."""
+    strict["properties"] = {
+        k: transform_schema(v) for k, v in schema.pop("properties", {}).items()
+    }
+    schema.pop("additionalProperties", None)
+    strict["additionalProperties"] = False
+    required = schema.pop("required", None)
+    if required is not None:
+        strict["required"] = required
+
+
+def _transform_array(schema: dict, strict: dict) -> None:
+    """Transform array-type schema: items, minItems."""
+    items = schema.pop("items", None)
+    if items is not None:
+        strict["items"] = transform_schema(items)
+    min_items = schema.pop("minItems", None)
+    if min_items is not None and min_items in (0, 1):
+        strict["minItems"] = min_items
+    elif min_items is not None:
+        schema["minItems"] = min_items
+
+
+def _transform_string(schema: dict, strict: dict) -> None:
+    """Transform string-type schema: format."""
+    fmt = schema.pop("format", None)
+    if fmt and fmt in _SUPPORTED_FORMATS:
+        strict["format"] = fmt
+    elif fmt:
+        schema["format"] = fmt  # unsupported -> fold into description later
+
+
 def transform_schema(
     json_schema: type[BaseModel] | dict[str, Any],
 ) -> dict[str, Any]:
@@ -77,31 +110,13 @@ def transform_schema(
             strict[key] = val
 
     if type_ == "object":
-        strict["properties"] = {
-            k: transform_schema(v) for k, v in schema.pop("properties", {}).items()
-        }
-        schema.pop("additionalProperties", None)
-        strict["additionalProperties"] = False
-        required = schema.pop("required", None)
-        if required is not None:
-            strict["required"] = required
+        _transform_object(schema, strict)
     elif type_ == "string":
-        fmt = schema.pop("format", None)
-        if fmt and fmt in _SUPPORTED_FORMATS:
-            strict["format"] = fmt
-        elif fmt:
-            schema["format"] = fmt  # unsupported → append to description below
+        _transform_string(schema, strict)
     elif type_ == "array":
-        items = schema.pop("items", None)
-        if items is not None:
-            strict["items"] = transform_schema(items)
-        min_items = schema.pop("minItems", None)
-        if min_items is not None and min_items in (0, 1):
-            strict["minItems"] = min_items
-        elif min_items is not None:
-            schema["minItems"] = min_items
+        _transform_array(schema, strict)
 
-    # Unsupported leftover fields → fold into description as hints
+    # Unsupported leftover fields -> fold into description as hints
     if schema:
         desc = strict.get("description", "")
         extra = "{" + ", ".join(f"{k}: {v}" for k, v in schema.items()) + "}"
