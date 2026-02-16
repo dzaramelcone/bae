@@ -10,7 +10,7 @@ import traceback
 from rich.table import Table
 from rich.text import Text
 
-from bae.repl.engine import GraphState
+from bae.repl.engine import GraphState, OutputPolicy
 from bae.repl.views import _rich_to_ansi
 
 
@@ -29,6 +29,7 @@ async def dispatch_graph(text: str, shell) -> None:
         "cancel": _cmd_cancel,
         "inspect": _cmd_inspect,
         "trace": _cmd_trace,
+        "debug": _cmd_debug,
         "input": _cmd_input,
         "gates": _cmd_gates,
     }
@@ -49,6 +50,20 @@ async def _cmd_run(arg: str, shell) -> None:
     if not arg:
         shell.router.write("graph", "usage: run <expr>", mode="GRAPH")
         return
+
+    # Parse output policy flags from arg
+    policy = OutputPolicy.NORMAL
+    flag_map = {"--verbose": OutputPolicy.VERBOSE, "--quiet": OutputPolicy.QUIET, "--silent": OutputPolicy.SILENT}
+    parts = arg.split()
+    for flag, pol in flag_map.items():
+        if flag in parts:
+            policy = pol
+            parts.remove(flag)
+    arg = " ".join(parts)
+    if not arg:
+        shell.router.write("graph", "usage: run <expr>", mode="GRAPH")
+        return
+
     try:
         from bae.repl.exec import async_exec
 
@@ -63,12 +78,12 @@ async def _cmd_run(arg: str, shell) -> None:
     if asyncio.iscoroutine(result):
         name = getattr(result, "cr_code", None)
         name = getattr(name, "co_qualname", "graph") if name else "graph"
-        run = shell.engine.submit_coro(result, shell.tm, name=name, notify=notify)
+        run = shell.engine.submit_coro(result, shell.tm, name=name, notify=notify, policy=policy)
     else:
         from bae.graph import Graph
 
         if isinstance(result, Graph):
-            run = shell.engine.submit(result, shell.tm, lm=shell._lm, notify=notify)
+            run = shell.engine.submit(result, shell.tm, lm=shell._lm, notify=notify, policy=policy)
         else:
             if asyncio.iscoroutine(result):
                 result.close()
@@ -91,20 +106,22 @@ def _attach_done_callback(run, shell):
     for tt in shell.tm.active():
         if tt.name.startswith(f"graph:{run.run_id}:"):
             def _on_done(task, _run=run):
+                elapsed_ms = (_run.ended_ns - _run.started_ns) / 1_000_000
+                elapsed_s = elapsed_ms / 1000
                 if task.cancelled():
                     shell.router.write(
                         "graph", f"{_run.run_id} cancelled", mode="GRAPH",
-                        metadata={"type": "lifecycle", "run_id": _run.run_id},
+                        metadata={"type": "lifecycle", "event": "cancel", "run_id": _run.run_id},
                     )
                 elif task.exception() is not None:
                     shell.router.write(
                         "graph", f"{_run.run_id} failed: {_run.error}", mode="GRAPH",
-                        metadata={"type": "error", "run_id": _run.run_id},
+                        metadata={"type": "error", "run_id": _run.run_id, "elapsed_ms": elapsed_ms},
                     )
                 else:
                     shell.router.write(
-                        "graph", f"{_run.run_id} done", mode="GRAPH",
-                        metadata={"type": "lifecycle", "run_id": _run.run_id},
+                        "graph", f"{_run.run_id} done ({elapsed_s:.1f}s)", mode="GRAPH",
+                        metadata={"type": "lifecycle", "event": "complete", "run_id": _run.run_id, "elapsed_ms": elapsed_ms},
                     )
             tt.task.add_done_callback(_on_done)
             break
@@ -214,6 +231,16 @@ async def _cmd_inspect(arg: str, shell) -> None:
         for nt in run.node_timings:
             parts.append(f"  {nt.node_type}  {nt.duration_ms:.0f}ms")
 
+    if run.dep_timings:
+        parts.append("")
+        parts.append("Dep timings:")
+        for name, ms in run.dep_timings:
+            parts.append(f"  {name}  {ms:.0f}ms")
+
+    if run.rss_delta_bytes != 0:
+        delta_mb = run.rss_delta_bytes / (1024 * 1024)
+        parts.append(f"RSS delta: {delta_mb:.1f}MB")
+
     text = Text("\n".join(parts))
     shell.router.write("graph", _rich_to_ansi(text).rstrip("\n"), mode="GRAPH", metadata={"type": "ansi"})
 
@@ -249,14 +276,41 @@ async def _cmd_trace(arg: str, shell) -> None:
     shell.router.write("graph", "\n".join(lines), mode="GRAPH")
 
 
+async def _cmd_debug(arg: str, shell) -> None:
+    """Show async call graph for a running graph's task."""
+    arg = arg.strip()
+    if not arg:
+        shell.router.write("graph", "usage: debug <id>", mode="GRAPH")
+        return
+    run = shell.engine.get(arg)
+    if run is None:
+        shell.router.write("graph", f"no run {arg}", mode="GRAPH")
+        return
+    if run.state not in (GraphState.RUNNING, GraphState.WAITING):
+        shell.router.write("graph", f"{arg} not active ({run.state.value})", mode="GRAPH")
+        return
+    import asyncio as _aio
+    for tt in shell.tm.active():
+        if tt.name.startswith(f"graph:{run.run_id}:"):
+            try:
+                formatted = _aio.format_call_graph(tt.task)
+                shell.router.write(
+                    "graph", formatted, mode="GRAPH",
+                    metadata={"type": "debug", "run_id": run.run_id},
+                )
+            except Exception as e:
+                shell.router.write("graph", f"debug error: {e}", mode="GRAPH")
+            return
+    shell.router.write("graph", f"{arg}: task not found", mode="GRAPH")
+
+
 def _make_notify(shell):
     """Build a notify callback that routes engine events through the graph channel."""
     def notify(content, meta=None):
-        if not getattr(shell, "shush_gates", False):
-            shell.router.write(
-                "graph", content, mode="GRAPH",
-                metadata=meta or {"type": "lifecycle"},
-            )
+        if meta and meta.get("type") == "gate":
+            if getattr(shell, "shush_gates", False):
+                return
+        shell.router.write("graph", content, mode="GRAPH", metadata=meta or {"type": "lifecycle"})
     return notify
 
 
