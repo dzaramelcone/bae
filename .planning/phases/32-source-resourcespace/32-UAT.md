@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: resolved
 phase: 32-source-resourcespace
 source: [32-01-SUMMARY.md, 32-02-SUMMARY.md, 32-03-SUMMARY.md, 32-04-SUMMARY.md]
 started: 2026-02-16T17:00:00Z
-updated: 2026-02-16T17:15:00Z
+updated: 2026-02-16T23:00:00Z
 ---
 
 ## Current Test
@@ -75,7 +75,7 @@ skipped: 8
 ## Gaps
 
 - truth: "source() enters resourcespace; subresource navigation and tool dispatch work correctly"
-  status: failed
+  status: resolved
   reason: "User reported: source.config.read() says 'No resource source.config.read'. @source() hyperlinks cause SyntaxError. Navigation path extends indefinitely (home > source > config > source > deps) instead of minimum path (home > source > deps). Each subresource navigation appends to path instead of replacing."
   severity: major
   test: 1
@@ -88,7 +88,7 @@ skipped: 8
     - "Error messages should use source() not @source() syntax"
   debug_session: ""
 - truth: "read() callable from REPL when inside a resourcespace"
-  status: failed
+  status: resolved
   reason: "User reported: read() not available as bare function in namespace. Entry display shows tools table suggesting read(), glob() etc. but NameError: name 'read' is not defined. Tools are AI-only via ToolRouter, not human-usable."
   severity: major
   test: 2
