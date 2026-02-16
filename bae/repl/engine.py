@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import resource
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from bae.lm import LM
-from bae.resolver import GATE_HOOK_KEY, LM_KEY, _engine_dep_cache
+from bae.resolver import DEP_TIMING_KEY, GATE_HOOK_KEY, LM_KEY, _engine_dep_cache
 
 if TYPE_CHECKING:
     from bae.graph import Graph
@@ -24,6 +26,22 @@ class GraphState(enum.Enum):
     DONE = "done"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class OutputPolicy(enum.Enum):
+    VERBOSE = "verbose"
+    NORMAL = "normal"
+    QUIET = "quiet"
+    SILENT = "silent"
+
+    def should_emit(self, event: str) -> bool:
+        if self == OutputPolicy.SILENT:
+            return False
+        if self == OutputPolicy.QUIET:
+            return event in ("fail", "gate", "error")
+        if self == OutputPolicy.NORMAL:
+            return event in ("start", "complete", "fail", "gate", "error")
+        return True  # VERBOSE
 
 
 @dataclass
@@ -48,6 +66,9 @@ class GraphRun:
     ended_ns: int = 0
     error: str = ""
     result: GraphResult | None = None
+    dep_timings: list[tuple[str, float]] = field(default_factory=list)
+    rss_delta_bytes: int = 0
+    policy: OutputPolicy = OutputPolicy.NORMAL
 
 
 @dataclass
@@ -76,6 +97,11 @@ class InputGate:
         if self.description:
             return f'{self.field_name}: {type_name} ("{self.description}")'
         return f"{self.field_name}: {type_name}"
+
+
+def _get_rss_bytes() -> int:
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return rss if sys.platform == "darwin" else rss * 1024
 
 
 class TimingLM:
@@ -127,13 +153,14 @@ class GraphRegistry:
         *,
         lm: LM | None = None,
         notify=None,
+        policy: OutputPolicy = OutputPolicy.NORMAL,
         **kwargs,
     ) -> GraphRun:
         run_id = f"g{self._next_id}"
         self._next_id += 1
         run = GraphRun(run_id=run_id, graph=graph)
         self._runs[run_id] = run
-        coro = self._execute(run, lm=lm, notify=notify, **kwargs)
+        coro = self._execute(run, lm=lm, notify=notify, policy=policy, **kwargs)
         tm.submit(coro, name=f"graph:{run_id}:{graph.start.__name__}", mode="graph")
         return run
 
@@ -150,15 +177,33 @@ class GraphRegistry:
             run.state = GraphState.WAITING
             if notify is not None:
                 for g in gates:
-                    notify(f"[{g.gate_id}] {g.node_type}.{g.schema_display}")
+                    notify(
+                        f"[{g.gate_id}] {g.node_type}.{g.schema_display}",
+                        {"type": "gate", "run_id": run.run_id, "gate_id": g.gate_id},
+                    )
             results = await asyncio.gather(*[g.future for g in gates])
             run.state = GraphState.RUNNING
             return {g.field_name: val for g, val in zip(gates, results)}
         return hook
 
     async def _execute(
-        self, run: GraphRun, *, lm: LM | None = None, notify=None, **kwargs,
+        self,
+        run: GraphRun,
+        *,
+        lm: LM | None = None,
+        notify=None,
+        policy: OutputPolicy = OutputPolicy.NORMAL,
+        **kwargs,
     ):
+        run.policy = policy
+
+        def _emit(event, content, meta=None):
+            if policy.should_emit(event) and notify:
+                notify(content, meta)
+
+        def _dep_timing_hook(name, duration_ms):
+            run.dep_timings.append((name, duration_ms))
+
         try:
             if lm is None:
                 from bae.lm import ClaudeCLIBackend
@@ -168,10 +213,27 @@ class GraphRegistry:
             dep_cache = {
                 LM_KEY: timing_lm,
                 GATE_HOOK_KEY: self._make_gate_hook(run, notify),
+                DEP_TIMING_KEY: _dep_timing_hook,
             }
+
+            _emit("start", f"{run.run_id} started", {
+                "type": "lifecycle", "event": "start", "run_id": run.run_id,
+            })
+
+            rss_before = _get_rss_bytes()
             result = await run.graph.arun(lm=timing_lm, dep_cache=dep_cache, **kwargs)
+            rss_after = _get_rss_bytes()
+            run.rss_delta_bytes = rss_after - rss_before
+
             run.result = result
             run.state = GraphState.DONE
+
+            elapsed_ms = (time.perf_counter_ns() - run.started_ns) / 1_000_000
+            _emit("complete", f"{run.run_id} done ({elapsed_ms:.0f}ms)", {
+                "type": "lifecycle", "event": "complete", "run_id": run.run_id,
+                "elapsed_ms": elapsed_ms,
+            })
+
             return result
         except asyncio.CancelledError:
             run.state = GraphState.CANCELLED
@@ -183,13 +245,23 @@ class GraphRegistry:
             if hasattr(e, "trace"):
                 from bae.result import GraphResult
                 run.result = GraphResult(node=None, trace=e.trace)
+            _emit("fail", f"{run.run_id} failed: {run.error}", {
+                "type": "lifecycle", "event": "fail", "run_id": run.run_id,
+                "error": run.error,
+            })
             raise
         finally:
             run.ended_ns = time.perf_counter_ns()
             self._archive(run)
 
     def submit_coro(
-        self, coro, tm: TaskManager, *, name: str = "graph", notify=None,
+        self,
+        coro,
+        tm: TaskManager,
+        *,
+        name: str = "graph",
+        notify=None,
+        policy: OutputPolicy = OutputPolicy.NORMAL,
     ) -> GraphRun:
         """Submit a pre-built coroutine as a managed graph run.
 
@@ -201,20 +273,52 @@ class GraphRegistry:
         self._next_id += 1
         run = GraphRun(run_id=run_id, graph=None)
         self._runs[run_id] = run
-        wrapped = self._wrap_coro(run, coro, notify=notify)
+        wrapped = self._wrap_coro(run, coro, notify=notify, policy=policy)
         tm.submit(wrapped, name=f"graph:{run_id}:{name}", mode="graph")
         return run
 
-    async def _wrap_coro(self, run: GraphRun, coro, *, notify=None):
+    async def _wrap_coro(
+        self,
+        run: GraphRun,
+        coro,
+        *,
+        notify=None,
+        policy: OutputPolicy = OutputPolicy.NORMAL,
+    ):
         """Wrap a coroutine with lifecycle tracking and gate hook injection."""
-        token = _engine_dep_cache.set(
-            {GATE_HOOK_KEY: self._make_gate_hook(run, notify)}
-        )
+        run.policy = policy
+
+        def _emit(event, content, meta=None):
+            if policy.should_emit(event) and notify:
+                notify(content, meta)
+
+        def _dep_timing_hook(name, duration_ms):
+            run.dep_timings.append((name, duration_ms))
+
+        token = _engine_dep_cache.set({
+            GATE_HOOK_KEY: self._make_gate_hook(run, notify),
+            DEP_TIMING_KEY: _dep_timing_hook,
+        })
         try:
+            _emit("start", f"{run.run_id} started", {
+                "type": "lifecycle", "event": "start", "run_id": run.run_id,
+            })
+
+            rss_before = _get_rss_bytes()
             result = await coro
+            rss_after = _get_rss_bytes()
+            run.rss_delta_bytes = rss_after - rss_before
+
             run.state = GraphState.DONE
             if hasattr(result, "trace"):
                 run.result = result
+
+            elapsed_ms = (time.perf_counter_ns() - run.started_ns) / 1_000_000
+            _emit("complete", f"{run.run_id} done ({elapsed_ms:.0f}ms)", {
+                "type": "lifecycle", "event": "complete", "run_id": run.run_id,
+                "elapsed_ms": elapsed_ms,
+            })
+
             return result
         except asyncio.CancelledError:
             run.state = GraphState.CANCELLED
@@ -226,6 +330,10 @@ class GraphRegistry:
             if hasattr(e, "trace"):
                 from bae.result import GraphResult
                 run.result = GraphResult(node=None, trace=e.trace)
+            _emit("fail", f"{run.run_id} failed: {run.error}", {
+                "type": "lifecycle", "event": "fail", "run_id": run.run_id,
+                "error": run.error,
+            })
             raise
         finally:
             _engine_dep_cache.reset(token)

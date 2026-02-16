@@ -11,6 +11,7 @@ import asyncio
 import contextvars
 import graphlib
 import inspect
+import time
 from typing import Annotated, get_args, get_origin, get_type_hints
 
 from bae.exceptions import RecallError
@@ -18,6 +19,7 @@ from bae.markers import Dep, Gate, Recall
 
 LM_KEY = object()  # sentinel for LM in dep cache
 GATE_HOOK_KEY = object()  # sentinel for gate hook callback in dep cache
+DEP_TIMING_KEY = object()  # sentinel for dep timing callback in dep cache
 
 # Engine sets this so arun picks up the gate hook even from pre-built coroutines
 _engine_dep_cache: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
@@ -475,8 +477,18 @@ async def resolve_fields(node_cls: type, trace: list, dep_cache: dict) -> dict[s
             to_resolve = [fn for fn in ready if fn not in dep_cache]
 
             if to_resolve:
+                timing_hook = dep_cache.get(DEP_TIMING_KEY)
+
+                async def _timed(fn):
+                    t0 = time.perf_counter_ns()
+                    val = await _resolve_one(fn, dep_cache, trace)
+                    if timing_hook is not None:
+                        dur_ms = (time.perf_counter_ns() - t0) / 1_000_000
+                        timing_hook(_callable_name(fn), dur_ms)
+                    return val
+
                 results = await asyncio.gather(
-                    *[_resolve_one(fn, dep_cache, trace) for fn in to_resolve]
+                    *[_timed(fn) for fn in to_resolve]
                 )
                 for fn, result in zip(to_resolve, results):
                     dep_cache[fn] = result
