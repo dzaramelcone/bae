@@ -73,7 +73,7 @@
 - [x] **Phase 26: Engine Foundation** - Registry, engine wrapper, timing, TaskManager integration (2026-02-15)
 - [x] **Phase 27: Graph Mode** - Command interface, flat params, ANSI rendering, trace on failure (2026-02-15)
 - [x] **Phase 28: Input Gates** - Future-based human-in-the-loop suspension with routing UX (2026-02-15)
-- [ ] **Phase 29: Observability** - Channel integration, debug views, metrics, scaling validation
+- [x] **Phase 29: Observability** - Channel integration, debug views, metrics, scaling validation (2026-02-15)
 
 ## Phase Details
 
@@ -145,9 +145,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 29-01-PLAN.md -- Engine instrumentation: OutputPolicy, dep timing hook, RSS measurement, event emission
-- [ ] 29-02-PLAN.md -- Display + commands: view rendering, debug command, enhanced inspect, output policy flags
-- [ ] 29-03-PLAN.md -- Stress test + verification: 10+ concurrent graphs, store persistence, cross-session history
+- [x] 29-01-PLAN.md -- Engine instrumentation: OutputPolicy, dep timing hook, RSS measurement, event emission
+- [x] 29-02-PLAN.md -- Display + commands: view rendering, debug command, enhanced inspect, output policy flags
+- [x] 29-03-PLAN.md -- Stress test + verification: 10+ concurrent graphs, store persistence, cross-session history
 
 ## Progress
 
@@ -181,6 +181,6 @@ Plans:
 | 26. Engine Foundation | v6.0 | 4/4 | Complete | 2026-02-15 |
 | 27. Graph Mode | v6.0 | 6/6 | Complete | 2026-02-15 |
 | 28. Input Gates | v6.0 | 3/3 | Complete | 2026-02-15 |
-| 29. Observability | v6.0 | 0/3 | Planned | - |
+| 29. Observability | v6.0 | 3/3 | Complete | 2026-02-15 |
 
 ---
