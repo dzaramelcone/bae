@@ -83,6 +83,7 @@
 - [x] **Phase 31: Resource Protocol + Navigation** - Resourcespace protocol, registry, navigation state, tool dispatch routing, output pruning (completed 2026-02-16)
 - [x] **Phase 32: Source Resourcespace** - Project-scoped file operations proving the resourcespace pattern end-to-end (completed 2026-02-16)
 - [x] **Phase 32.1: Resourcespace Package Structure** - Restructure into bae/repl/spaces/ with per-space packages (INSERTED) (completed 2026-02-16)
+- [x] **Phase 32.1.1: Subresource Packages + Shim Removal** - Break subresources into own packages, remove shims, enforce structure (INSERTED) (completed 2026-02-16)
 - [ ] **Phase 32.2: UserView Tool Call Stripping** - Strip tool calls from AI output, show AI-native tool tags with docstring summaries (INSERTED)
 - [ ] **Phase 33: Task Resourcespace** - Persistent task CRUD with FTS search and cross-session persistence
 - [ ] **Phase 34: Memory Resourcespace** - Session history as navigable, searchable, taggable resources
@@ -142,13 +143,13 @@ Plans:
 
 **Goal:** Break subresources into own packages, remove all backward-compat shims, update all callsites, enforce package structure in source resourcespace operations
 **Depends on:** Phase 32.1
-**Plans:** 4 plans
+**Plans:** 4/4 plans complete
 
 Plans:
-- [ ] 32.1.1-01-PLAN.md — Relocate protocol to spaces/view.py, update callsites, delete shims
-- [ ] 32.1.1-02-PLAN.md — Extract subresource classes into own packages with view/service split
-- [ ] 32.1.1-03-PLAN.md — Split home/ into view.py + service.py convention
-- [ ] 32.1.1-04-PLAN.md — Structure enforcement: role-grouped read, tstring-templated write, meta guidance
+- [x] 32.1.1-01-PLAN.md — Relocate protocol to spaces/view.py, update callsites, delete shims
+- [x] 32.1.1-02-PLAN.md — Extract subresource classes into own packages with view/service split
+- [x] 32.1.1-03-PLAN.md — Split home/ into view.py + service.py convention
+- [x] 32.1.1-04-PLAN.md — Structure enforcement: role-grouped read, tstring-templated write, meta guidance
 
 ### Phase 32.2: UserView Tool Call Stripping (INSERTED)
 
@@ -256,6 +257,7 @@ Phases execute in numeric order: 31 -> 32 -> 33 -> 34 -> 35 -> 36
 | 31. Resource Protocol + Navigation | v7.0 | Complete    | 2026-02-16 | - |
 | 32. Source Resourcespace | v7.0 | Complete    | 2026-02-16 | - |
 | 32.1. Resourcespace Package Structure | v7.0 | Complete    | 2026-02-16 | - |
+| 32.1.1. Subresource Packages + Shim Removal | v7.0 | 4/4 | Complete | 2026-02-16 |
 | 33. Task Resourcespace | v7.0 | 0/TBD | Not started | - |
 | 34. Memory Resourcespace | v7.0 | 0/TBD | Not started | - |
 | 35. Search Resourcespace | v7.0 | 0/TBD | Not started | - |
