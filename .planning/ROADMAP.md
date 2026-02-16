@@ -142,11 +142,12 @@ Plans:
   3. Debug view shows node timings, dep durations, LM call times, and validation errors for any graph run
   4. 10+ concurrent graphs run without event loop starvation, channel flooding, or memory leaks
   5. Graph events persist to SessionStore so Dzara can review past runs across sessions
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 29-01: TBD
-- [ ] 29-02: TBD
+- [ ] 29-01-PLAN.md -- Engine instrumentation: OutputPolicy, dep timing hook, RSS measurement, event emission
+- [ ] 29-02-PLAN.md -- Display + commands: view rendering, debug command, enhanced inspect, output policy flags
+- [ ] 29-03-PLAN.md -- Stress test + verification: 10+ concurrent graphs, store persistence, cross-session history
 
 ## Progress
 
@@ -180,6 +181,6 @@ Plans:
 | 26. Engine Foundation | v6.0 | 4/4 | Complete | 2026-02-15 |
 | 27. Graph Mode | v6.0 | 6/6 | Complete | 2026-02-15 |
 | 28. Input Gates | v6.0 | 3/3 | Complete | 2026-02-15 |
-| 29. Observability | v6.0 | 0/TBD | Not started | - |
+| 29. Observability | v6.0 | 0/3 | Planned | - |
 
 ---
