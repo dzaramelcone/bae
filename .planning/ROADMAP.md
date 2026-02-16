@@ -71,7 +71,7 @@
 **Milestone Goal:** Run bae graphs async inside cortex with concurrent execution, human-in-the-loop input gates, and full observability through the view system.
 
 - [x] **Phase 26: Engine Foundation** - Registry, engine wrapper, timing, TaskManager integration (2026-02-15)
-- [ ] **Phase 27: Graph Mode** - Command interface for graph management
+- [x] **Phase 27: Graph Mode** - Command interface for graph management (2026-02-15)
 - [ ] **Phase 28: Input Gates** - Future-based human-in-the-loop suspension with routing UX
 - [ ] **Phase 29: Observability** - Channel integration, debug views, metrics, scaling validation
 
@@ -108,8 +108,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 27-01-PLAN.md -- graph() factory function, async callable API, engine submit_coro + result storage
-- [ ] 27-02-PLAN.md -- GRAPH mode command dispatcher (run/list/cancel/inspect/trace)
+- [x] 27-01-PLAN.md -- graph() factory function, async callable API, engine submit_coro + result storage
+- [x] 27-02-PLAN.md -- GRAPH mode command dispatcher (run/list/cancel/inspect/trace)
 
 ### Phase 28: Input Gates
 **Goal**: Graphs can pause for human input and Dzara can respond from any mode
@@ -173,7 +173,7 @@ Plans:
 | 24. Execution Display | v5.0 | 1/1 | Complete | 2026-02-14 |
 | 25. Views Completion | v5.0 | 3/3 | Complete | 2026-02-14 |
 | 26. Engine Foundation | v6.0 | 4/4 | Complete | 2026-02-15 |
-| 27. Graph Mode | v6.0 | 0/2 | Not started | - |
+| 27. Graph Mode | v6.0 | 2/2 | Complete | 2026-02-15 |
 | 28. Input Gates | v6.0 | 0/TBD | Not started | - |
 | 29. Observability | v6.0 | 0/TBD | Not started | - |
 
