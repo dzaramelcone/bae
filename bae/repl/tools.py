@@ -10,7 +10,7 @@ from __future__ import annotations
 import inspect
 import re
 
-from pydantic import ValidationError, create_model
+from pydantic import ConfigDict, ValidationError, create_model
 
 from bae.repl.spaces import ResourceError, ResourceRegistry, format_unsupported_error
 
@@ -37,8 +37,13 @@ def _build_validator(method) -> type | None:
         return None
 
     fields = {}
+    has_var_keyword = False
     for pname, param in sig.parameters.items():
         if pname == "self":
+            continue
+        if param.kind in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL):
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                has_var_keyword = True
             continue
         ann = param.annotation if param.annotation is not inspect.Parameter.empty else str
         if param.default is not inspect.Parameter.empty:
@@ -50,7 +55,14 @@ def _build_validator(method) -> type | None:
         _validator_cache[mid] = None
         return None
 
-    model = create_model(f"{method.__name__}_Params", **fields)
+    if has_var_keyword:
+        model = create_model(
+            f"{method.__name__}_Params",
+            __config__=ConfigDict(extra="allow"),
+            **fields,
+        )
+    else:
+        model = create_model(f"{method.__name__}_Params", **fields)
     _validator_cache[mid] = model
     return model
 
@@ -63,7 +75,10 @@ def _validate_tool_params(tool: str, method, arg: str, **kwargs) -> dict | str:
 
     # Build the param dict from positional arg + kwargs
     sig = inspect.signature(method)
-    param_names = [p for p in sig.parameters if p != "self"]
+    param_names = [
+        p for p, v in sig.parameters.items()
+        if p != "self" and v.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
+    ]
     params = {}
     if param_names:
         params[param_names[0]] = arg
@@ -131,7 +146,10 @@ class ToolRouter:
 
         # Call with validated params
         try:
-            param_names = [p for p in inspect.signature(method).parameters if p != "self"]
+            param_names = [
+                p for p, v in inspect.signature(method).parameters.items()
+                if p != "self" and v.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
+            ]
             if param_names:
                 first_key = param_names[0]
                 first_val = validated.pop(first_key)

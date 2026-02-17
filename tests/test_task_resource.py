@@ -254,6 +254,26 @@ class TestUpdate:
         with pytest.raises(ResourceError, match="final"):
             rs.update(task_id, status="open")
 
+    def test_update_positional_id_keyword_status(self, rs):
+        """Regression: update('id', status='in_progress') must work."""
+        rs.add("Positional test", MAJOR_BODY, priority="1.0.0")
+        tasks = rs._store.list_active()
+        task_id = tasks[0]["id"]
+        result = rs.update(task_id, status="in_progress")
+        assert "Updated" in result
+
+    def test_dispatch_update_with_kwargs(self, registry_ns):
+        """Regression: ToolRouter dispatches update with kwargs correctly."""
+        reg, ns, rs = registry_ns
+        reg.navigate("tasks")
+        rs.add("Dispatch test", MAJOR_BODY, priority="1.0.0")
+        tasks = rs._store.list_active()
+        task_id = tasks[0]["id"]
+        from bae.repl.tools import ToolRouter
+        router = ToolRouter(reg)
+        result = router.dispatch("update", task_id, status="in_progress")
+        assert "Updated" in result
+
 
 # ---------------------------------------------------------------------------
 # Tool: search (TSK-06)
