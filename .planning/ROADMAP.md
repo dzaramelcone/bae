@@ -173,11 +173,12 @@ Plans:
   3. Agent can search tasks via FTS with `.search()`
   4. Tasks persist across cortex sessions (SQLite-backed)
   5. Homespace entry shows outstanding task count
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] 33-01-PLAN.md — TaskStore data layer (SQLite schema, CRUD, FTS5) + custom tool cleanup
-- [ ] 33-02-PLAN.md — TaskResourcespace service, view, shell registration, homespace count
+- [x] 33-01-PLAN.md — TaskStore data layer (SQLite schema, CRUD, FTS5) + custom tool cleanup
+- [x] 33-02-PLAN.md — TaskResourcespace service, view, shell registration, homespace count
+- [ ] 33-03-PLAN.md — Gap closure: base36 task IDs, show IDs in listing, fix kwargs validator
 
 ### Phase 34: Memory Resourcespace
 **Goal**: Agent can explore, search, and tag session history as navigable resources
@@ -261,7 +262,7 @@ Phases execute in numeric order: 31 -> 32 -> 33 -> 34 -> 35 -> 36
 | 32. Source Resourcespace | v7.0 | Complete    | 2026-02-16 | - |
 | 32.1. Resourcespace Package Structure | v7.0 | Complete    | 2026-02-16 | - |
 | 32.1.1. Subresource Packages + Shim Removal | v7.0 | 4/4 | Complete | 2026-02-16 |
-| 33. Task Resourcespace | v7.0 | Complete    | 2026-02-16 | - |
+| 33. Task Resourcespace | v7.0 | 2/3    | Gap closure | - |
 | 34. Memory Resourcespace | v7.0 | 0/TBD | Not started | - |
 | 35. Search Resourcespace | v7.0 | 0/TBD | Not started | - |
 | 36. Discovery + Integration | v7.0 | 0/TBD | Not started | - |
