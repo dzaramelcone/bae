@@ -261,11 +261,9 @@ class ResourceRegistry:
             self._namespace.update(self._home_tools)
 
     def _build_orientation(self) -> str:
-        """Build procedural orientation string for AI system prompt."""
-        lines = ["home"]
-        lines.append("")
+        """Build orientation string for AI context."""
+        rooms_lines = []
         if self._spaces:
-            lines.append("Rooms:")
             for name, space in sorted(self._spaces.items()):
                 desc = space.description
                 if hasattr(space, "status_counts"):
@@ -276,14 +274,64 @@ class ResourceRegistry:
                     status = f"open: {counts.get('open', 0)}  in_progress: {counts.get('in_progress', 0)}  blocked: {counts.get('blocked', 0)}"
                     parts.append(status)
                     desc = " | ".join(parts)
-                lines.append(f"  {name}() -- {desc}")
-        table = _functions_table(self._home_tools)
-        if table:
-            lines.append("")
-            lines.extend(table)
-        lines.append("")
-        lines.append("Advanced: use arbitrary Python in conjunction with tool calls.")
-        return "\n".join(lines)
+                rooms_lines.append(f"  {name}() -- {desc}")
+        rooms = "\n".join(rooms_lines)
+        tools = "\n".join(_functions_table(self._home_tools))
+
+        return f"""home
+
+Rooms:
+{rooms}
+
+{tools}
+
+Rooms are navigable domains. Call one to enter it. Each room has tools.
+
+<example>
+User: look at the bae.repl.ai module
+AI:
+<run>
+source()
+</run>
+<run>
+read("bae.repl.ai")
+</run>
+</example>
+
+<example>
+User: find where we handle navigation
+AI:
+<run>
+source()
+</run>
+<run>
+grep("navigate", "bae.repl")
+</run>
+</example>
+
+<example>
+User: add a task to fix the login bug
+AI:
+<run>
+tasks()
+</run>
+<run>
+write("Fix login bug")
+</run>
+</example>
+
+<example>
+User: what tasks are open?
+AI:
+<run>
+tasks()
+</run>
+<run>
+read()
+</run>
+</example>
+
+Advanced: use arbitrary Python in conjunction with tool calls."""
 
     def _root_nav(self) -> str:
         """Render nav tree from root using Rich Tree."""

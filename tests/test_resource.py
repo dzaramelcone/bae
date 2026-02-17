@@ -48,7 +48,16 @@ class StubSpace:
         return self._tools
 
     def tools(self) -> dict:
-        return self._tool_callables
+        if self._tool_callables:
+            return self._tool_callables
+        result = {}
+        for name in self._tools:
+            method = getattr(self, name, None)
+            if method:
+                result[name] = method
+            else:
+                result[name] = lambda target="", _n=name: f"{_n} result"
+        return result
 
     def children(self) -> dict[str, Room]:
         return self._children
@@ -497,7 +506,7 @@ class TestToolInjection:
         result = reg.home()
         assert "Rooms:" in result
         assert "source()" in result
-        assert "Tools:" in result
+        assert "| Tool |" in result
 
     def test_back_to_root_returns_orientation(self):
         """Navigate then back() to root returns orientation content."""
@@ -536,8 +545,8 @@ class TestToolInjection:
         assert "read" in ns
         assert ns["read"] is not space.read  # wrapper, not raw method
 
-    def test_wrapper_validates_bad_params(self):
-        """Wrapped callable raises ResourceError on type mismatch."""
+    def test_wrapper_coerces_int_to_str(self):
+        """Wrapped callable coerces int args to str for REPL convenience."""
         ns = {}
         reg = ResourceRegistry(namespace=ns)
 
@@ -550,8 +559,8 @@ class TestToolInjection:
         space._tool_callables = {"read": space.read}
         reg.register(space)
         reg.navigate("source")
-        with pytest.raises(ResourceError, match="parameter error"):
-            ns["read"](12345)
+        result = ns["read"](12345)
+        assert result == "read: 12345"
 
     def test_wrapper_passes_valid_params(self):
         """Wrapped callable passes through valid params to underlying method."""
@@ -580,44 +589,43 @@ class TestToolSignature:
         def read(target: str = "") -> str:
             """Read something."""
             return ""
-        assert _tool_signature("read", read) == "<Read:target:str>"
+        assert _tool_signature("read", read) == "read(target: str='')"
 
     def test_multiple_params(self):
         def grep(pattern: str = "", path: str = "") -> str:
             """Search."""
             return ""
-        assert _tool_signature("grep", grep) == "<Grep:pattern:str, path:str>"
+        assert _tool_signature("grep", grep) == "grep(pattern: str='', path: str='')"
 
     def test_no_params(self):
         def nav() -> str:
             return ""
-        assert _tool_signature("nav", nav) == "<Nav>"
+        assert _tool_signature("nav", nav) == "nav()"
 
     def test_unannotated_params(self):
         def read(target="") -> str:
             return ""
-        assert _tool_signature("read", read) == "<Read:target>"
+        assert _tool_signature("read", read) == "read(target='')"
 
     def test_write_body_content(self):
         def write(target: str, content: str = "") -> str:
             """Create a module."""
             return ""
         sig = _tool_signature("write", write)
-        assert sig == "<Write:target:str>content:str</Write>"
+        assert sig == "write(target: str, content: str='')"
 
     def test_self_param_skipped(self):
         class Foo:
             def read(self, target: str = "") -> str:
                 return ""
-        assert _tool_signature("read", Foo().read) == "<Read:target:str>"
+        assert _tool_signature("read", Foo().read) == "read(target: str='')"
 
     def test_bad_signature_graceful(self):
-        """Callable without inspectable signature returns plain tag."""
-        # Object with __call__ that raises on inspect.signature
+        """Callable without inspectable signature returns plain call."""
         class Opaque:
             __call__ = None  # type: ignore[assignment]
         sig = _tool_signature("opaque", Opaque())
-        assert sig == "<Opaque>"
+        assert sig == "opaque()"
 
 
 class TestToolDocstring:
@@ -643,9 +651,9 @@ class TestToolDocstring:
 
 
 class TestEntryDisplaySignatures:
-    """Entry display renders typed XML signatures and docstrings."""
+    """Entry display renders Python call signatures and docstrings."""
 
-    def test_entry_shows_signature_header(self):
+    def test_entry_shows_table_header(self):
         reg = ResourceRegistry()
         def read(target: str = "") -> str:
             """Read stuff."""
@@ -653,9 +661,9 @@ class TestEntryDisplaySignatures:
         space = StubSpace("source", tool_callables={"read": read})
         reg.register(space)
         result = reg.navigate("source")
-        assert "| Tool | Signature | Description |" in result
+        assert "| Tool | Description |" in result
 
-    def test_entry_shows_typed_signature(self):
+    def test_entry_shows_python_signature(self):
         reg = ResourceRegistry()
         def read(target: str = "") -> str:
             """Read stuff."""
@@ -663,10 +671,10 @@ class TestEntryDisplaySignatures:
         space = StubSpace("source", tool_callables={"read": read})
         reg.register(space)
         result = reg.navigate("source")
-        assert "<Read:target:str>" in result
+        assert "read(target: str='')" in result
         assert "Read stuff." in result
 
-    def test_entry_write_body_content(self):
+    def test_entry_write_signature(self):
         reg = ResourceRegistry()
         def write(target: str, content: str = "") -> str:
             """Create a module."""
@@ -674,13 +682,13 @@ class TestEntryDisplaySignatures:
         space = StubSpace("source", tools={"write"}, tool_callables={"write": write})
         reg.register(space)
         result = reg.navigate("source")
-        assert "<Write:target:str>content:str</Write>" in result
+        assert "write(target: str, content: str='')" in result
 
-    def test_entry_missing_callable_fallback(self):
-        """Tool in supported_tools but not in tools() map gets plain tag."""
+    def test_entry_auto_generated_tools(self):
+        """Tools auto-generated from supported_tools set appear in table."""
         reg = ResourceRegistry()
-        space = StubSpace("source", tools={"read", "glob"}, tool_callables={})
+        space = StubSpace("source", tools={"read", "glob"})
         reg.register(space)
         result = reg.navigate("source")
-        assert "<Read>" in result
-        assert "<Glob>" in result
+        assert "read" in result
+        assert "glob" in result

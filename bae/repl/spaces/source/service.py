@@ -284,7 +284,7 @@ class SourceRoom:
 
         if path:
             filepath = _module_to_path(self._root, path)
-            if filepath.is_dir():
+            if filepath.is_dir() or filepath.name == "__init__.py":
                 # Package: search all modules in it
                 pkg_prefix = path + "."
                 all_mods = _discover_all_modules(self._root)
