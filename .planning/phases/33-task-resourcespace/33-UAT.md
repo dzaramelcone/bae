@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: resolved
 phase: 33-task-resourcespace
 source: 33-01-SUMMARY.md, 33-02-SUMMARY.md
 started: 2026-02-16T23:45:00Z
-updated: 2026-02-16T23:45:00Z
+updated: 2026-02-17T00:00:00Z
 ---
 
 ## Current Test
@@ -73,7 +73,7 @@ skipped: 0
 ## Gaps
 
 - truth: "Task IDs should be short, token-friendly identifiers"
-  status: failed
+  status: resolved
   reason: "User reported: uuid is too many tokens - ideally just do like base 36 encoded ints for them so theyre short, url friendly, token friendly and database friendly"
   severity: major
   test: 2
@@ -87,7 +87,7 @@ skipped: 0
     - "Update all FK references from TEXT to INTEGER"
   debug_session: ".planning/debug/task-id-uuid7-to-base36.md"
 - truth: "update(task_id, status='in_progress') works with positional task_id and keyword fields"
-  status: failed
+  status: resolved
   reason: "User reported: update('id', 'in_progress') fails with 'Cannot update field kwargs'; update('id', status='in_progress') fails with pydantic validation 'Field required'; only update(task_id='id', status='in_progress') works"
   severity: major
   test: 5
@@ -102,7 +102,7 @@ skipped: 0
     - "Set pydantic model extra='allow' when VAR_KEYWORD param exists"
   debug_session: ".planning/debug/update-kwargs-pydantic.md"
 - truth: "Task listing shows IDs so users can reference tasks in done(), update(), read(id)"
-  status: failed
+  status: resolved
   reason: "User reported: read() listing doesn't show task IDs — no way to get the ID needed for done(), update(), read(id). format_task_row only shows status | priority | title | tags. Fundamental UX blocker."
   severity: blocker
   test: 6
