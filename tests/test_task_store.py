@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from bae.repl.spaces.tasks.models import TaskStore, from_base36
+from bae.repl.spaces.tasks.models import TaskStore
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +290,7 @@ class TestAudit:
         task = store.create("audit me", MAJOR_BODY, priority=(1, 0, 0))
         store.update(task["id"], status="in_progress")
         audits = store._conn.execute(
-            "SELECT * FROM task_audit WHERE task_id = ?", (from_base36(task["id"]),)
+            "SELECT * FROM task_audit WHERE task_id = ?", (int(task["id"]),)
         ).fetchall()
         fields = [a["field"] for a in audits]
         assert "status" in fields
@@ -300,7 +300,7 @@ class TestAudit:
         store.update(task["id"], title="new title")
         audits = store._conn.execute(
             "SELECT * FROM task_audit WHERE task_id = ? AND field = 'title'",
-            (from_base36(task["id"]),),
+            (int(task["id"]),),
         ).fetchall()
         assert len(audits) == 1
         assert audits[0]["old_value"] == "audit field"
@@ -332,7 +332,7 @@ class TestCounts:
         old_time = time.time() - (15 * 86400)
         store._conn.execute(
             "UPDATE tasks SET updated_at = ? WHERE id = ?",
-            (old_time, from_base36(task["id"])),
+            (old_time, int(task["id"])),
         )
         store._conn.commit()
         stale = store.stale_tasks(days=14)

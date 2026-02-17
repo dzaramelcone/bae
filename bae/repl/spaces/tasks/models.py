@@ -7,32 +7,6 @@ import sqlite3
 import time
 from pathlib import Path
 
-_B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
-
-
-def to_base36(n: int) -> str:
-    """Encode a non-negative integer to a base36 string."""
-    if n == 0:
-        return "0"
-    digits = []
-    while n:
-        digits.append(_B36[n % 36])
-        n //= 36
-    return "".join(reversed(digits))
-
-
-def from_base36(s: str) -> int:
-    """Decode a base36 string to an integer. Raises ValueError on invalid input."""
-    if not s:
-        raise ValueError("Empty base36 string")
-    n = 0
-    for ch in s:
-        idx = _B36.find(ch)
-        if idx < 0:
-            raise ValueError(f"Invalid base36 character: {ch!r}")
-        n = n * 36 + idx
-    return n
-
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -161,7 +135,7 @@ class TaskStore:
                     raise ValueError(f"No major task found with priority_major={major}")
                 int_parent = row["id"]
             else:
-                int_parent = from_base36(parent_id)
+                int_parent = int(parent_id)
                 parent = self._conn.execute("SELECT id FROM tasks WHERE id = ?", (int_parent,)).fetchone()
                 if parent is None:
                     raise ValueError(f"Parent task '{parent_id}' not found")
@@ -175,12 +149,12 @@ class TaskStore:
         )
         self._conn.commit()
         row_id = self._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        return self.get(to_base36(row_id))
+        return self.get(str(row_id))
 
     def get(self, task_id: str) -> dict:
         """Fetch a task by base36 id with tags. Raises ValueError if not found."""
         try:
-            int_id = from_base36(task_id)
+            int_id = int(task_id)
         except ValueError:
             raise ValueError(f"Task '{task_id}' not found (invalid ID)")
         row = self._conn.execute("SELECT * FROM tasks WHERE id = ?", (int_id,)).fetchone()
@@ -246,7 +220,7 @@ class TaskStore:
     def update(self, task_id: str, changed_by: str = "agent", **fields) -> dict:
         """Update allowed fields, log each change in audit."""
         task = self.get(task_id)
-        int_id = from_base36(task_id)
+        int_id = int(task_id)
 
         # Handle tags separately
         tags = fields.pop("tags", None)
@@ -295,7 +269,7 @@ class TaskStore:
     def mark_done(self, task_id: str, changed_by: str = "agent") -> dict:
         """Transition task to done. Checks dependencies and completion sections."""
         task = self.get(task_id)
-        int_id = from_base36(task_id)
+        int_id = int(task_id)
 
         if task["status"] in _FINAL_STATUSES:
             raise ValueError(f"Task is already '{task['status']}'")
@@ -308,7 +282,7 @@ class TaskStore:
             (int_id,),
         ).fetchall()
         if blockers:
-            ids = [to_base36(row["blocked_by"]) for row in blockers]
+            ids = [str(row["blocked_by"]) for row in blockers]
             raise ValueError(f"Task blocked by unfinished tasks: {', '.join(ids)}")
 
         # Major task completion validation (0.0.0 is unclassified, not major)
@@ -335,7 +309,7 @@ class TaskStore:
             subtasks = self._conn.execute(
                 "SELECT id, status FROM tasks WHERE parent_id = ?", (int_id,)
             ).fetchall()
-            undone = [to_base36(r["id"]) for r in subtasks if r["status"] not in _FINAL_STATUSES]
+            undone = [str(r["id"]) for r in subtasks if r["status"] not in _FINAL_STATUSES]
             if undone:
                 result["_subtasks_undone"] = undone
 
@@ -347,7 +321,7 @@ class TaskStore:
     def cancel(self, task_id: str, changed_by: str = "agent") -> dict:
         """Transition task to cancelled."""
         task = self.get(task_id)
-        int_id = from_base36(task_id)
+        int_id = int(task_id)
         if task["status"] in _FINAL_STATUSES:
             raise ValueError(f"Task is already '{task['status']}'")
         self._audit(int_id, "status", task["status"], "cancelled", changed_by)
@@ -361,7 +335,7 @@ class TaskStore:
     def add_tag(self, task_id: str, tag: str) -> str:
         """Add a tag to a task. Returns the tag name."""
         self.get(task_id)  # validate exists
-        int_id = from_base36(task_id)
+        int_id = int(task_id)
         self._conn.execute(
             "INSERT OR IGNORE INTO task_tags(task_id, tag) VALUES (?, ?)",
             (int_id, tag),
@@ -372,7 +346,7 @@ class TaskStore:
     def remove_tag(self, task_id: str, tag: str) -> str:
         """Remove a tag from a task. Returns the tag name."""
         self.get(task_id)  # validate exists
-        int_id = from_base36(task_id)
+        int_id = int(task_id)
         self._conn.execute(
             "DELETE FROM task_tags WHERE task_id = ? AND tag = ?",
             (int_id, tag),
@@ -389,8 +363,8 @@ class TaskStore:
         """Add dependency with cycle detection."""
         self.get(task_id)
         self.get(blocked_by_id)
-        int_task = from_base36(task_id)
-        int_blocked = from_base36(blocked_by_id)
+        int_task = int(task_id)
+        int_blocked = int(blocked_by_id)
 
         # Cycle detection: DFS from blocked_by_id looking for task_id
         if self._has_path(blocked_by_id, task_id):
@@ -416,8 +390,8 @@ class TaskStore:
 
     def remove_dependency(self, task_id: str, blocked_by_id: str) -> None:
         """Remove dependency. If no remaining blockers, transition from blocked to open."""
-        int_task = from_base36(task_id)
-        int_blocked = from_base36(blocked_by_id)
+        int_task = int(task_id)
+        int_blocked = int(blocked_by_id)
         self._conn.execute(
             "DELETE FROM task_dependencies WHERE task_id = ? AND blocked_by = ?",
             (int_task, int_blocked),
@@ -498,9 +472,9 @@ class TaskStore:
         """Convert a sqlite3.Row to dict with base36 id and tags list attached."""
         d = dict(row)
         int_id = d["id"]
-        d["id"] = to_base36(int_id)
+        d["id"] = str(int_id)
         if d.get("parent_id") is not None:
-            d["parent_id"] = to_base36(d["parent_id"])
+            d["parent_id"] = str(d["parent_id"])
         tags_rows = self._conn.execute(
             "SELECT tag FROM task_tags WHERE task_id = ?", (int_id,)
         ).fetchall()
@@ -509,8 +483,8 @@ class TaskStore:
 
     def _has_path(self, from_id: str, to_id: str) -> bool:
         """DFS cycle detection using integer IDs internally."""
-        int_from = from_base36(from_id)
-        int_to = from_base36(to_id)
+        int_from = int(from_id)
+        int_to = int(to_id)
         visited: set[int] = set()
         stack = [int_from]
         while stack:
