@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 33 of 36 (Task Resourcespace)
-Plan: 2 of 2 in current phase
+Plan: 3 of 3 in current phase
 Status: Phase Complete
-Last activity: 2026-02-16 -- Completed 33-02 (TaskResourcespace service, view, shell registration, tests)
+Last activity: 2026-02-17 -- Completed 33-03 (Gap closure: base36 IDs, listing IDs, kwargs validator)
 
 Progress: [██████████████████████████████████████████████████] 100% of 33
 
@@ -34,6 +34,7 @@ Progress: [███████████████████████
 See PROJECT.md Key Decisions table for full history.
 
 Recent:
+- v7.0 33-03: INTEGER PK AUTOINCREMENT aliases SQLite rowid (FTS5 still works); base36 conversion at boundary; pydantic ConfigDict(extra='allow') for VAR_KEYWORD
 - v7.0 33-02: 0.0.0 priority is unclassified (no major validation); duck-typed hasattr for outstanding_count in homespace
 - v7.0 33-01: FTS5 content_rowid uses implicit SQLite rowid for TEXT PK; _prev_custom set tracks custom tool names for cleanup
 - v7.0 32.2-04: Validation wrappers raise ResourceError; tool detection uses regex on stripped code, not AST
@@ -80,7 +81,7 @@ Recent:
 - Source write: takes two args (code + test) — both AST-parsed, unit test run immediately, if passes → save + commit + hot reload; full suite runs async in bg, alarm on failure → auto-dispatch subagent to research/diagnose/fix
 - Source edit: same but unit test optional, allowed to fail
 - Source write/edit: coverage check on the unit test if not too heavy/slow
-- Functions table: sort order should match system tools display order; tags should use system tool names (R/W/E/G/Grep)
+- Functions table: sort order should match system tools display order; tags should use system tool names (R/W/E/G/Grep); signatures should be plain Python (e.g. `add(title, body="", priority="0.0.0")`) not XML `<Add:title:str>`
 - Resource navigation: track which resources agent session has entered, show condensed re-entry info ("left a → reentered b") instead of full entry display on revisit
 - Tool discoverability: entry banner should clarify tools are top-level functions (not methods on resource handle); `source.read("bae")` feels natural but fails — consider making ResourceHandle forward tool calls
 - ns() should show tool functions (read, glob, grep, etc.) alongside namespace objects (engine, toolbar)
@@ -90,7 +91,7 @@ Recent:
 - Error type in tool summary: show specific exception class name (ResourceError) not generic "Error" — use __class__.__name__
 - Diamond bullet brightness: cosmetic — consider brighter color for tool summaries
 - Navigation output verbosity: reduce re-entry display when revisiting resources
-- AI `<tool_call>` JSON syntax: AI sometimes emits `{"name": "Read", "arguments": {...}}` instead of `<run>` blocks — not handled
+- AI `<tool_call>` JSON syntax: AI sometimes emits `{"name": "Read", "arguments": {...}}` instead of `<run>` blocks — translate these into equivalent Python calls on resourcespace modules (not filesystem paths), execute them, then return results as if the model had made Python calls; erase the raw tool_call from the response
 - Session tag/indicator: disappeared at some point during testing — investigate
 - REPL tracebacks: consider Rich traceback formatting for nicer error display
 - Source read: add line-range support — when symbol exceeds CHAR_CAP, allow `read("module", lines="276-335")` or similar
@@ -123,7 +124,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-16
-Stopped at: Completed 33-02-PLAN.md (TaskResourcespace service, view, shell registration, tests)
+Last session: 2026-02-17
+Stopped at: Completed 33-03-PLAN.md (Gap closure: base36 IDs, listing IDs, kwargs validator)
 Branch: main
-Resume file: .planning/phases/33-task-resourcespace/33-02-SUMMARY.md
+Resume file: .planning/phases/33-task-resourcespace/33-03-SUMMARY.md
