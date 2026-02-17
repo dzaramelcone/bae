@@ -84,43 +84,54 @@ _TOOL_NAMES = frozenset({"read", "write", "edit", "glob", "grep"})
 
 
 def _tool_signature(name: str, method: Callable) -> str:
-    """Build XML tag signature like <Read:target:str> from method."""
-    tag = name.title()
+    """Build Python call signature like `edit(target: str, new_source: str)` from method."""
     try:
         sig = inspect.signature(method)
     except (ValueError, TypeError):
-        return f"<{tag}>"
+        return f"{name}()"
 
     params = []
     for pname, param in sig.parameters.items():
         if pname == "self":
             continue
-        ptype = param.annotation
-        if ptype is inspect.Parameter.empty:
-            params.append(pname)
-        elif isinstance(ptype, type):
-            params.append(f"{pname}:{ptype.__name__}")
+        if param.kind in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL):
+            continue
+        ann = param.annotation
+        type_str = ""
+        if ann is not inspect.Parameter.empty:
+            type_str = f": {ann.__name__}" if isinstance(ann, type) else f": {ann}"
+        if param.default is not inspect.Parameter.empty:
+            params.append(f"{pname}{type_str}={param.default!r}")
         else:
-            params.append(f"{pname}:{ptype}")
+            params.append(f"{pname}{type_str}")
 
-    if not params:
-        return f"<{tag}>"
-
-    # Body-content format for write with content param
-    if name == "write" and "content" in [p.split(":")[0] for p in params]:
-        inline = [p for p in params if not p.startswith("content")]
-        body_param = next(p for p in params if p.startswith("content"))
-        if inline:
-            return f"<{tag}:{', '.join(inline)}>{body_param}</{tag}>"
-        return f"<{tag}>{body_param}</{tag}>"
-
-    return f"<{tag}:{', '.join(params)}>"
+    return f"{name}({', '.join(params)})"
 
 
 def _tool_docstring(method: Callable) -> str:
     """First line of method docstring, or empty string."""
     doc = getattr(method, "__doc__", None) or ""
     return doc.split("\n")[0].strip()
+
+
+def _functions_table(tools_map: dict[str, Callable]) -> list[str]:
+    """Build markdown functions table rows from a name→callable mapping."""
+    if not tools_map:
+        return []
+    lines = [
+        "| Tool | Description |",
+        "|------|-------------|",
+    ]
+    # Standard verbs first in canonical order, then custom verbs sorted
+    _VERB_ORDER = ["read", "write", "edit", "glob", "grep"]
+    ordered = [v for v in _VERB_ORDER if v in tools_map]
+    ordered += sorted(k for k in tools_map if k not in _VERB_ORDER)
+    for name in ordered:
+        method = tools_map[name]
+        sig = _tool_signature(name, method)
+        doc = _tool_docstring(method)
+        lines.append(f"| {sig} | {doc} |")
+    return lines
 
 
 class ResourceRegistry:
@@ -213,6 +224,8 @@ class ResourceRegistry:
             sig = inspect.signature(method)
             param_names = [p for p in sig.parameters if p != "self"]
             if args and param_names:
+                # Coerce int→str for REPL convenience (e.g. read(1) → read("1"))
+                args = tuple(str(a) if isinstance(a, int) else a for a in args)
                 arg = args[0]
                 extra_kwargs = {}
                 for i, a in enumerate(args[1:], 1):
@@ -254,19 +267,22 @@ class ResourceRegistry:
         if self._spaces:
             lines.append("Resourcespaces:")
             for name, space in sorted(self._spaces.items()):
-                lines.append(f"  {name}() -- {space.description}")
-            # Task count if available
-            task_space = self._spaces.get("tasks")
-            if task_space and hasattr(task_space, "outstanding_count"):
-                count = task_space.outstanding_count()
-                if count:
-                    lines.append(f"\nTasks: {count} outstanding")
-        tools = sorted(self._home_tools.keys()) if self._home_tools else []
-        if tools:
+                desc = space.description
+                if hasattr(space, "status_counts"):
+                    counts = space.status_counts()
+                    parts = [desc]
+                    if counts.get("open", 0) > 0:
+                        parts.append("Start here.")
+                    status = f"open: {counts.get('open', 0)}  in_progress: {counts.get('in_progress', 0)}  blocked: {counts.get('blocked', 0)}"
+                    parts.append(status)
+                    desc = " | ".join(parts)
+                lines.append(f"  {name}() -- {desc}")
+        table = _functions_table(self._home_tools)
+        if table:
             lines.append("")
-            lines.append(f"Tools: {', '.join(tools)}")
+            lines.extend(table)
         lines.append("")
-        lines.append("Navigate: call a resourcespace as a function. back() to return.")
+        lines.append("Advanced: use arbitrary Python in conjunction with tool calls.")
         return "\n".join(lines)
 
     def _root_nav(self) -> str:
@@ -321,20 +337,10 @@ class ResourceRegistry:
             lines.append("\n".join(main_lines))
 
         # Functions table
-        tools_map = space.tools()
-        tool_names = sorted(space.supported_tools())
-        if tool_names:
+        table = _functions_table(space.tools())
+        if table:
             lines.append("")
-            lines.append("| Tool | Signature | Description |")
-            lines.append("|------|-----------|-------------|")
-            for tool in tool_names:
-                method = tools_map.get(tool)
-                if method:
-                    sig = _tool_signature(tool, method)
-                    doc = _tool_docstring(method)
-                    lines.append(f"| {tool} | {sig} | {doc} |")
-                else:
-                    lines.append(f"| {tool} | <{tool.title()}> | |")
+            lines.extend(table)
 
         # Advanced hints
         if advanced_lines:

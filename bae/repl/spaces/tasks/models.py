@@ -311,8 +311,8 @@ class TaskStore:
             ids = [to_base36(row["blocked_by"]) for row in blockers]
             raise ValueError(f"Task blocked by unfinished tasks: {', '.join(ids)}")
 
-        # Major task completion validation
-        is_major = task["priority_minor"] == 0 and task["priority_patch"] == 0
+        # Major task completion validation (0.0.0 is unclassified, not major)
+        is_major = task["priority_major"] > 0 and task["priority_minor"] == 0 and task["priority_patch"] == 0
         if is_major:
             for section in _COMPLETION_SECTIONS:
                 if section not in task["body"]:
@@ -446,6 +446,16 @@ class TaskStore:
             "WHERE tasks_fts MATCH ? "
             "ORDER BY bm25(tasks_fts)",
             (query,),
+        ).fetchall()
+        return [self._task_to_dict(row) for row in rows]
+
+    def search_like(self, query: str) -> list[dict]:
+        """LIKE fallback for short/unindexed terms."""
+        like = f"%{query}%"
+        rows = self._conn.execute(
+            "SELECT * FROM tasks WHERE title LIKE ? OR body LIKE ? "
+            "ORDER BY priority_major, priority_minor, priority_patch",
+            (like, like),
         ).fetchall()
         return [self._task_to_dict(row) for row in rows]
 

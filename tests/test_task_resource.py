@@ -62,14 +62,14 @@ class TestProtocol:
         assert rs.description
 
     def test_supported_tools(self, rs):
-        assert rs.supported_tools() == {"read", "add", "done", "update", "search"}
+        assert rs.supported_tools() == {"read", "write", "edit", "glob", "grep"}
 
     def test_children_empty(self, rs):
         assert rs.children() == {}
 
     def test_tools_returns_all_callables(self, rs):
         tools = rs.tools()
-        assert set(tools.keys()) == {"read", "add", "done", "update", "search"}
+        assert set(tools.keys()) == {"read", "write", "edit", "glob", "grep"}
         for fn in tools.values():
             assert callable(fn)
 
@@ -117,13 +117,12 @@ class TestNavigation:
     def test_tools_injected_into_namespace(self, registry_ns):
         reg, ns, _ = registry_ns
         reg.navigate("tasks")
-        for tool in ("read", "add", "done", "update", "search"):
+        for tool in ("read", "write", "edit", "glob", "grep"):
             assert tool in ns, f"{tool} not in namespace"
             assert callable(ns[tool])
 
     def test_tools_removed_on_navigate_away(self, registry_ns):
         reg, ns, rs = registry_ns
-        # Register a second space to navigate to
         class StubSpace:
             name = "stub"
             description = "stub"
@@ -136,42 +135,41 @@ class TestNavigation:
 
         reg.register(StubSpace())
         reg.navigate("tasks")
-        assert "add" in ns
+        assert "write" in ns
         reg.navigate("stub")
-        assert "add" not in ns
-        assert "done" not in ns
-        assert "update" not in ns
-        assert "search" not in ns
+        assert "write" not in ns
+        assert "edit" not in ns
+        assert "glob" not in ns
+        assert "grep" not in ns
 
 
 # ---------------------------------------------------------------------------
-# Tool: add (TSK-02)
+# Tool: write (TSK-02)
 # ---------------------------------------------------------------------------
 
-class TestAdd:
-    def test_add_creates_task(self, rs):
-        result = rs.add("Deploy service", MAJOR_BODY, priority="1.0.0")
+class TestWrite:
+    def test_write_creates_task(self, rs):
+        result = rs.write("Deploy service", MAJOR_BODY, priority="1.0.0")
         assert "Created task" in result
         assert "Deploy service" in result
 
-    def test_add_major_enforces_sections(self, rs):
+    def test_write_major_enforces_sections(self, rs):
         with pytest.raises(ResourceError, match="structured sections"):
-            rs.add("Bad major", "no sections here", priority="1.0.0")
+            rs.write("Bad major", "no sections here", priority="1.0.0")
 
-    def test_add_minor_links_to_parent(self, rs):
-        rs.add("Parent task", MAJOR_BODY, priority="1.0.0")
-        result = rs.add("Subtask", "sub body", priority="1.1.0")
+    def test_write_minor_links_to_parent(self, rs):
+        rs.write("Parent task", MAJOR_BODY, priority="1.0.0")
+        result = rs.write("Subtask", "sub body", priority="1.1.0")
         assert "Created task" in result
 
-    def test_add_new_tag_shows_friction(self, rs):
-        rs.add("First", MAJOR_BODY, priority="1.0.0", tags="existing")
-        result = rs.add("Second", MAJOR_BODY, priority="2.0.0", tags="brand_new")
+    def test_write_new_tag_shows_friction(self, rs):
+        rs.write("First", MAJOR_BODY, priority="1.0.0", tags="existing")
+        result = rs.write("Second", MAJOR_BODY, priority="2.0.0", tags="brand_new")
         assert "New tag" in result
         assert "Existing tags" in result
 
-    def test_add_zero_priority_skips_major_validation(self, rs):
-        # 0.0.0 is the default, no body sections needed
-        result = rs.add("Quick note")
+    def test_write_zero_priority_skips_major_validation(self, rs):
+        result = rs.write("Quick note")
         assert "Created task" in result
 
 
@@ -181,13 +179,13 @@ class TestAdd:
 
 class TestRead:
     def test_read_no_args_lists_active(self, rs):
-        rs.add("Task A", MAJOR_BODY, priority="1.0.0")
+        rs.write("Task A", MAJOR_BODY, priority="1.0.0")
         result = rs.read()
         assert "Active tasks" in result
         assert "Task A" in result
 
     def test_read_task_id(self, rs):
-        rs.add("Readable", MAJOR_BODY, priority="1.0.0")
+        rs.write("Readable", MAJOR_BODY, priority="1.0.0")
         tasks = rs._store.list_active()
         task_id = tasks[0]["id"]
         result = rs.read(task_id)
@@ -195,14 +193,14 @@ class TestRead:
         assert task_id in result
 
     def test_read_status_filter(self, rs):
-        rs.add("Blocked one", MAJOR_BODY, priority="1.0.0")
+        rs.write("Blocked one", MAJOR_BODY, priority="1.0.0")
         tasks = rs._store.list_active()
         rs._store.update(tasks[0]["id"], status="blocked")
         result = rs.read("status:blocked")
         assert "Blocked one" in result
 
     def test_read_tag_filter(self, rs):
-        rs.add("Tagged", MAJOR_BODY, priority="1.0.0", tags="urgent")
+        rs.write("Tagged", MAJOR_BODY, priority="1.0.0", tags="urgent")
         result = rs.read("tag:urgent")
         assert "Tagged" in result
 
@@ -212,83 +210,103 @@ class TestRead:
 
 
 # ---------------------------------------------------------------------------
-# Tool: done (TSK-05)
+# Tool: edit (TSK-04, TSK-05)
 # ---------------------------------------------------------------------------
 
-class TestDone:
-    def test_done_marks_complete(self, rs):
-        rs.add("Finish me", COMPLETE_BODY, priority="1.0.0")
+class TestEdit:
+    def test_edit_status(self, rs):
+        rs.write("Update me", MAJOR_BODY, priority="1.0.0")
         tasks = rs._store.list_active()
         task_id = tasks[0]["id"]
-        result = rs.done(task_id)
-        assert "Done" in result
-
-    def test_done_user_gated_returns_message(self, rs):
-        # Create task, then manually set user_gated
-        rs.add("Gated task", COMPLETE_BODY, priority="1.0.0")
-        tasks = rs._store.list_active()
-        task_id = tasks[0]["id"]
-        rs._store.update(task_id, user_gated=1)
-        result = rs.done(task_id)
-        assert "user-gated" in result.lower() or "Confirm" in result
-
-
-# ---------------------------------------------------------------------------
-# Tool: update (TSK-04)
-# ---------------------------------------------------------------------------
-
-class TestUpdate:
-    def test_update_status(self, rs):
-        rs.add("Update me", MAJOR_BODY, priority="1.0.0")
-        tasks = rs._store.list_active()
-        task_id = tasks[0]["id"]
-        result = rs.update(task_id, status="in_progress")
+        result = rs.edit(task_id, status="in_progress")
         assert "Updated" in result
-        assert "status" in result
+        assert "PROG" in result
 
-    def test_update_done_task_raises(self, rs):
-        rs.add("Final task", COMPLETE_BODY, priority="1.0.0")
+    def test_edit_done_task_raises(self, rs):
+        rs.write("Final task", COMPLETE_BODY, priority="1.0.0")
         tasks = rs._store.list_active()
         task_id = tasks[0]["id"]
         rs._store.mark_done(task_id)
         with pytest.raises(ResourceError, match="final"):
-            rs.update(task_id, status="open")
+            rs.edit(task_id, status="open")
 
-    def test_update_positional_id_keyword_status(self, rs):
-        """Regression: update('id', status='in_progress') must work."""
-        rs.add("Positional test", MAJOR_BODY, priority="1.0.0")
+    def test_edit_positional_id_keyword_status(self, rs):
+        """Regression: edit('id', status='in_progress') must work."""
+        rs.write("Positional test", MAJOR_BODY, priority="1.0.0")
         tasks = rs._store.list_active()
         task_id = tasks[0]["id"]
-        result = rs.update(task_id, status="in_progress")
+        result = rs.edit(task_id, status="in_progress")
         assert "Updated" in result
 
-    def test_dispatch_update_with_kwargs(self, registry_ns):
-        """Regression: ToolRouter dispatches update with kwargs correctly."""
+    def test_edit_status_done_uses_lifecycle(self, rs):
+        """edit(id, status='done') goes through mark_done lifecycle."""
+        rs.write("Lifecycle test", COMPLETE_BODY, priority="1.0.0")
+        tasks = rs._store.list_active()
+        task_id = tasks[0]["id"]
+        result = rs.edit(task_id, status="done")
+        assert "Updated" in result
+        assert "DONE" in result
+
+    def test_edit_status_done_zero_priority(self, rs):
+        """edit(id, status='done') works for unclassified (0.0.0) tasks."""
+        rs.write("Quick task")
+        tasks = rs._store.list_active()
+        task_id = tasks[0]["id"]
+        result = rs.edit(task_id, status="done")
+        assert "DONE" in result
+
+    def test_dispatch_edit_with_kwargs(self, registry_ns):
+        """Regression: ToolRouter dispatches edit with kwargs correctly."""
         reg, ns, rs = registry_ns
         reg.navigate("tasks")
-        rs.add("Dispatch test", MAJOR_BODY, priority="1.0.0")
+        rs.write("Dispatch test", MAJOR_BODY, priority="1.0.0")
         tasks = rs._store.list_active()
         task_id = tasks[0]["id"]
         from bae.repl.tools import ToolRouter
         router = ToolRouter(reg)
-        result = router.dispatch("update", task_id, status="in_progress")
+        result = router.dispatch("edit", task_id, status="in_progress")
         assert "Updated" in result
 
 
 # ---------------------------------------------------------------------------
-# Tool: search (TSK-06)
+# Tool: glob
 # ---------------------------------------------------------------------------
 
-class TestSearch:
-    def test_search_finds_tasks(self, rs):
-        rs.add("Deploy kubernetes", MAJOR_BODY, priority="1.0.0")
-        result = rs.search("kubernetes")
+class TestGlob:
+    def test_glob_matches_title(self, rs):
+        rs.write("Deploy service")
+        rs.write("Deploy database")
+        rs.write("Fix login bug")
+        result = rs.glob("Deploy*")
+        assert "Deploy service" in result
+        assert "Deploy database" in result
+        assert "Fix login" not in result
+
+    def test_glob_no_match(self, rs):
+        rs.write("Something")
+        result = rs.glob("zzz*")
+        assert "No tasks" in result
+
+    def test_glob_case_insensitive(self, rs):
+        rs.write("Deploy Service")
+        result = rs.glob("deploy*")
+        assert "Deploy Service" in result
+
+
+# ---------------------------------------------------------------------------
+# Tool: grep (TSK-06)
+# ---------------------------------------------------------------------------
+
+class TestGrep:
+    def test_grep_finds_tasks(self, rs):
+        rs.write("Deploy kubernetes", MAJOR_BODY, priority="1.0.0")
+        result = rs.grep("kubernetes")
         assert "kubernetes" in result.lower()
         assert "1 result" in result
 
-    def test_search_no_results_with_hints(self, rs):
-        rs.add("Something", MAJOR_BODY, priority="1.0.0")
-        result = rs.search("nonexistent_xyzzy")
+    def test_grep_no_results_with_hints(self, rs):
+        rs.write("Something", MAJOR_BODY, priority="1.0.0")
+        result = rs.grep("nonexistent_xyzzy")
         assert "No results" in result
         assert "read()" in result or "keywords" in result
 
@@ -301,7 +319,7 @@ class TestPersistence:
     def test_data_survives_new_instance(self, tmp_path):
         db_path = tmp_path / "tasks.db"
         rs1 = TaskResourcespace(db_path)
-        rs1.add("Persistent task", MAJOR_BODY, priority="1.0.0")
+        rs1.write("Persistent task", MAJOR_BODY, priority="1.0.0")
         rs2 = TaskResourcespace(db_path)
         result = rs2.read()
         assert "Persistent task" in result
@@ -312,19 +330,21 @@ class TestPersistence:
 # ---------------------------------------------------------------------------
 
 class TestHomespaceCount:
-    def test_orientation_shows_outstanding(self, tmp_path):
+    def test_orientation_shows_status_counts(self, tmp_path):
         ns = {}
         reg = ResourceRegistry(namespace=ns)
         rs = TaskResourcespace(tmp_path / "tasks.db")
         reg.register(rs)
-        rs.add("Outstanding task", MAJOR_BODY, priority="1.0.0")
+        rs.write("Outstanding task", MAJOR_BODY, priority="1.0.0")
         result = reg.home()
-        assert "Tasks: 1 outstanding" in result
+        assert "open: 1" in result
+        assert "Start here" in result
 
-    def test_orientation_omits_when_zero(self, tmp_path):
+    def test_orientation_no_start_here_when_zero(self, tmp_path):
         ns = {}
         reg = ResourceRegistry(namespace=ns)
         rs = TaskResourcespace(tmp_path / "tasks.db")
         reg.register(rs)
         result = reg.home()
-        assert "outstanding" not in result
+        assert "open: 0" in result
+        assert "Start here" not in result

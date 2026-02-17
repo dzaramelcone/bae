@@ -38,7 +38,7 @@ class TaskResourcespace:
     """Persistent task management with priority and search."""
 
     name = "tasks"
-    description = "Persistent task management with priority and search"
+    description = "Manage todo lists"
 
     def __init__(self, db_path: Path) -> None:
         self._store = TaskStore(db_path)
@@ -90,10 +90,10 @@ class TaskResourcespace:
         except ValueError:
             raise ResourceError(
                 f"Task '{target}' not found.",
-                hints=["tasks() to see all tasks", "search('keyword') to find tasks"],
+                hints=["read() to list all tasks", "grep('keyword') to search"],
             )
 
-    def add(self, title: str, body: str = "", priority: str = "0.0.0", creator: str = "agent", parent: str = "", tags: str = "") -> str:
+    def write(self, title: str, body: str = "", priority: str = "0.0.0", creator: str = "agent", parent: str = "", tags: str = "") -> str:
         """Create a task with title, body, priority, and tags."""
         pri = _parse_priority(priority)
 
@@ -123,7 +123,7 @@ class TaskResourcespace:
                 user_gated=False,
             )
         except ValueError as e:
-            raise ResourceError(str(e), hints=["tasks() to see all tasks"])
+            raise ResourceError(str(e), hints=["read() to list all tasks"])
 
         # Add tags
         for tag in tag_list:
@@ -136,47 +136,20 @@ class TaskResourcespace:
             result += f"\nExisting tags: {', '.join(sorted(existing_tags))}"
         return result
 
-    def done(self, task_id: str) -> str:
-        """Mark a task as done."""
-        try:
-            task = self._store.get(task_id)
-        except ValueError:
-            raise ResourceError(
-                f"Task '{task_id}' not found.",
-                hints=["tasks() to see all tasks"],
-            )
-
-        if task.get("user_gated"):
-            return f"Task '{task['title']}' is user-gated. Confirm completion with update('{task_id}', status='done')."
-
-        try:
-            result = self._store.mark_done(task_id)
-        except ValueError as e:
-            raise ResourceError(str(e), hints=["tasks() to see all tasks"])
-
-        response = f"Done: {result['title']}"
-
-        # Major task subtask check
-        undone = result.get("_subtasks_undone")
-        if undone:
-            response += f"\nNote: {len(undone)} subtask{'s' if len(undone) != 1 else ''} still open"
-        return response
-
-    def update(self, task_id: str, **kwargs) -> str:
+    def edit(self, task_id: str, **kwargs) -> str:
         """Update task fields: status, priority, title, body, tags, user_gated."""
         try:
             self._store.get(task_id)
         except ValueError:
             raise ResourceError(
                 f"Task '{task_id}' not found.",
-                hints=["tasks() to see all tasks"],
+                hints=["read() to list all tasks"],
             )
 
         # Parse tags from comma-separated string
         if "tags" in kwargs and isinstance(kwargs["tags"], str):
             tag_str = kwargs.pop("tags")
             tag_list = [t.strip() for t in tag_str.split(",") if t.strip()]
-            # Get current tags and add new ones
             current = self._store.get(task_id)
             merged = list(set(current["tags"]) | set(tag_list))
             kwargs["tags"] = merged
@@ -188,41 +161,71 @@ class TaskResourcespace:
             kwargs["priority_minor"] = pri[1]
             kwargs["priority_patch"] = pri[2]
 
+        # status="done" goes through mark_done for lifecycle validation
+        if kwargs.get("status") == "done":
+            remaining = {k: v for k, v in kwargs.items() if k != "status"}
+            if remaining:
+                self._store.update(task_id, **remaining)
+            try:
+                result = self._store.mark_done(task_id)
+            except ValueError as e:
+                raise ResourceError(str(e), hints=["read() to list all tasks"])
+            response = f"Updated\n{format_task_detail(result)}"
+            undone = result.get("_subtasks_undone")
+            if undone:
+                response += f"\nNote: {len(undone)} subtask{'s' if len(undone) != 1 else ''} still open"
+            return response
+
         try:
             result = self._store.update(task_id, **kwargs)
         except ValueError as e:
-            raise ResourceError(str(e), hints=["tasks() to see all tasks"])
+            raise ResourceError(str(e), hints=["read() to list all tasks"])
 
-        changed = list(kwargs.keys())
-        return f"Updated {result['title']}: {', '.join(changed)}"
+        return f"Updated\n{format_task_detail(result)}"
 
-    def search(self, query: str) -> str:
+    def grep(self, query: str) -> str:
         """Full-text search across task titles and bodies."""
         try:
             results = self._store.search(query)
         except Exception:
-            raise ResourceError(
-                f"Search error for '{query}'.",
-                hints=["Try simpler keywords", "search('keyword') for FTS search"],
-            )
+            results = []
+        # Fall back to LIKE for short/unindexed terms
+        if not results:
+            results = self._store.search_like(query)
         if not results:
             return format_search_results([], query) + "\nTry: read() to list all active tasks, or broader keywords"
         return format_search_results(results, query)
+
+    def glob(self, pattern: str) -> str:
+        """Match task titles by glob pattern."""
+        import fnmatch
+        # Auto-wrap bare strings: "oo" → "*oo*"
+        if "*" not in pattern and "?" not in pattern and "[" not in pattern:
+            pattern = f"*{pattern}*"
+        tasks = self._store.list_all()
+        matched = [t for t in tasks if fnmatch.fnmatch(t["title"].lower(), pattern.lower())]
+        if not matched:
+            return f"No tasks matching '{pattern}'"
+        return format_task_list(matched, f"Tasks matching '{pattern}'")
+
+    def status_counts(self) -> dict[str, int]:
+        """Count of tasks per status."""
+        return self._store.status_counts()
 
     def outstanding_count(self) -> int:
         """Count of open + in_progress + blocked tasks."""
         return self._store.outstanding_count()
 
     def supported_tools(self) -> set[str]:
-        return {"read", "add", "done", "update", "search"}
+        return {"read", "write", "edit", "glob", "grep"}
 
     def tools(self) -> dict[str, Callable]:
         return {
             "read": self.read,
-            "add": self.add,
-            "done": self.done,
-            "update": self.update,
-            "search": self.search,
+            "write": self.write,
+            "edit": self.edit,
+            "glob": self.glob,
+            "grep": self.grep,
         }
 
     def children(self) -> dict[str, Resourcespace]:
