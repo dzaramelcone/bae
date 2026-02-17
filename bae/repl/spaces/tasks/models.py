@@ -5,12 +5,38 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-import uuid
 from pathlib import Path
+
+_B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+
+def to_base36(n: int) -> str:
+    """Encode a non-negative integer to a base36 string."""
+    if n == 0:
+        return "0"
+    digits = []
+    while n:
+        digits.append(_B36[n % 36])
+        n //= 36
+    return "".join(reversed(digits))
+
+
+def from_base36(s: str) -> int:
+    """Decode a base36 string to an integer. Raises ValueError on invalid input."""
+    if not s:
+        raise ValueError("Empty base36 string")
+    n = 0
+    for ch in s:
+        idx = _B36.find(ch)
+        if idx < 0:
+            raise ValueError(f"Invalid base36 character: {ch!r}")
+        n = n * 36 + idx
+    return n
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
-    id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     body TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'open'
@@ -18,7 +44,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     priority_major INTEGER NOT NULL DEFAULT 0,
     priority_minor INTEGER NOT NULL DEFAULT 0,
     priority_patch INTEGER NOT NULL DEFAULT 0,
-    parent_id TEXT REFERENCES tasks(id),
+    parent_id INTEGER REFERENCES tasks(id),
     creator TEXT NOT NULL DEFAULT 'agent'
         CHECK(creator IN ('agent', 'user')),
     user_gated INTEGER NOT NULL DEFAULT 0,
@@ -28,20 +54,20 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 CREATE TABLE IF NOT EXISTS task_tags (
-    task_id TEXT NOT NULL REFERENCES tasks(id),
+    task_id INTEGER NOT NULL REFERENCES tasks(id),
     tag TEXT NOT NULL,
     PRIMARY KEY (task_id, tag)
 );
 
 CREATE TABLE IF NOT EXISTS task_dependencies (
-    task_id TEXT NOT NULL REFERENCES tasks(id),
-    blocked_by TEXT NOT NULL REFERENCES tasks(id),
+    task_id INTEGER NOT NULL REFERENCES tasks(id),
+    blocked_by INTEGER NOT NULL REFERENCES tasks(id),
     PRIMARY KEY (task_id, blocked_by)
 );
 
 CREATE TABLE IF NOT EXISTS task_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id TEXT NOT NULL REFERENCES tasks(id),
+    task_id INTEGER NOT NULL REFERENCES tasks(id),
     timestamp REAL NOT NULL,
     field TEXT NOT NULL,
     old_value TEXT,
@@ -112,7 +138,6 @@ class TaskStore:
         """Insert a task and return it as a dict."""
         major, minor, patch = priority
         now = time.time()
-        task_id = str(uuid.uuid7())
 
         # Major task body validation (priority 0.0.0 is unclassified, not major)
         if major > 0 and minor == 0 and patch == 0:
@@ -123,7 +148,8 @@ class TaskStore:
                         f"Missing sections: {', '.join(s for s in _MAJOR_REQUIRED_SECTIONS if s not in body)}"
                     )
 
-        # Minor task parent validation
+        # Minor task parent validation — resolve parent_id from base36 to int
+        int_parent = None
         if minor > 0:
             if parent_id is None:
                 # Find parent by matching major number
@@ -133,25 +159,31 @@ class TaskStore:
                 ).fetchone()
                 if row is None:
                     raise ValueError(f"No major task found with priority_major={major}")
-                parent_id = row["id"]
+                int_parent = row["id"]
             else:
-                parent = self._conn.execute("SELECT id FROM tasks WHERE id = ?", (parent_id,)).fetchone()
+                int_parent = from_base36(parent_id)
+                parent = self._conn.execute("SELECT id FROM tasks WHERE id = ?", (int_parent,)).fetchone()
                 if parent is None:
                     raise ValueError(f"Parent task '{parent_id}' not found")
 
         self._conn.execute(
-            "INSERT INTO tasks(id, title, body, priority_major, priority_minor, priority_patch, "
+            "INSERT INTO tasks(title, body, priority_major, priority_minor, priority_patch, "
             "parent_id, creator, user_gated, created_at, updated_at, metadata) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (task_id, title, body, major, minor, patch, parent_id, creator,
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (title, body, major, minor, patch, int_parent, creator,
              int(user_gated), now, now, json.dumps(metadata or {})),
         )
         self._conn.commit()
-        return self.get(task_id)
+        row_id = self._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return self.get(to_base36(row_id))
 
     def get(self, task_id: str) -> dict:
-        """Fetch a task by id with tags. Raises ValueError if not found."""
-        row = self._conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        """Fetch a task by base36 id with tags. Raises ValueError if not found."""
+        try:
+            int_id = from_base36(task_id)
+        except ValueError:
+            raise ValueError(f"Task '{task_id}' not found (invalid ID)")
+        row = self._conn.execute("SELECT * FROM tasks WHERE id = ?", (int_id,)).fetchone()
         if row is None:
             raise ValueError(f"Task '{task_id}' not found")
         return self._task_to_dict(row)
@@ -214,6 +246,7 @@ class TaskStore:
     def update(self, task_id: str, changed_by: str = "agent", **fields) -> dict:
         """Update allowed fields, log each change in audit."""
         task = self.get(task_id)
+        int_id = from_base36(task_id)
 
         # Handle tags separately
         tags = fields.pop("tags", None)
@@ -235,13 +268,13 @@ class TaskStore:
         for key, value in fields.items():
             old_value = task.get(key)
             if old_value != value:
-                self._audit(task_id, key, str(old_value), str(value), changed_by)
+                self._audit(int_id, key, str(old_value), str(value), changed_by)
 
         if fields:
             set_clause = ", ".join(f"{k} = ?" for k in fields)
             values = list(fields.values())
             values.append(time.time())
-            values.append(task_id)
+            values.append(int_id)
             self._conn.execute(
                 f"UPDATE tasks SET {set_clause}, updated_at = ? WHERE id = ?",
                 values,
@@ -262,6 +295,7 @@ class TaskStore:
     def mark_done(self, task_id: str, changed_by: str = "agent") -> dict:
         """Transition task to done. Checks dependencies and completion sections."""
         task = self.get(task_id)
+        int_id = from_base36(task_id)
 
         if task["status"] in _FINAL_STATUSES:
             raise ValueError(f"Task is already '{task['status']}'")
@@ -271,10 +305,10 @@ class TaskStore:
             "SELECT d.blocked_by, t.status FROM task_dependencies d "
             "JOIN tasks t ON t.id = d.blocked_by "
             "WHERE d.task_id = ? AND t.status NOT IN ('done', 'cancelled')",
-            (task_id,),
+            (int_id,),
         ).fetchall()
         if blockers:
-            ids = [row["blocked_by"] for row in blockers]
+            ids = [to_base36(row["blocked_by"]) for row in blockers]
             raise ValueError(f"Task blocked by unfinished tasks: {', '.join(ids)}")
 
         # Major task completion validation
@@ -287,10 +321,10 @@ class TaskStore:
                         f"Missing: {', '.join(s for s in _COMPLETION_SECTIONS if s not in task['body'])}"
                     )
 
-        self._audit(task_id, "status", task["status"], "done", changed_by)
+        self._audit(int_id, "status", task["status"], "done", changed_by)
         self._conn.execute(
             "UPDATE tasks SET status = 'done', updated_at = ? WHERE id = ?",
-            (time.time(), task_id),
+            (time.time(), int_id),
         )
         self._conn.commit()
 
@@ -299,9 +333,9 @@ class TaskStore:
         # Major task self-verification
         if is_major:
             subtasks = self._conn.execute(
-                "SELECT id, status FROM tasks WHERE parent_id = ?", (task_id,)
+                "SELECT id, status FROM tasks WHERE parent_id = ?", (int_id,)
             ).fetchall()
-            undone = [r["id"] for r in subtasks if r["status"] not in _FINAL_STATUSES]
+            undone = [to_base36(r["id"]) for r in subtasks if r["status"] not in _FINAL_STATUSES]
             if undone:
                 result["_subtasks_undone"] = undone
 
@@ -313,12 +347,13 @@ class TaskStore:
     def cancel(self, task_id: str, changed_by: str = "agent") -> dict:
         """Transition task to cancelled."""
         task = self.get(task_id)
+        int_id = from_base36(task_id)
         if task["status"] in _FINAL_STATUSES:
             raise ValueError(f"Task is already '{task['status']}'")
-        self._audit(task_id, "status", task["status"], "cancelled", changed_by)
+        self._audit(int_id, "status", task["status"], "cancelled", changed_by)
         self._conn.execute(
             "UPDATE tasks SET status = 'cancelled', updated_at = ? WHERE id = ?",
-            (time.time(), task_id),
+            (time.time(), int_id),
         )
         self._conn.commit()
         return self.get(task_id)
@@ -326,9 +361,10 @@ class TaskStore:
     def add_tag(self, task_id: str, tag: str) -> str:
         """Add a tag to a task. Returns the tag name."""
         self.get(task_id)  # validate exists
+        int_id = from_base36(task_id)
         self._conn.execute(
             "INSERT OR IGNORE INTO task_tags(task_id, tag) VALUES (?, ?)",
-            (task_id, tag),
+            (int_id, tag),
         )
         self._conn.commit()
         return tag
@@ -336,9 +372,10 @@ class TaskStore:
     def remove_tag(self, task_id: str, tag: str) -> str:
         """Remove a tag from a task. Returns the tag name."""
         self.get(task_id)  # validate exists
+        int_id = from_base36(task_id)
         self._conn.execute(
             "DELETE FROM task_tags WHERE task_id = ? AND tag = ?",
-            (task_id, tag),
+            (int_id, tag),
         )
         self._conn.commit()
         return tag
@@ -352,6 +389,8 @@ class TaskStore:
         """Add dependency with cycle detection."""
         self.get(task_id)
         self.get(blocked_by_id)
+        int_task = from_base36(task_id)
+        int_blocked = from_base36(blocked_by_id)
 
         # Cycle detection: DFS from blocked_by_id looking for task_id
         if self._has_path(blocked_by_id, task_id):
@@ -361,7 +400,7 @@ class TaskStore:
 
         self._conn.execute(
             "INSERT OR IGNORE INTO task_dependencies(task_id, blocked_by) VALUES (?, ?)",
-            (task_id, blocked_by_id),
+            (int_task, int_blocked),
         )
 
         # Set status to blocked if currently open
@@ -369,31 +408,33 @@ class TaskStore:
         if task["status"] == "open":
             self._conn.execute(
                 "UPDATE tasks SET status = 'blocked', updated_at = ? WHERE id = ?",
-                (time.time(), task_id),
+                (time.time(), int_task),
             )
-            self._audit(task_id, "status", "open", "blocked", "agent")
+            self._audit(int_task, "status", "open", "blocked", "agent")
 
         self._conn.commit()
 
     def remove_dependency(self, task_id: str, blocked_by_id: str) -> None:
         """Remove dependency. If no remaining blockers, transition from blocked to open."""
+        int_task = from_base36(task_id)
+        int_blocked = from_base36(blocked_by_id)
         self._conn.execute(
             "DELETE FROM task_dependencies WHERE task_id = ? AND blocked_by = ?",
-            (task_id, blocked_by_id),
+            (int_task, int_blocked),
         )
 
         remaining = self._conn.execute(
             "SELECT COUNT(*) as cnt FROM task_dependencies WHERE task_id = ?",
-            (task_id,),
+            (int_task,),
         ).fetchone()["cnt"]
 
         task = self.get(task_id)
         if remaining == 0 and task["status"] == "blocked":
             self._conn.execute(
                 "UPDATE tasks SET status = 'open', updated_at = ? WHERE id = ?",
-                (time.time(), task_id),
+                (time.time(), int_task),
             )
-            self._audit(task_id, "status", "blocked", "open", "agent")
+            self._audit(int_task, "status", "blocked", "open", "agent")
 
         self._conn.commit()
 
@@ -435,30 +476,36 @@ class TaskStore:
         ).fetchone()
         return row["cnt"]
 
-    def _audit(self, task_id: str, field: str, old: str, new: str, changed_by: str) -> None:
-        """Log a field change to the audit table."""
+    def _audit(self, int_task_id: int, field: str, old: str, new: str, changed_by: str) -> None:
+        """Log a field change to the audit table. Accepts integer task ID."""
         self._conn.execute(
             "INSERT INTO task_audit(task_id, timestamp, field, old_value, new_value, changed_by) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (task_id, time.time(), field, old, new, changed_by),
+            (int_task_id, time.time(), field, old, new, changed_by),
         )
 
     def _task_to_dict(self, row: sqlite3.Row) -> dict:
-        """Convert a sqlite3.Row to dict with tags list attached."""
+        """Convert a sqlite3.Row to dict with base36 id and tags list attached."""
         d = dict(row)
+        int_id = d["id"]
+        d["id"] = to_base36(int_id)
+        if d.get("parent_id") is not None:
+            d["parent_id"] = to_base36(d["parent_id"])
         tags_rows = self._conn.execute(
-            "SELECT tag FROM task_tags WHERE task_id = ?", (d["id"],)
+            "SELECT tag FROM task_tags WHERE task_id = ?", (int_id,)
         ).fetchall()
         d["tags"] = [r["tag"] for r in tags_rows]
         return d
 
     def _has_path(self, from_id: str, to_id: str) -> bool:
-        """DFS cycle detection: check if from_id transitively depends on to_id."""
-        visited: set[str] = set()
-        stack = [from_id]
+        """DFS cycle detection using integer IDs internally."""
+        int_from = from_base36(from_id)
+        int_to = from_base36(to_id)
+        visited: set[int] = set()
+        stack = [int_from]
         while stack:
             current = stack.pop()
-            if current == to_id:
+            if current == int_to:
                 return True
             if current in visited:
                 continue

@@ -19,14 +19,14 @@ _MAX_TITLE = 50
 
 
 def format_task_row(task: dict) -> str:
-    """One-line format: status | priority | title | tags."""
+    """One-line format: id | status | priority | title | tags."""
     status = _STATUS_LABELS.get(task["status"], task["status"].upper())
     priority = f"{task['priority_major']}.{task['priority_minor']}.{task['priority_patch']}"
     title = task["title"]
     if len(title) > _MAX_TITLE:
         title = title[: _MAX_TITLE - 3] + "..."
     tags = ", ".join(task.get("tags") or [])
-    parts = [status, priority, title]
+    parts = [task["id"], status, priority, title]
     if tags:
         parts.append(tags)
     return " | ".join(parts)

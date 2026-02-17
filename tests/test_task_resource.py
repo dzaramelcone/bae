@@ -7,7 +7,7 @@ import time
 import pytest
 
 from bae.repl.spaces.tasks import TaskResourcespace
-from bae.repl.spaces.tasks.models import TaskStore
+from bae.repl.spaces.tasks.models import TaskStore, from_base36
 from bae.repl.spaces.view import (
     ResourceError,
     ResourceHandle,
@@ -95,7 +95,7 @@ class TestEntry:
         old_time = time.time() - (15 * 86400)
         rs._store._conn.execute(
             "UPDATE tasks SET updated_at = ? WHERE id = ?",
-            (old_time, task["id"]),
+            (old_time, from_base36(task["id"])),
         )
         rs._store._conn.commit()
         result = rs.enter()
@@ -208,7 +208,7 @@ class TestRead:
 
     def test_read_bad_target(self, rs):
         with pytest.raises(ResourceError, match="not found"):
-            rs.read("nonexistent-id-12345")
+            rs.read("zzzzzz")
 
 
 # ---------------------------------------------------------------------------
