@@ -1,7 +1,7 @@
-"""Home resourcespace filesystem tools.
+"""Home room filesystem tools.
 
 Read, write, edit, glob, and grep operations for the home (root) context.
-These are the filesystem tool implementations used when no resourcespace
+These are the filesystem tool implementations used when no room
 is navigated into.
 """
 

@@ -1,1 +1,1 @@
-"""Source resourcespace view helpers (reserved for future use)."""
+"""Source room view helpers (reserved for future use)."""

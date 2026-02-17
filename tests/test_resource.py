@@ -1,4 +1,4 @@
-"""Tests for Resourcespace protocol, ResourceRegistry, ResourceHandle, and error formatting."""
+"""Tests for Room protocol, ResourceRegistry, ResourceHandle, and error formatting."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from bae.repl.spaces import (
     ResourceError,
     ResourceHandle,
     ResourceRegistry,
-    Resourcespace,
+    Room,
     format_nav_error,
     format_unsupported_error,
 )
@@ -17,11 +17,11 @@ from bae.repl.spaces.view import _tool_signature, _tool_docstring
 
 
 # ---------------------------------------------------------------------------
-# Stub resourcespace for testing
+# Stub room for testing
 # ---------------------------------------------------------------------------
 
 class StubSpace:
-    """Minimal Resourcespace implementation for tests."""
+    """Minimal Room implementation for tests."""
 
     def __init__(self, name: str, description: str = "", children_map=None, tools=None, hints=None, tool_callables=None):
         self.name = name
@@ -50,7 +50,7 @@ class StubSpace:
     def tools(self) -> dict:
         return self._tool_callables
 
-    def children(self) -> dict[str, Resourcespace]:
+    def children(self) -> dict[str, Room]:
         return self._children
 
 
@@ -59,18 +59,18 @@ class StubSpace:
 # ---------------------------------------------------------------------------
 
 class TestProtocol:
-    def test_stub_is_resourcespace(self):
+    def test_stub_is_room(self):
         space = StubSpace("test")
-        assert isinstance(space, Resourcespace)
+        assert isinstance(space, Room)
 
-    def test_missing_method_not_resourcespace(self):
+    def test_missing_method_not_room(self):
         class Incomplete:
             name = "x"
             description = "x"
             def enter(self) -> str: return ""
             # missing nav, read, supported_tools, children
 
-        assert not isinstance(Incomplete(), Resourcespace)
+        assert not isinstance(Incomplete(), Room)
 
 
 # ---------------------------------------------------------------------------
@@ -489,13 +489,13 @@ class TestToolInjection:
         assert ns["grep"] is home_grep
 
     def test_home_returns_orientation(self):
-        """home() returns orientation string with resourcespaces and tools."""
+        """home() returns orientation string with rooms and tools."""
         ns = {}
         reg = ResourceRegistry(namespace=ns)
         reg.register(StubSpace("source", description="project source"))
         reg._home_tools = {"read": lambda a: "", "glob": lambda a: "", "grep": lambda a: ""}
         result = reg.home()
-        assert "Resourcespaces:" in result
+        assert "Rooms:" in result
         assert "source()" in result
         assert "Tools:" in result
 
@@ -507,7 +507,7 @@ class TestToolInjection:
         reg._home_tools = {"read": lambda a: "", "glob": lambda a: ""}
         reg.navigate("source")
         result = reg.back()
-        assert "Resourcespaces:" in result
+        assert "Rooms:" in result
         assert "source()" in result
 
     def test_no_namespace_no_crash(self):

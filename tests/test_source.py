@@ -1,4 +1,4 @@
-"""Tests for SourceResourcespace: protocol, path resolution, safety, read, enter/nav,
+"""Tests for SourceRoom: protocol, path resolution, safety, read, enter/nav,
 glob, grep, write, edit, hot-reload, rollback, undo, and subresources."""
 
 import subprocess
@@ -8,23 +8,23 @@ from pathlib import Path
 
 import pytest
 
-from bae.repl.spaces import ResourceError, Resourcespace
-from bae.repl.spaces.source import SourceResourcespace
+from bae.repl.spaces import ResourceError, Room
+from bae.repl.spaces.source import SourceRoom
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
 def src():
-    return SourceResourcespace(PROJECT_ROOT)
+    return SourceRoom(PROJECT_ROOT)
 
 
 # --- Protocol conformance ---
 
 
 class TestProtocol:
-    def test_isinstance_resourcespace(self, src):
-        assert isinstance(src, Resourcespace)
+    def test_isinstance_room(self, src):
+        assert isinstance(src, Room)
 
     def test_supported_tools(self, src):
         assert src.supported_tools() == {"read", "write", "edit", "glob", "grep"}
@@ -146,7 +146,7 @@ class TestEnterNav:
         kids = src.children()
         assert set(kids.keys()) == {"meta", "deps", "config", "tests"}
         for child in kids.values():
-            assert isinstance(child, Resourcespace)
+            assert isinstance(child, Room)
 
 
 # --- Glob ---
@@ -271,7 +271,7 @@ def tmp_project(tmp_path):
 
 class TestWrite:
     def test_write_creates_module(self, tmp_project):
-        src = SourceResourcespace(tmp_project)
+        src = SourceRoom(tmp_project)
         result = src.write("mylib.utils", "def helper():\n    return 42\n")
         assert "mylib.utils" in result
         assert (tmp_project / "mylib" / "utils.py").exists()
@@ -279,12 +279,12 @@ class TestWrite:
         assert "def helper" in content
 
     def test_write_rejects_invalid_python(self, tmp_project):
-        src = SourceResourcespace(tmp_project)
+        src = SourceRoom(tmp_project)
         with pytest.raises(ResourceError):
             src.write("mylib.utils", "not valid python {{{")
 
     def test_write_updates_init(self, tmp_project):
-        src = SourceResourcespace(tmp_project)
+        src = SourceRoom(tmp_project)
         src.write("mylib.utils", "def helper():\n    return 42\n")
         init_content = (tmp_project / "mylib" / "__init__.py").read_text()
         assert "utils" in init_content
@@ -295,7 +295,7 @@ class TestWrite:
 
 class TestEdit:
     def test_edit_replaces_method(self, tmp_project):
-        src = SourceResourcespace(tmp_project)
+        src = SourceRoom(tmp_project)
         src.edit(
             "mylib.core.Greeter.greet",
             new_source="    def greet(self):\n        return 'hello'\n",
@@ -305,7 +305,7 @@ class TestEdit:
         assert "'hi'" not in content
 
     def test_edit_read_roundtrip(self, tmp_project):
-        src = SourceResourcespace(tmp_project)
+        src = SourceRoom(tmp_project)
         src.edit(
             "mylib.core.Greeter.greet",
             new_source="    def greet(self):\n        return 'hello'\n",
@@ -314,7 +314,7 @@ class TestEdit:
         assert "'hello'" in result
 
     def test_edit_rejects_invalid_python(self, tmp_project):
-        src = SourceResourcespace(tmp_project)
+        src = SourceRoom(tmp_project)
         original = (tmp_project / "mylib" / "core.py").read_text()
         with pytest.raises(ResourceError):
             src.edit("mylib.core.Greeter.greet", new_source="not valid python")
@@ -322,7 +322,7 @@ class TestEdit:
         assert (tmp_project / "mylib" / "core.py").read_text() == original
 
     def test_edit_nonexistent_symbol_raises(self, tmp_project):
-        src = SourceResourcespace(tmp_project)
+        src = SourceRoom(tmp_project)
         with pytest.raises(ResourceError):
             src.edit("mylib.core.nonexistent_thing", new_source="def x(): pass")
 
@@ -332,7 +332,7 @@ class TestEdit:
 
 class TestHotReload:
     def test_edit_reloads_module(self, tmp_project):
-        src = SourceResourcespace(tmp_project)
+        src = SourceRoom(tmp_project)
         src.edit(
             "mylib.core.Greeter.greet",
             new_source="    def greet(self):\n        return 'reloaded'\n",
@@ -372,7 +372,7 @@ class TestHotReload:
 
 class TestUndo:
     def test_undo_reverts_edit(self, tmp_project):
-        src = SourceResourcespace(tmp_project)
+        src = SourceRoom(tmp_project)
         original = (tmp_project / "mylib" / "core.py").read_text()
         src.edit(
             "mylib.core.Greeter.greet",
@@ -383,7 +383,7 @@ class TestUndo:
         assert (tmp_project / "mylib" / "core.py").read_text() == original
 
     def test_undo_returns_confirmation(self, tmp_project):
-        src = SourceResourcespace(tmp_project)
+        src = SourceRoom(tmp_project)
         src.edit(
             "mylib.core.Greeter.greet",
             new_source="    def greet(self):\n        return 'changed'\n",
@@ -454,12 +454,12 @@ class TestMetaSubresource:
         assert "bae.repl.spaces.source.service" in result
 
     def test_read_symbol(self, src):
-        result = src.children()["meta"].read("SourceResourcespace.enter")
+        result = src.children()["meta"].read("SourceRoom.enter")
         assert "def enter" in result
 
     def test_nav_lists_symbols(self, src):
         result = src.children()["meta"].nav()
-        assert "SourceResourcespace" in result
+        assert "SourceRoom" in result
 
     def test_enter_shows_description(self, src):
         result = src.children()["meta"].enter()

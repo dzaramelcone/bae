@@ -1,5 +1,5 @@
-"""Task resourcespace package."""
+"""Task room package."""
 
-from bae.repl.spaces.tasks.service import TaskResourcespace
+from bae.repl.spaces.tasks.service import TaskRoom
 
-__all__ = ["TaskResourcespace"]
+__all__ = ["TaskRoom"]

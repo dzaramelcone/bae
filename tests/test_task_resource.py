@@ -1,4 +1,4 @@
-"""Integration tests for TaskResourcespace protocol, tools, navigation, and homespace count."""
+"""Integration tests for TaskRoom protocol, tools, navigation, and homespace count."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ import time
 
 import pytest
 
-from bae.repl.spaces.tasks import TaskResourcespace
+from bae.repl.spaces.tasks import TaskRoom
 from bae.repl.spaces.tasks.models import TaskStore, from_base36
 from bae.repl.spaces.view import (
     ResourceError,
     ResourceHandle,
     ResourceRegistry,
-    Resourcespace,
+    Room,
 )
 
 
@@ -33,15 +33,15 @@ COMPLETE_BODY = (
 
 @pytest.fixture()
 def rs(tmp_path):
-    return TaskResourcespace(tmp_path / "tasks.db")
+    return TaskRoom(tmp_path / "tasks.db")
 
 
 @pytest.fixture()
 def registry_ns(tmp_path):
-    """Registry with namespace dict and registered TaskResourcespace."""
+    """Registry with namespace dict and registered TaskRoom."""
     ns = {}
     reg = ResourceRegistry(namespace=ns)
-    rs = TaskResourcespace(tmp_path / "tasks.db")
+    rs = TaskRoom(tmp_path / "tasks.db")
     reg.register(rs)
     ns["tasks"] = ResourceHandle("tasks", reg)
     return reg, ns, rs
@@ -52,8 +52,8 @@ def registry_ns(tmp_path):
 # ---------------------------------------------------------------------------
 
 class TestProtocol:
-    def test_is_resourcespace(self, rs):
-        assert isinstance(rs, Resourcespace)
+    def test_is_room(self, rs):
+        assert isinstance(rs, Room)
 
     def test_name(self, rs):
         assert rs.name == "tasks"
@@ -90,7 +90,7 @@ class TestEntry:
         assert "open: 0" in result
 
     def test_enter_shows_stale_warning(self, tmp_path):
-        rs = TaskResourcespace(tmp_path / "tasks.db")
+        rs = TaskRoom(tmp_path / "tasks.db")
         task = rs._store.create("stale task", MAJOR_BODY, priority=(1, 0, 0))
         old_time = time.time() - (15 * 86400)
         rs._store._conn.execute(
@@ -318,9 +318,9 @@ class TestGrep:
 class TestPersistence:
     def test_data_survives_new_instance(self, tmp_path):
         db_path = tmp_path / "tasks.db"
-        rs1 = TaskResourcespace(db_path)
+        rs1 = TaskRoom(db_path)
         rs1.write("Persistent task", MAJOR_BODY, priority="1.0.0")
-        rs2 = TaskResourcespace(db_path)
+        rs2 = TaskRoom(db_path)
         result = rs2.read()
         assert "Persistent task" in result
 
@@ -333,7 +333,7 @@ class TestHomespaceCount:
     def test_orientation_shows_status_counts(self, tmp_path):
         ns = {}
         reg = ResourceRegistry(namespace=ns)
-        rs = TaskResourcespace(tmp_path / "tasks.db")
+        rs = TaskRoom(tmp_path / "tasks.db")
         reg.register(rs)
         rs.write("Outstanding task", MAJOR_BODY, priority="1.0.0")
         result = reg.home()
@@ -343,7 +343,7 @@ class TestHomespaceCount:
     def test_orientation_no_start_here_when_zero(self, tmp_path):
         ns = {}
         reg = ResourceRegistry(namespace=ns)
-        rs = TaskResourcespace(tmp_path / "tasks.db")
+        rs = TaskRoom(tmp_path / "tasks.db")
         reg.register(rs)
         result = reg.home()
         assert "open: 0" in result

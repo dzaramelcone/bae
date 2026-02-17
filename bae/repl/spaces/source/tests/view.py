@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from bae.repl.spaces.source.tests import service
-from bae.repl.spaces.view import Resourcespace
+from bae.repl.spaces.view import Room
 
 
 class TestsSubresource:
@@ -36,5 +36,5 @@ class TestsSubresource:
     def tools(self) -> dict[str, Callable]:
         return {"read": self.read, "grep": self.grep}
 
-    def children(self) -> dict[str, Resourcespace]:
+    def children(self) -> dict[str, Room]:
         return {}

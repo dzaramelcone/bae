@@ -1,6 +1,6 @@
-"""Source resourcespace: semantic Python project interface via module paths."""
+"""Source room: semantic Python project interface via module paths."""
 
-from bae.repl.spaces.source.service import SourceResourcespace
+from bae.repl.spaces.source.service import SourceRoom
 from bae.repl.spaces.source.deps import DepsSubresource
 from bae.repl.spaces.source.config import ConfigSubresource
 from bae.repl.spaces.source.tests import TestsSubresource
@@ -21,7 +21,7 @@ from bae.repl.spaces.source.models import (
 )
 
 __all__ = [
-    "SourceResourcespace",
+    "SourceRoom",
     "DepsSubresource",
     "ConfigSubresource",
     "TestsSubresource",

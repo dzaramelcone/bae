@@ -1,6 +1,6 @@
-"""Resourcespace protocol, registry, navigation, handles, and error formatting.
+"""Room protocol, registry, navigation, handles, and error formatting.
 
-Provides the foundation for v7.0 resourcespace navigation. Resources are
+Provides the foundation for v7.0 room navigation. Resources are
 self-describing domains the agent navigates by calling them as functions.
 The registry tracks navigation state as a stack and renders entry displays,
 nav trees, and error messages with @resource() hyperlinks.
@@ -34,7 +34,7 @@ MAX_STACK_DEPTH = 20
 
 
 @runtime_checkable
-class Resourcespace(Protocol):
+class Room(Protocol):
     """A navigable domain that responds to standard tool verbs."""
 
     name: str
@@ -56,8 +56,8 @@ class Resourcespace(Protocol):
         """Which standard tools this resource supports."""
         ...
 
-    def children(self) -> dict[str, Resourcespace]:
-        """Subresourcespaces for dotted navigation."""
+    def children(self) -> dict[str, Room]:
+        """Subrooms for dotted navigation."""
         ...
 
     def tools(self) -> dict[str, Callable]:
@@ -135,21 +135,21 @@ def _functions_table(tools_map: dict[str, Callable]) -> list[str]:
 
 
 class ResourceRegistry:
-    """Flat registry of resourcespaces with stack-based navigation."""
+    """Flat registry of rooms with stack-based navigation."""
 
     def __init__(self, namespace: dict | None = None) -> None:
-        self._spaces: dict[str, Resourcespace] = {}
-        self._stack: list[Resourcespace] = []
+        self._spaces: dict[str, Room] = {}
+        self._stack: list[Room] = []
         self._namespace = namespace
         self._home_tools: dict[str, Callable] = {}
         self._prev_custom: set[str] = set()
 
     @property
-    def current(self) -> Resourcespace | None:
+    def current(self) -> Room | None:
         return self._stack[-1] if self._stack else None
 
-    def register(self, space: Resourcespace) -> None:
-        """Register a resourcespace by its name."""
+    def register(self, space: Room) -> None:
+        """Register a room by its name."""
         self._spaces[space.name] = space
 
     def navigate(self, target: str) -> str:
@@ -265,7 +265,7 @@ class ResourceRegistry:
         lines = ["home"]
         lines.append("")
         if self._spaces:
-            lines.append("Resourcespaces:")
+            lines.append("Rooms:")
             for name, space in sorted(self._spaces.items()):
                 desc = space.description
                 if hasattr(space, "status_counts"):
@@ -313,7 +313,7 @@ class ResourceRegistry:
 
         return NavResult(_rich_to_ansi(tree).rstrip())
 
-    def _entry_display(self, space: Resourcespace) -> str:
+    def _entry_display(self, space: Room) -> str:
         """Breadcrumb + description + state + functions table + Advanced hints."""
         lines = [self.breadcrumb()]
         entry = space.enter()
@@ -370,7 +370,7 @@ class ResourceHandle:
         return f"{self._name}() -- navigate to {self._name}"
 
 
-def format_unsupported_error(space: Resourcespace, tool: str) -> str:
+def format_unsupported_error(space: Room, tool: str) -> str:
     """Error for unsupported tool with nav hint to the right child resource."""
     hints = []
     for child_name, child_space in space.children().items():

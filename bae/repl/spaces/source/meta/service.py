@@ -1,4 +1,4 @@
-"""Meta subresource service: reads/edits the source resourcespace's own code."""
+"""Meta subresource service: reads/edits the source room's own code."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from bae.repl.spaces.view import ResourceError
 
 def enter() -> str:
     return (
-        "Source resourcespace implementation (bae.repl.spaces.source)\n\n"
+        "Source room implementation (bae.repl.spaces.source)\n\n"
         "Convention: view.py must implement the protocol and call service layer functions.\n"
         "service.py has the underlying implementations. "
         "models.py for entities, schemas.py for DTOs -- add only when needed.\n\n"

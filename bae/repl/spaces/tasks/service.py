@@ -1,6 +1,6 @@
-"""Task resourcespace: navigable task management with priority and search.
+"""Task room: navigable task management with priority and search.
 
-Implements the Resourcespace protocol, delegating storage to TaskStore.
+Implements the Room protocol, delegating storage to TaskStore.
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from bae.repl.spaces.view import ResourceError, Resourcespace
+from bae.repl.spaces.view import ResourceError, Room
 from bae.repl.spaces.tasks.models import TaskStore, _MAJOR_REQUIRED_SECTIONS
 from bae.repl.spaces.tasks.view import (
     format_task_detail,
@@ -34,7 +34,7 @@ def _parse_priority(s: str) -> tuple[int, int, int]:
         )
 
 
-class TaskResourcespace:
+class TaskRoom:
     """Persistent task management with priority and search."""
 
     name = "tasks"
@@ -228,5 +228,5 @@ class TaskResourcespace:
             "grep": self.grep,
         }
 
-    def children(self) -> dict[str, Resourcespace]:
+    def children(self) -> dict[str, Room]:
         return {}

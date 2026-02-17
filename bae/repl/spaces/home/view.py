@@ -1,10 +1,10 @@
-"""Home resourcespace view: public API for filesystem tools."""
+"""Home room view: public API for filesystem tools."""
 
 from bae.repl.spaces.home import service
 
 
-class HomeResourcespace:
-    """Home resourcespace: filesystem tools at root context."""
+class HomeRoom:
+    """Home room: filesystem tools at root context."""
 
     name = "home"
     description = "Filesystem tools"

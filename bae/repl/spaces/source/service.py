@@ -1,4 +1,4 @@
-"""Source resourcespace service: SourceResourcespace.
+"""Source room service: SourceRoom.
 
 Navigates packages, modules, and symbols using dotted Python notation.
 All addressing uses module paths (bae.repl.resource) -- no raw file paths
@@ -16,7 +16,7 @@ from pathlib import Path
 from string.templatelib import Template
 from typing import Callable
 
-from bae.repl.spaces.view import ResourceError, Resourcespace
+from bae.repl.spaces.view import ResourceError, Room
 from bae.repl.spaces.source.models import (
     CHAR_CAP,
     _GLOB_VALID,
@@ -51,12 +51,12 @@ def _subresource_templates(name: str, description: str) -> dict[str, Template]:
     cls = name.title() + "Subresource"
     return {
         "__init__.py": t'from bae.repl.spaces.source.{name}.view import {cls}\n\n__all__ = ["{cls}"]\n',
-        "view.py": t'"""{description} subresource view: protocol wrapper delegating to service functions."""\n\nfrom __future__ import annotations\n\nfrom pathlib import Path\nfrom typing import Callable\n\nfrom bae.repl.spaces.source.{name} import service\nfrom bae.repl.spaces.view import Resourcespace\n\n\nclass {cls}:\n    """{description}."""\n\n    name = "{name}"\n    description = "{description}"\n\n    def __init__(self, project_root: Path) -> None:\n        self._root = project_root\n\n    def enter(self) -> str:\n        return "{description}\\n\\nread() for details"\n\n    def nav(self) -> str:\n        return ""\n\n    def read(self, target: str = "") -> str:\n        return service.read(self._root, target)\n\n    def supported_tools(self) -> set[str]:\n        return {{"read"}}\n\n    def tools(self) -> dict[str, Callable]:\n        return {{"read": self.read}}\n\n    def children(self) -> dict[str, Resourcespace]:\n        return {{}}\n',
+        "view.py": t'"""{description} subresource view: protocol wrapper delegating to service functions."""\n\nfrom __future__ import annotations\n\nfrom pathlib import Path\nfrom typing import Callable\n\nfrom bae.repl.spaces.source.{name} import service\nfrom bae.repl.spaces.view import Room\n\n\nclass {cls}:\n    """{description}."""\n\n    name = "{name}"\n    description = "{description}"\n\n    def __init__(self, project_root: Path) -> None:\n        self._root = project_root\n\n    def enter(self) -> str:\n        return "{description}\\n\\nread() for details"\n\n    def nav(self) -> str:\n        return ""\n\n    def read(self, target: str = "") -> str:\n        return service.read(self._root, target)\n\n    def supported_tools(self) -> set[str]:\n        return {{"read"}}\n\n    def tools(self) -> dict[str, Callable]:\n        return {{"read": self.read}}\n\n    def children(self) -> dict[str, Room]:\n        return {{}}\n',
         "service.py": t'"""{description} service implementations."""\n\nfrom __future__ import annotations\n\nfrom pathlib import Path\n\n\ndef read(project_root: Path, target: str = "") -> str:\n    return "(not yet implemented)"\n',
     }
 
 
-class SourceResourcespace:
+class SourceRoom:
     """Python project source tree -- semantic interface over modules and symbols."""
 
     name = "source"
@@ -345,5 +345,5 @@ class SourceResourcespace:
             "grep": self.grep,
         }
 
-    def children(self) -> dict[str, Resourcespace]:
+    def children(self) -> dict[str, Room]:
         return dict(self._children)

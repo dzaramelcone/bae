@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from bae.repl.spaces.source.config import service
-from bae.repl.spaces.view import Resourcespace
+from bae.repl.spaces.view import Room
 
 
 class ConfigSubresource:
@@ -33,5 +33,5 @@ class ConfigSubresource:
     def tools(self) -> dict[str, Callable]:
         return {"read": self.read}
 
-    def children(self) -> dict[str, Resourcespace]:
+    def children(self) -> dict[str, Room]:
         return {}

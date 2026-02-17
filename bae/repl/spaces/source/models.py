@@ -1,7 +1,7 @@
-"""Source resourcespace domain model helpers.
+"""Source room domain model helpers.
 
 Module path resolution, AST symbol extraction, package discovery,
-symbol replacement, and hot-reload for the source resourcespace.
+symbol replacement, and hot-reload for the source room.
 """
 
 from __future__ import annotations

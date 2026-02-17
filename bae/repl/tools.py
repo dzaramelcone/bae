@@ -169,9 +169,9 @@ class ToolRouter:
             _exec_read,
         )
 
-        # read() at root with empty arg lists resourcespaces
+        # read() at root with empty arg lists rooms
         if tool == "read" and not arg.strip():
-            return self._list_resourcespaces()
+            return self._list_rooms()
 
         home = {
             "read": _exec_read,
@@ -190,12 +190,12 @@ class ToolRouter:
 
         return _prune(result)
 
-    def _list_resourcespaces(self) -> str:
-        """List registered resourcespaces for read() at root."""
+    def _list_rooms(self) -> str:
+        """List registered rooms for read() at root."""
         spaces = self._registry._spaces
         if not spaces:
-            return "No resourcespaces registered."
-        lines = ["Resourcespaces:"]
+            return "No rooms registered."
+        lines = ["Rooms:"]
         for name, space in sorted(spaces.items()):
             lines.append(f"  @{name}() -- {space.description}")
         return "\n".join(lines)

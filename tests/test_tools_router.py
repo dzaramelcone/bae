@@ -7,18 +7,18 @@ import pytest
 from bae.repl.spaces import (
     ResourceError,
     ResourceRegistry,
-    Resourcespace,
+    Room,
     format_unsupported_error,
 )
 from bae.repl.tools import CHAR_CAP, TOKEN_CAP, ToolRouter, _build_validator, _validate_tool_params
 
 
 # ---------------------------------------------------------------------------
-# Stub resourcespace for testing
+# Stub room for testing
 # ---------------------------------------------------------------------------
 
 class StubSpace:
-    """Minimal Resourcespace with configurable tool support and responses."""
+    """Minimal Room with configurable tool support and responses."""
 
     def __init__(self, name: str, description: str = "", children_map=None,
                  tools=None, read_response=None, write_response=None,
@@ -65,7 +65,7 @@ class StubSpace:
                 tool_map[t] = getattr(self, t)
         return tool_map
 
-    def children(self) -> dict[str, Resourcespace]:
+    def children(self) -> dict[str, Room]:
         return self._children
 
 
@@ -129,8 +129,8 @@ class TestDispatchRouting:
         result = router.dispatch("read", "target")
         assert "read failed" in result
 
-    def test_root_read_empty_arg_lists_resourcespaces(self):
-        """read() at root with empty arg lists registered resourcespaces."""
+    def test_root_read_empty_arg_lists_rooms(self):
+        """read() at root with empty arg lists registered rooms."""
         reg = ResourceRegistry()
         reg.register(StubSpace("source"))
         reg.register(StubSpace("tasks"))

@@ -6,14 +6,14 @@ from pathlib import Path
 from typing import Callable
 
 from bae.repl.spaces.source.meta import service
-from bae.repl.spaces.view import Resourcespace
+from bae.repl.spaces.view import Room
 
 
 class MetaSubresource:
-    """Source resourcespace implementation -- reads/edits its own code."""
+    """Source room implementation -- reads/edits its own code."""
 
     name = "meta"
-    description = "Source resourcespace implementation"
+    description = "Source room implementation"
 
     def __init__(self, project_root: Path) -> None:
         self._root = project_root
@@ -37,5 +37,5 @@ class MetaSubresource:
     def tools(self) -> dict[str, Callable]:
         return {"read": self.read, "edit": self.edit}
 
-    def children(self) -> dict[str, Resourcespace]:
+    def children(self) -> dict[str, Room]:
         return {}

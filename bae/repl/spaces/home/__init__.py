@@ -1,6 +1,6 @@
-"""Home resourcespace: filesystem tools available at root."""
+"""Home room: filesystem tools available at root."""
 
-from bae.repl.spaces.home.view import HomeResourcespace
+from bae.repl.spaces.home.view import HomeRoom
 from bae.repl.spaces.home.service import (
     _exec_read,
     _exec_write,
@@ -13,7 +13,7 @@ from bae.repl.spaces.home.service import (
 )
 
 __all__ = [
-    "HomeResourcespace",
+    "HomeRoom",
     "_exec_read",
     "_exec_write",
     "_exec_edit_read",
