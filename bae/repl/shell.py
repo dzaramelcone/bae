@@ -24,9 +24,9 @@ from bae.repl.ai import AI
 from bae.repl.bash import dispatch_bash
 from bae.repl.engine import GraphRegistry
 from bae.repl.channels import CHANNEL_DEFAULTS, ChannelRouter, toggle_channels
-from bae.repl.spaces import ResourceRegistry, ResourceHandle
-from bae.repl.spaces.source import SourceRoom
-from bae.repl.spaces.tasks import TaskRoom
+from bae.repl.rooms import ResourceRegistry, ResourceHandle
+from bae.repl.rooms.source import SourceRoom
+from bae.repl.rooms.tasks import TaskRoom
 from bae.repl.complete import NamespaceCompleter
 from bae.repl.exec import async_exec
 from bae.repl.modes import DEFAULT_MODE, MODE_COLORS, MODE_CYCLE, MODE_NAMES, Mode
@@ -231,7 +231,7 @@ class CortexShell:
         self._lm = ClaudeCLIBackend()
         self.registry = ResourceRegistry(namespace=self.namespace)
         self._tool_router = ToolRouter(self.registry)
-        from bae.repl.spaces.home import _exec_read, _exec_glob, _exec_grep
+        from bae.repl.rooms.home import _exec_read, _exec_glob, _exec_grep
         self.registry._home_tools = {
             "read": _exec_read,
             "glob": _exec_glob,

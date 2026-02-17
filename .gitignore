@@ -27,3 +27,4 @@ ENV/
 tests/traces/
 .DS_Store
 .bae/
+.env

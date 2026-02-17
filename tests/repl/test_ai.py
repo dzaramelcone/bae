@@ -1040,7 +1040,7 @@ class TestRunBlockToolDetection:
     @pytest.mark.asyncio
     async def test_tool_call_summary_contains_resource_prefix(self, eval_ai):
         """When inside a resource, tool_summary includes [resource] prefix."""
-        from bae.repl.spaces import ResourceRegistry
+        from bae.repl.rooms import ResourceRegistry
 
         reg = ResourceRegistry()
         eval_ai._registry = reg

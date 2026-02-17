@@ -12,7 +12,7 @@ import re
 
 from pydantic import ConfigDict, ValidationError, create_model
 
-from bae.repl.spaces import ResourceError, ResourceRegistry, format_unsupported_error
+from bae.repl.rooms import ResourceError, ResourceRegistry, format_unsupported_error
 
 TOKEN_CAP = 500
 CHAR_CAP = TOKEN_CAP * 4  # ~4 chars/token heuristic
@@ -163,7 +163,7 @@ class ToolRouter:
 
     def _home_dispatch(self, tool: str, arg: str, **kwargs) -> str:
         """Dispatch to filesystem operations at home."""
-        from bae.repl.spaces.home import (
+        from bae.repl.rooms.home import (
             _exec_glob,
             _exec_grep,
             _exec_read,

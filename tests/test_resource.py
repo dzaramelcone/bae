@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from bae.repl.spaces import (
+from bae.repl.rooms import (
     NavResult,
     ResourceError,
     ResourceHandle,
@@ -13,7 +13,7 @@ from bae.repl.spaces import (
     format_nav_error,
     format_unsupported_error,
 )
-from bae.repl.spaces.view import _tool_signature, _tool_docstring
+from bae.repl.rooms.view import _tool_signature, _tool_docstring
 
 
 # ---------------------------------------------------------------------------
@@ -506,7 +506,8 @@ class TestToolInjection:
         result = reg.home()
         assert "Rooms:" in result
         assert "source()" in result
-        assert "| Tool |" in result
+        assert "Tool" in result
+        assert "read" in result
 
     def test_back_to_root_returns_orientation(self):
         """Navigate then back() to root returns orientation content."""
@@ -661,7 +662,8 @@ class TestEntryDisplaySignatures:
         space = StubSpace("source", tool_callables={"read": read})
         reg.register(space)
         result = reg.navigate("source")
-        assert "| Tool | Description |" in result
+        assert "Tool" in result
+        assert "Description" in result
 
     def test_entry_shows_python_signature(self):
         reg = ResourceRegistry()

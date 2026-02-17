@@ -110,7 +110,7 @@ class AI:
         lm: LM,
         router: ChannelRouter,
         namespace: dict,
-        model: str = "anthropic:claude-sonnet-4-20250514",
+        model: str = "anthropic:claude-opus-4-6",
     ) -> None:
         self._lm = lm
         self._router = router
@@ -479,7 +479,7 @@ class AI:
         lm: LM,
         router: ChannelRouter,
         namespace: dict,
-        model: str = "anthropic:claude-sonnet-4-20250514",
+        model: str = "anthropic:claude-opus-4-6",
     ) -> None:
         self._lm = lm
         self._router = router

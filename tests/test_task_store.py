@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from bae.repl.spaces.tasks.models import TaskStore
+from bae.repl.rooms.tasks.models import TaskStore
 
 
 # ---------------------------------------------------------------------------
@@ -346,7 +346,7 @@ class TestCounts:
 
 class TestCustomToolCleanup:
     def test_custom_tools_removed_on_navigation_away(self):
-        from bae.repl.spaces.view import ResourceRegistry
+        from bae.repl.rooms.view import ResourceRegistry
 
         ns = {}
         reg = ResourceRegistry(namespace=ns)

@@ -10,6 +10,7 @@ dependencies = [
     "pygments>=2.19",
     "rich>=14.3",
     "tomlkit>=0.14.0",
+    "discord-py>=2.6.4",
 ]
 
 [project.scripts]

@@ -6,9 +6,9 @@ import time
 
 import pytest
 
-from bae.repl.spaces.tasks import TaskRoom
-from bae.repl.spaces.tasks.models import TaskStore
-from bae.repl.spaces.view import (
+from bae.repl.rooms.tasks import TaskRoom
+from bae.repl.rooms.tasks.models import TaskStore
+from bae.repl.rooms.view import (
     ResourceError,
     ResourceHandle,
     ResourceRegistry,

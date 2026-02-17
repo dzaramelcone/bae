@@ -248,7 +248,7 @@ This would be the spec's autoregressive conditioning effect applied at the graph
 
 ### 4.2 Adaptive Schema Based on Model Capability
 
-bae currently defaults to `claude-opus-4-6` for `ClaudeCLIBackend` and `claude-sonnet-4-20250514` for `AgenticBackend`. The spec shows that schema benefit scales inversely with model capability.
+bae currently defaults to `claude-opus-4-6` for `ClaudeCLIBackend` and `claude-opus-4-6` for `AgenticBackend`. The spec shows that schema benefit scales inversely with model capability.
 
 A future direction: when running with Opus, use minimal schemas (fewer constrained fields, more free-form). When running with Haiku, use full schemas with richer descriptions. The model identifier is already available in the backend; the schema construction in `_build_plain_model()` could filter fields based on a "schema depth" parameter derived from model tier.
 

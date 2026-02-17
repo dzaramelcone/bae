@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from bae.repl.spaces import ResourceError, Room
-from bae.repl.spaces.source import SourceRoom
+from bae.repl.rooms import ResourceError, Room
+from bae.repl.rooms.source import SourceRoom
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -39,31 +39,31 @@ class TestProtocol:
 
 class TestPathResolution:
     def test_module_to_path_file(self, src):
-        from bae.repl.spaces.source.models import _module_to_path
+        from bae.repl.rooms.source.models import _module_to_path
 
-        result = _module_to_path(PROJECT_ROOT, "bae.repl.spaces.view")
-        assert result == PROJECT_ROOT / "bae" / "repl" / "spaces" / "view.py"
+        result = _module_to_path(PROJECT_ROOT, "bae.repl.rooms.view")
+        assert result == PROJECT_ROOT / "bae" / "repl" / "rooms" / "view.py"
 
     def test_module_to_path_package(self, src):
-        from bae.repl.spaces.source.models import _module_to_path
+        from bae.repl.rooms.source.models import _module_to_path
 
         result = _module_to_path(PROJECT_ROOT, "bae.repl")
         assert result == PROJECT_ROOT / "bae" / "repl" / "__init__.py"
 
     def test_module_to_path_nonexistent(self, src):
-        from bae.repl.spaces.source.models import _module_to_path
+        from bae.repl.rooms.source.models import _module_to_path
 
         with pytest.raises(ResourceError):
             _module_to_path(PROJECT_ROOT, "bae.nonexistent")
 
     def test_path_to_module_file(self, src):
-        from bae.repl.spaces.source.models import _path_to_module
+        from bae.repl.rooms.source.models import _path_to_module
 
-        result = _path_to_module(PROJECT_ROOT, PROJECT_ROOT / "bae" / "repl" / "spaces" / "view.py")
-        assert result == "bae.repl.spaces.view"
+        result = _path_to_module(PROJECT_ROOT, PROJECT_ROOT / "bae" / "repl" / "rooms" / "view.py")
+        assert result == "bae.repl.rooms.view"
 
     def test_path_to_module_init(self, src):
-        from bae.repl.spaces.source.models import _path_to_module
+        from bae.repl.rooms.source.models import _path_to_module
 
         result = _path_to_module(PROJECT_ROOT, PROJECT_ROOT / "bae" / "repl" / "__init__.py")
         assert result == "bae.repl"
@@ -74,24 +74,24 @@ class TestPathResolution:
 
 class TestPathSafety:
     def test_valid_module_path(self):
-        from bae.repl.spaces.source.models import _validate_module_path
+        from bae.repl.rooms.source.models import _validate_module_path
 
-        _validate_module_path("bae.repl.spaces.view")  # no exception
+        _validate_module_path("bae.repl.rooms.view")  # no exception
 
     def test_traversal_rejected(self):
-        from bae.repl.spaces.source.models import _validate_module_path
+        from bae.repl.rooms.source.models import _validate_module_path
 
         with pytest.raises(ResourceError):
             _validate_module_path("../etc/passwd")
 
     def test_absolute_path_rejected(self):
-        from bae.repl.spaces.source.models import _validate_module_path
+        from bae.repl.rooms.source.models import _validate_module_path
 
         with pytest.raises(ResourceError):
             _validate_module_path("/absolute/path")
 
     def test_empty_segment_rejected(self):
-        from bae.repl.spaces.source.models import _validate_module_path
+        from bae.repl.rooms.source.models import _validate_module_path
 
         with pytest.raises(ResourceError):
             _validate_module_path("bae..repl")
@@ -107,18 +107,18 @@ class TestRead:
         assert "bae" in result
 
     def test_read_module_summary(self, src):
-        result = src.read("bae.repl.spaces.view")
+        result = src.read("bae.repl.rooms.view")
         # Summary format: module path, docstring line, class count, function count
-        assert "bae.repl.spaces.view" in result
+        assert "bae.repl.rooms.view" in result
         assert "class" in result.lower()
         assert "function" in result.lower()
 
     def test_read_symbol_source(self, src):
-        result = src.read("bae.repl.spaces.view.ResourceError")
+        result = src.read("bae.repl.rooms.view.ResourceError")
         assert "class ResourceError" in result
 
     def test_read_symbol_isolation(self, src):
-        result = src.read("bae.repl.spaces.view.ResourceError")
+        result = src.read("bae.repl.rooms.view.ResourceError")
         # Should NOT contain other classes from the module
         assert "class ResourceRegistry" not in result
         assert "class ResourceHandle" not in result
@@ -160,8 +160,8 @@ class TestGlob:
         assert "bae.repl.shell" in result
 
     def test_glob_exact_match(self, src):
-        result = src.glob("bae.repl.spaces.view")
-        assert "bae.repl.spaces.view" in result
+        result = src.glob("bae.repl.rooms.view")
+        assert "bae.repl.rooms.view" in result
 
     def test_glob_nonexistent_no_matches(self, src):
         result = src.glob("bae.nonexistent.*")
@@ -185,18 +185,18 @@ class TestGlob:
 
 class TestGrep:
     def test_grep_finds_matches(self, src):
-        result = src.grep("class ResourceError", "bae.repl.spaces")
-        # Should find in bae.repl.spaces.view with module:line: format
-        assert "bae.repl.spaces.view:" in result
+        result = src.grep("class ResourceError", "bae.repl.rooms")
+        # Should find in bae.repl.rooms.view with module:line: format
+        assert "bae.repl.rooms.view:" in result
 
     def test_grep_scoped_to_module(self, src):
-        result = src.grep("ResourceError", "bae.repl.spaces.view")
-        assert "bae.repl.spaces.view:" in result
+        result = src.grep("ResourceError", "bae.repl.rooms.view")
+        assert "bae.repl.rooms.view:" in result
         # Should NOT contain results from other modules
         lines = result.strip().splitlines()
         for line in lines:
             if ":" in line:
-                assert line.startswith("bae.repl.spaces.view:")
+                assert line.startswith("bae.repl.rooms.view:")
 
     def test_grep_no_matches(self, src):
         # Search only in bae package where this string doesn't exist
@@ -344,7 +344,7 @@ class TestHotReload:
         assert g.greet() == "reloaded"
 
     def test_failed_reload_rolls_back(self, tmp_project):
-        from bae.repl.spaces.source.models import _hot_reload
+        from bae.repl.rooms.source.models import _hot_reload
 
         # Create a module, commit it, then corrupt and test rollback
         good = "import os\n\ndef helper():\n    return os.getcwd()\n"
@@ -451,7 +451,7 @@ class TestTestsSubresource:
 class TestMetaSubresource:
     def test_read_shows_summary(self, src):
         result = src.children()["meta"].read()
-        assert "bae.repl.spaces.source.service" in result
+        assert "bae.repl.rooms.source.service" in result
 
     def test_read_symbol(self, src):
         result = src.children()["meta"].read("SourceRoom.enter")
@@ -480,7 +480,7 @@ class TestMetaSubresource:
 class TestModuleSummary:
     def test_package_shows_subpackage_counts(self, tmp_project):
         """Package summary shows subpackage/module counts, not class/function counts."""
-        from bae.repl.spaces.source.models import _module_summary
+        from bae.repl.rooms.source.models import _module_summary
 
         # tmp_project has mylib/ with __init__.py and core.py
         result = _module_summary(tmp_project, "mylib")
@@ -492,7 +492,7 @@ class TestModuleSummary:
 
     def test_package_with_subpackage(self, tmp_project):
         """Package with subdirectory packages shows subpackage count."""
-        from bae.repl.spaces.source.models import _module_summary
+        from bae.repl.rooms.source.models import _module_summary
 
         # Create a subpackage
         sub = tmp_project / "mylib" / "sub"
@@ -504,7 +504,7 @@ class TestModuleSummary:
 
     def test_module_still_shows_class_function_counts(self, tmp_project):
         """Plain .py modules still show class and function counts."""
-        from bae.repl.spaces.source.models import _module_summary
+        from bae.repl.rooms.source.models import _module_summary
 
         result = _module_summary(tmp_project, "mylib.core")
         assert "mylib.core" in result
@@ -513,7 +513,7 @@ class TestModuleSummary:
 
     def test_real_project_package_has_nonzero_counts(self, src):
         """The real bae package should show nonzero subpackage/module counts."""
-        from bae.repl.spaces.source.models import _module_summary
+        from bae.repl.rooms.source.models import _module_summary
 
         result = _module_summary(PROJECT_ROOT, "bae")
         assert "bae" in result
@@ -535,7 +535,7 @@ class TestModuleSummary:
 
 class TestShellRegistration:
     def test_resource_handle_navigates(self, src):
-        from bae.repl.spaces import ResourceHandle, ResourceRegistry
+        from bae.repl.rooms import ResourceHandle, ResourceRegistry
 
         registry = ResourceRegistry()
         registry.register(src)
@@ -544,7 +544,7 @@ class TestShellRegistration:
         assert "source" in result.lower() or "Python" in result
 
     def test_dotted_access_to_meta(self, src):
-        from bae.repl.spaces import ResourceHandle, ResourceRegistry
+        from bae.repl.rooms import ResourceHandle, ResourceRegistry
 
         registry = ResourceRegistry()
         registry.register(src)

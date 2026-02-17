@@ -257,7 +257,7 @@ class AgenticBackend:
     structured output via constrained decoding.
     """
 
-    def __init__(self, model: str = "claude-sonnet-4-20250514", max_iters: int = 5):
+    def __init__(self, model: str = "claude-opus-4-6", max_iters: int = 5):
         self.model = model
         self.max_iters = max_iters
         self._cli = ClaudeCLIBackend(model=model)  # for structured extraction

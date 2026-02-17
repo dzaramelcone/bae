@@ -18,6 +18,7 @@ from bae.result import GraphResult
 # Simple task decomposition graph
 class Task(Node):
     """A task to be processed."""
+
     description: str
 
     async def __call__(self, lm: LM) -> SubTasks | Result:
@@ -27,6 +28,7 @@ class Task(Node):
 
 class SubTasks(Node):
     """A task broken into subtasks."""
+
     original: str
     subtasks: list[str]
 
@@ -37,6 +39,7 @@ class SubTasks(Node):
 
 class Result(Node):
     """Final result of task processing."""
+
     summary: str
     steps_taken: list[str]
 
@@ -48,6 +51,7 @@ class Result(Node):
 # Simple Q&A graph
 class Question(Node):
     """A question to answer."""
+
     text: str
 
     async def __call__(self, lm: LM) -> Answer | Clarification:
@@ -57,6 +61,7 @@ class Question(Node):
 
 class Clarification(Node):
     """Request for clarification."""
+
     original_question: str
     clarifying_question: str
 
@@ -67,6 +72,7 @@ class Clarification(Node):
 
 class Answer(Node):
     """An answer to a question."""
+
     text: str
     confidence: float
 
@@ -80,7 +86,7 @@ class TestClaudeCLIBackend:
 
     @pytest.fixture
     def lm(self):
-        return ClaudeCLIBackend(model="claude-sonnet-4-20250514")
+        return ClaudeCLIBackend(model="claude-opus-4-6")
 
     async def test_make_produces_typed_output(self, lm):
         """lm.make should produce an instance of the target type."""
@@ -118,7 +124,7 @@ class TestClaudeCLIBackend:
     async def test_graph_run_task_decomposition(self):
         """Run task decomposition graph."""
         # Use longer timeout for multi-step graph
-        lm = ClaudeCLIBackend(model="claude-sonnet-4-20250514", timeout=60)
+        lm = ClaudeCLIBackend(model="claude-opus-4-6", timeout=60)
         graph = Graph(start=Task)
 
         result = await graph.arun(description="Make a peanut butter sandwich", lm=lm, max_iters=10)

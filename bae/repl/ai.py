@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from bae.lm import LM
     from bae.node import Node
     from bae.repl.channels import ChannelRouter
-    from bae.repl.spaces import ResourceRegistry
+    from bae.repl.rooms import ResourceRegistry
     from bae.repl.tasks import TaskManager
     from bae.repl.tools import ToolRouter
 
@@ -35,7 +35,7 @@ _EXEC_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 
-from bae.repl.spaces.home import (
+from bae.repl.rooms.home import (
     _exec_read,
     _exec_write,
     _exec_edit_read,
@@ -547,7 +547,7 @@ def _build_context(namespace: dict) -> str:
     """
     from bae.graph import Graph
     from bae.node import Node
-    from bae.repl.spaces import ResourceHandle
+    from bae.repl.rooms import ResourceHandle
 
     lines: list[str] = []
 

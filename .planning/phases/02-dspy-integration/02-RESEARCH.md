@@ -306,7 +306,7 @@ Verified patterns from official sources:
 import dspy
 
 # Configure LM globally
-dspy.configure(lm=dspy.LM("anthropic/claude-sonnet-4-20250514"))
+dspy.configure(lm=dspy.LM("anthropic/claude-opus-4-6"))
 
 # Create predictor with signature
 predictor = dspy.Predict("context, question -> answer")
