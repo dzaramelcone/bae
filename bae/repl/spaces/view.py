@@ -283,55 +283,7 @@ class ResourceRegistry:
 Rooms:
 {rooms}
 
-{tools}
-
-Rooms are navigable domains. Call one to enter it. Each room has tools.
-
-<example>
-User: look at the bae.repl.ai module
-AI:
-<run>
-source()
-</run>
-<run>
-read("bae.repl.ai")
-</run>
-</example>
-
-<example>
-User: find where we handle navigation
-AI:
-<run>
-source()
-</run>
-<run>
-grep("navigate", "bae.repl")
-</run>
-</example>
-
-<example>
-User: add a task to fix the login bug
-AI:
-<run>
-tasks()
-</run>
-<run>
-write("Fix login bug")
-</run>
-</example>
-
-<example>
-User: what tasks are open?
-AI:
-<run>
-tasks()
-</run>
-<run>
-read()
-</run>
-</example>
-
-Advanced: use arbitrary Python in conjunction with tool calls."""
+{tools}"""
 
     def _root_nav(self) -> str:
         """Render nav tree from root using Rich Tree."""

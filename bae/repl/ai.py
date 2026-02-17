@@ -260,7 +260,8 @@ class AI:
         ]
 
         if self._call_count == 0:
-            cmd += ["--session-id", self._session_id, "--system-prompt", _load_prompt()]
+            orientation = self._registry._build_orientation() if self._registry else ""
+            cmd += ["--session-id", self._session_id, "--system-prompt", _load_prompt(orientation)]
         else:
             cmd += ["--resume", self._session_id]
 
@@ -532,9 +533,10 @@ def run_tool_calls(text: str, *, router: ToolRouter | None = None) -> list[tuple
     return results
 
 
-def _load_prompt() -> str:
-    """Load the system prompt from ai_prompt.md."""
-    return _PROMPT_FILE.read_text()
+def _load_prompt(orientation: str = "") -> str:
+    """Load the system prompt from ai_prompt.md, interpolating orientation."""
+    template = _PROMPT_FILE.read_text()
+    return template.replace("{orientation}", orientation)
 
 
 def _build_context(namespace: dict) -> str:

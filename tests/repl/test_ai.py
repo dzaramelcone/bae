@@ -233,26 +233,15 @@ class TestPromptFile:
         assert len(prompt) > 50
 
     def test_prompt_mentions_bae(self):
-        """System prompt references bae API and convention."""
+        """System prompt references rooms and run tags."""
         prompt = _load_prompt()
-        assert "bae" in prompt
-        assert "Node" in prompt
-        assert "Graph" in prompt
+        assert "Rooms" in prompt
         assert "<run>" in prompt
 
     def test_prompt_mentions_convention(self):
         """System prompt contains the Code section."""
         prompt = _load_prompt()
         assert "## Code" in prompt
-
-    def test_prompt_mentions_tool_tags(self):
-        """System prompt contains all 5 tool tag formats."""
-        prompt = _load_prompt()
-        assert "<R:" in prompt
-        assert "<W:" in prompt
-        assert "<E:" in prompt
-        assert "<G:" in prompt
-        assert "<Grep:" in prompt
 
 
 # --- TestAILabel ---
